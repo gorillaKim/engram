@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/engram-core",
+    "crates/engram-mcp",
+    "crates/engram-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["madup"]
+license = "MIT"
+
+[workspace.dependencies]
+# 공유 의존성 버전 통일
+tokio       = { version = "1", features = ["full"] }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+sqlx        = { version = "0.7", features = ["sqlite", "runtime-tokio", "macros"] }
+chrono      = { version = "0.4", features = ["serde"] }
+thiserror   = "1"
+tracing     = "0.1"
+anyhow      = "1"

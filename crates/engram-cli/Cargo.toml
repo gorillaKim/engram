@@ -1,0 +1,21 @@
+[package]
+name = "engram-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "engram"
+path = "src/main.rs"
+
+[dependencies]
+engram-core          = { path = "../engram-core" }
+tokio.workspace      = true
+serde.workspace      = true
+serde_json.workspace = true
+thiserror.workspace  = true
+tracing.workspace    = true
+tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
+clap                 = { version = "4", features = ["derive", "color"] }
+anyhow.workspace     = true
