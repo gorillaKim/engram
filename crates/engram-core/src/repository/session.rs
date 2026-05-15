@@ -92,6 +92,25 @@ pub struct BlockedChain {
     pub blocked_title: String,
 }
 
+/// Kanban UI 용 — 상태별 Issue 배열 (board_status_query 의 카운트와 별도)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueBoardStatus {
+    pub sprint_id: i64,
+    pub sprint_name: String,
+    pub project_key: Option<String>,
+    pub boards: Vec<IssueProjectBoard>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueProjectBoard {
+    pub project_key: String,
+    pub required: Vec<crate::models::Issue>,
+    pub ready: Vec<crate::models::Issue>,
+    pub working: Vec<crate::models::Issue>,
+    pub demo: Vec<crate::models::Issue>,
+    pub finished: Vec<crate::models::Issue>,
+}
+
 impl Db {
     /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회
     pub async fn session_restore(
@@ -388,6 +407,102 @@ impl Db {
             project_key: project_key.map(String::from),
             projects,
             blocked_chains,
+        })
+    }
+
+    /// Kanban UI 용 — 상태별 Issue 배열을 프로젝트별로 반환
+    pub async fn board_issues_query(
+        &self,
+        project_key: Option<&str>,
+    ) -> Result<IssueBoardStatus> {
+        let sprint = self.sprint_current().await?;
+        let Some(sprint) = sprint else {
+            return Ok(IssueBoardStatus {
+                sprint_id: 0,
+                sprint_name: "활성 스프린트 없음".to_string(),
+                project_key: project_key.map(String::from),
+                boards: vec![],
+            });
+        };
+
+        let mut sql = r#"
+            SELECT i.id, i.epic_id, i.title, i.description, i.goal,
+                   i.status, i.priority, i.created_at, i.updated_at,
+                   e.project_key as proj
+            FROM issues i
+            JOIN epics e ON i.epic_id = e.id
+            WHERE e.sprint_id = ?
+              AND i.status NOT IN ('cancelled')
+        "#.to_string();
+        if project_key.is_some() {
+            sql.push_str(" AND e.project_key = ?");
+        }
+        sql.push_str(" ORDER BY e.project_key, i.priority, i.id");
+
+        #[derive(sqlx::FromRow)]
+        struct IssueRow {
+            id: i64,
+            epic_id: i64,
+            title: String,
+            description: Option<String>,
+            goal: Option<String>,
+            status: crate::models::issue::IssueStatus,
+            priority: crate::models::issue::IssuePriority,
+            created_at: String,
+            updated_at: String,
+            proj: String,
+        }
+
+        let mut q = sqlx::query_as::<_, IssueRow>(&sql).bind(sprint.id);
+        if let Some(pk) = project_key {
+            q = q.bind(pk);
+        }
+        let rows = q.fetch_all(&self.pool).await?;
+
+        // Group by project_key — insertion-order Vec
+        let mut boards: Vec<IssueProjectBoard> = vec![];
+        for r in rows {
+            let board = match boards.iter_mut().find(|b| b.project_key == r.proj) {
+                Some(b) => b,
+                None => {
+                    boards.push(IssueProjectBoard {
+                        project_key: r.proj.clone(),
+                        required: vec![],
+                        ready: vec![],
+                        working: vec![],
+                        demo: vec![],
+                        finished: vec![],
+                    });
+                    boards.last_mut().unwrap()
+                }
+            };
+            let issue = crate::models::Issue {
+                id: r.id,
+                epic_id: r.epic_id,
+                title: r.title,
+                description: r.description,
+                goal: r.goal,
+                status: r.status.clone(),
+                priority: r.priority,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            };
+            use crate::models::issue::IssueStatus::*;
+            match r.status {
+                Required => board.required.push(issue),
+                Ready    => board.ready.push(issue),
+                Working  => board.working.push(issue),
+                Demo     => board.demo.push(issue),
+                Finished => board.finished.push(issue),
+                Cancelled => {}
+            }
+        }
+
+        Ok(IssueBoardStatus {
+            sprint_id: sprint.id,
+            sprint_name: sprint.name.clone(),
+            project_key: project_key.map(String::from),
+            boards,
         })
     }
 }

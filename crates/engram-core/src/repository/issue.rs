@@ -48,7 +48,7 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    pub async fn issue_update(&self, id: i64, input: UpdateIssueInput) -> Result<Issue> {
+    pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
         if let Some(ref new_status) = input.status {
             let current = self.issue_get(id).await?;
             if !current.status.can_transition_to(new_status) {
@@ -66,7 +66,7 @@ impl Db {
                 field: "status".to_string(),
                 old_value: Some(old_v),
                 new_value: Some(new_v),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref p) = input.priority {
@@ -79,7 +79,7 @@ impl Db {
                 field: "priority".to_string(),
                 old_value: None,
                 new_value: Some(pv),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref title) = input.title {
@@ -91,7 +91,7 @@ impl Db {
                 field: "title".to_string(),
                 old_value: None,
                 new_value: Some(title.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref desc) = input.description {
@@ -103,7 +103,7 @@ impl Db {
                 field: "description".to_string(),
                 old_value: None,
                 new_value: Some(desc.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref goal) = input.goal {
@@ -115,7 +115,7 @@ impl Db {
                 field: "goal".to_string(),
                 old_value: None,
                 new_value: Some(goal.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         self.issue_get(id).await

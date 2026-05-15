@@ -87,7 +87,7 @@ mod tests {
 
     async fn seed(db: &Db) -> (i64, i64) { // sprint_id, epic_id
         let sprint = db.sprint_create(CreateSprintInput { name: "S".to_string(), goal: None, start_date: None, end_date: None }).await.unwrap();
-        db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }).await.unwrap();
+        db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }, "agent").await.unwrap();
         let epic = db.epic_create(CreateEpicInput { sprint_id: sprint.id, project_key: "p".to_string(), title: "E".to_string(), description: None }).await.unwrap();
         (sprint.id, epic.id)
     }
@@ -147,9 +147,9 @@ mod tests {
         db.issue_link(a, b, LinkType::Blocks).await.unwrap();
 
         // A를 finished로 전환 (required → ready → working → finished)
-        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }).await.unwrap();
-        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }).await.unwrap();
-        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() }).await.unwrap();
+        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "agent").await.unwrap();
+        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() }, "agent").await.unwrap();
 
         let graph = db.blocked_issues_graph("p").await.unwrap();
         assert!(graph.chains.is_empty(), "finished blocker는 체인에 포함 안 됨");

@@ -43,7 +43,7 @@ pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
             )?);
         }
         NoteCommand::Resolve { id } => {
-            db.note_resolve(id).await?;
+            db.note_resolve(id, "user").await?;
             println!("✅ 노트 해결됨: #{id}");
         }
         NoteCommand::Get { id } => {

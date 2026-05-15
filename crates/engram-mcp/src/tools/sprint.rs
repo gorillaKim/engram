@@ -55,5 +55,5 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         start_date: args["start_date"].as_str().map(String::from),
         end_date:   args["end_date"].as_str().map(String::from),
     };
-    Ok(serde_json::to_value(db.sprint_update(id, input).await?).unwrap())
+    Ok(serde_json::to_value(db.sprint_update(id, input, "agent").await?).unwrap())
 }

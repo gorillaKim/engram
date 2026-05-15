@@ -89,7 +89,7 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    pub async fn note_resolve(&self, id: i64) -> Result<Note> {
+    pub async fn note_resolve(&self, id: i64, changed_by: &str) -> Result<Note> {
         sqlx::query("UPDATE notes SET resolved = 1, resolved_at = datetime('now') WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
@@ -100,7 +100,7 @@ impl Db {
             field: "resolved".to_string(),
             old_value: Some("false".to_string()),
             new_value: Some("true".to_string()),
-            changed_by: "agent".to_string(),
+            changed_by: changed_by.to_string(),
         }).await;
         self.note_get(id).await
     }

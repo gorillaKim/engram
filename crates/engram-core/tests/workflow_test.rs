@@ -6,6 +6,7 @@ use engram_core::{
         issue::{CreateIssueInput, UpdateIssueInput, IssueStatus, IssuePriority},
         task::{CreateTaskInput, UpdateTaskInput, TaskStatus},
         note::{CreateNoteInput, NoteType},
+        history::EntityType,
         LinkType,
     },
 };
@@ -25,7 +26,7 @@ async fn seed_sprint_epic(db: &Db) -> (i64, i64) {
     db.sprint_update(sprint.id, UpdateSprintInput {
         status: Some(SprintStatus::Active),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     let epic = db.epic_create(CreateEpicInput {
         sprint_id: sprint.id,
@@ -57,7 +58,7 @@ async fn test_full_sprint_workflow() {
     let ready_issue = db.issue_update(issue.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
     assert_eq!(ready_issue.status, IssueStatus::Ready);
 
     // 태스크 생성 후 ready 전환 (task_next는 ready 태스크만 반환)
@@ -73,7 +74,7 @@ async fn test_full_sprint_workflow() {
     db.task_update(t1.id, UpdateTaskInput {
         status: Some(TaskStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // caveat note 추가
     db.note_add(CreateNoteInput {
@@ -177,7 +178,7 @@ async fn test_session_restore_filters_by_project() {
     db.sprint_update(sprint.id, UpdateSprintInput {
         status: Some(SprintStatus::Active),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     let epic_a = db.epic_create(CreateEpicInput {
         sprint_id: sprint.id,
@@ -204,7 +205,7 @@ async fn test_session_restore_filters_by_project() {
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // proj-b 이슈 생성 후 Ready 전환
     let issue_b = db.issue_create(CreateIssueInput {
@@ -217,7 +218,7 @@ async fn test_session_restore_filters_by_project() {
     db.issue_update(issue_b.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // proj-a 조회 → proj-a 에픽만
     let snap_a = db.session_restore(Some("proj-a")).await.unwrap();
@@ -246,7 +247,7 @@ async fn test_task_next_priority_ordering() {
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // 이슈 B: High
     let issue_b = db.issue_create(CreateIssueInput {
@@ -259,7 +260,7 @@ async fn test_task_next_priority_ordering() {
     db.issue_update(issue_b.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // 각 이슈에 태스크 1개씩 생성 후 Ready 전환
     let task_a = db.task_create(CreateTaskInput {
@@ -273,7 +274,7 @@ async fn test_task_next_priority_ordering() {
     db.task_update(task_a.id, UpdateTaskInput {
         status: Some(TaskStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     let task_b = db.task_create(CreateTaskInput {
         issue_id: issue_b.id,
@@ -286,7 +287,7 @@ async fn test_task_next_priority_ordering() {
     db.task_update(task_b.id, UpdateTaskInput {
         status: Some(TaskStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // task_next → Critical 이슈의 태스크가 먼저 반환돼야 함
     let next = db.task_next(Some("test-project"), None).await.unwrap();
@@ -307,7 +308,7 @@ async fn test_cross_project_blocking() {
     db.sprint_update(sprint.id, UpdateSprintInput {
         status: Some(SprintStatus::Active),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     let epic_a = db.epic_create(CreateEpicInput {
         sprint_id: sprint.id,
@@ -333,7 +334,7 @@ async fn test_cross_project_blocking() {
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // proj-b 이슈 B (Ready)
     let issue_b = db.issue_create(CreateIssueInput {
@@ -346,7 +347,7 @@ async fn test_cross_project_blocking() {
     db.issue_update(issue_b.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // A blocks B
     db.issue_link(issue_a.id, issue_b.id, LinkType::Blocks).await.unwrap();
@@ -363,7 +364,7 @@ async fn test_cross_project_blocking() {
     db.task_update(task_b.id, UpdateTaskInput {
         status: Some(TaskStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // 이슈 B는 blocked → task_next(proj-b) None 반환
     let next_before = db.task_next(Some("proj-b"), None).await.unwrap();
@@ -373,11 +374,11 @@ async fn test_cross_project_blocking() {
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Working),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Finished),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // 이제 이슈 B의 blocker가 finished → task_next(proj-b) 태스크 반환
     let next_after = db.task_next(Some("proj-b"), None).await.unwrap();
@@ -401,7 +402,7 @@ async fn test_scope_expansion_warning() {
     db.issue_update(issue.id, UpdateIssueInput {
         status: Some(IssueStatus::Ready),
         ..Default::default()
-    }).await.unwrap();
+    }, "agent").await.unwrap();
 
     // 1개 planned 태스크
     db.task_create(CreateTaskInput {
@@ -427,4 +428,52 @@ async fn test_scope_expansion_warning() {
         .any(|w| w.contains("스코프 팽창") || w.contains("agent_discovered") || w.contains("팽창"));
 
     assert!(expansion_warning, "팽창 경고가 warnings에 포함돼야 함. 현재 warnings: {:?}", snapshot.warnings);
+}
+
+#[tokio::test]
+async fn test_history_records_changed_by_actor() {
+    let db = setup().await;
+
+    let sprint = db.sprint_create(CreateSprintInput {
+        name: "Actor Sprint".to_string(),
+        goal: None,
+        start_date: None,
+        end_date: None,
+    }).await.unwrap();
+    db.sprint_update(sprint.id, UpdateSprintInput {
+        status: Some(SprintStatus::Active),
+        ..Default::default()
+    }, "user").await.unwrap();
+
+    let epic = db.epic_create(engram_core::models::epic::CreateEpicInput {
+        sprint_id: sprint.id,
+        project_key: "actor-test".to_string(),
+        title: "Actor Epic".to_string(),
+        description: None,
+    }).await.unwrap();
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: epic.id,
+        title: "Actor Issue".to_string(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    // agent 가 working 까지 전환
+    db.issue_update(issue.id, UpdateIssueInput { status: Some(IssueStatus::Ready),   ..Default::default() }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput { status: Some(IssueStatus::Working),  ..Default::default() }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput { status: Some(IssueStatus::Demo),     ..Default::default() }, "agent").await.unwrap();
+    // 사용자가 Finished 로 전환
+    db.issue_update(issue.id, UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() }, "user").await.unwrap();
+
+    let history = db.history_list(EntityType::Issue, issue.id).await.unwrap();
+    let status_history: Vec<_> = history.iter().filter(|h| h.field == "status").collect();
+    assert!(!status_history.is_empty(), "status history가 존재해야 함");
+
+    let last = status_history.last().unwrap();
+    assert_eq!(last.changed_by, "user", "finished 전이는 사용자가 한 것으로 기록되어야 함");
+
+    let demo_entry = status_history.iter().rfind(|h| h.new_value.as_deref() == Some("demo")).unwrap();
+    assert_eq!(demo_entry.changed_by, "agent", "demo 전이는 agent가 한 것으로 기록되어야 함");
 }

@@ -85,7 +85,7 @@ pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {
                 status: Some(IssueStatus::Ready), ..Default::default()
-            }).await?;
+            }, "user").await?;
             println!("✅ 이슈 준비됨: {}", issue.title);
         }
         IssueCommand::Update { id, status, priority, title } => {
@@ -94,7 +94,7 @@ pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
                 priority: priority.as_deref().map(parse_priority).transpose()?,
                 title,
                 ..Default::default()
-            }).await?;
+            }, "user").await?;
             println!("{}", serde_json::to_string_pretty(&issue)?);
         }
         IssueCommand::Link { source, target, r#type } => {

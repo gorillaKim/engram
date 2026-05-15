@@ -43,7 +43,7 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    pub async fn epic_update(&self, id: i64, input: UpdateEpicInput) -> Result<Epic> {
+    pub async fn epic_update(&self, id: i64, input: UpdateEpicInput, changed_by: &str) -> Result<Epic> {
         if let Some(title) = &input.title {
             sqlx::query("UPDATE epics SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
@@ -53,7 +53,7 @@ impl Db {
                 field: "title".to_string(),
                 old_value: None,
                 new_value: Some(title.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(status) = &input.status {
@@ -66,7 +66,7 @@ impl Db {
                 field: "status".to_string(),
                 old_value: None,
                 new_value: Some(s),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         self.epic_get(id).await

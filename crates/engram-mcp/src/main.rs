@@ -1,7 +1,3 @@
-mod server;
-mod sse;
-mod tools;
-
 use engram_core::Db;
 use std::sync::Arc;
 
@@ -25,13 +21,13 @@ async fn main() -> anyhow::Result<()> {
     let db = Arc::new(Db::open_default().await?);
 
     match transport.as_str() {
-        "sse" => {
-            tracing::info!("Starting Engram MCP SSE server on port {port}");
-            sse::run_sse(db, port).await
+        "http" => {
+            tracing::info!("Starting Engram MCP HTTP server on port {port}");
+            engram_mcp::http::run_http(db, port).await
         }
         _ => {
             tracing::info!("Starting Engram MCP stdio server");
-            server::EngramMcpServer::new(db).run_stdio().await
+            engram_mcp::server::EngramMcpServer::new(db).run_stdio().await
         }
     }
 }

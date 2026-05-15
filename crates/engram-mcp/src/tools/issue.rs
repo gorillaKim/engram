@@ -98,7 +98,7 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let goal: Option<String> = args["goal"].as_str().map(String::from);
 
     let input = UpdateIssueInput { status, priority, title, description, goal };
-    Ok(serde_json::to_value(db.issue_update(id, input).await?).unwrap())
+    Ok(serde_json::to_value(db.issue_update(id, input, "agent").await?).unwrap())
 }
 
 pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

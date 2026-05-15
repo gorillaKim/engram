@@ -5,6 +5,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "engram_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "engram-mcp"
+path = "src/main.rs"
+
 [dependencies]
 engram-core          = { path = "../engram-core" }
 tokio.workspace      = true
@@ -15,5 +23,7 @@ tracing.workspace    = true
 tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
 anyhow.workspace     = true
 axum                 = { version = "0.7", features = ["macros"] }
+socket2              = { version = "0.5", features = ["all"] }
+uuid                 = { version = "1", features = ["v4"] }
 tokio-stream         = "0.1"
 async-stream         = "0.3"

@@ -58,7 +58,7 @@ pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
                 status: status.as_deref().map(parse_epic_status).transpose()?,
                 title,
                 description,
-            }).await?;
+            }, "user").await?;
             println!("{}", serde_json::to_string_pretty(&epic)?);
         }
     }

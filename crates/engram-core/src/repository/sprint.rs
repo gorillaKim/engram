@@ -44,7 +44,7 @@ impl Db {
         .map_err(Into::into)
     }
 
-    pub async fn sprint_update(&self, id: i64, input: UpdateSprintInput) -> Result<Sprint> {
+    pub async fn sprint_update(&self, id: i64, input: UpdateSprintInput, changed_by: &str) -> Result<Sprint> {
         if let Some(status) = &input.status {
             let s = serde_json::to_value(status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE sprints SET status = ?, updated_at = datetime('now') WHERE id = ?")
@@ -58,7 +58,7 @@ impl Db {
                 field: "status".to_string(),
                 old_value: None,
                 new_value: Some(s),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(name) = &input.name {
@@ -73,7 +73,7 @@ impl Db {
                 field: "name".to_string(),
                 old_value: None,
                 new_value: Some(name.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         self.sprint_get(id).await

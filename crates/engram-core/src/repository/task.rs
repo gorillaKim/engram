@@ -41,7 +41,7 @@ impl Db {
         .map_err(Into::into)
     }
 
-    pub async fn task_update(&self, id: i64, input: UpdateTaskInput) -> Result<Task> {
+    pub async fn task_update(&self, id: i64, input: UpdateTaskInput, changed_by: &str) -> Result<Task> {
         if let Some(ref status) = input.status {
             let sv = serde_json::to_value(status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?")
@@ -52,7 +52,7 @@ impl Db {
                 field: "status".to_string(),
                 old_value: None,
                 new_value: Some(sv),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref title) = input.title {
@@ -64,7 +64,7 @@ impl Db {
                 field: "title".to_string(),
                 old_value: None,
                 new_value: Some(title.clone()),
-                changed_by: "agent".to_string(),
+                changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref desc) = input.description {

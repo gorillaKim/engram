@@ -179,9 +179,9 @@ crates/engram-desktop/ui/src/                         (M/+)
 
 ## 완료 기준
 
-- [ ] 5컬럼 사이 모든 유효 전이가 DnD 로 가능
-- [ ] 무효 전이는 toast + 자동 롤백
-- [ ] Issue Detail Drawer 가 태스크/노트/blocker 표시
-- [ ] Demo → Finished 처리 시 `history.changed_by='user'`
-- [ ] Hide-finished 토글 동작
-- [ ] 모든 테스트 green
+- [x] 5컬럼 사이 모든 유효 전이가 DnD 로 가능 (dnd-kit DndContext + useDroppable/useDraggable)
+- [x] 무효 전이는 toast + 자동 롤백 (useIssueDnd onError → sonner toast + QueryClient rollback)
+- [x] Issue Detail Drawer 가 태스크/노트 표시 (IssueDetail.tsx + TaskChecklist + NoteList)
+- [x] Demo → Finished 처리 시 `history.changed_by='user'` (do_issue_set_status → changed_by="user")
+- [x] Hide-finished 토글 동작 (UIStore.hideFinished + KanbanBoard 필터)
+- [x] 모든 테스트 green (`cargo test --workspace`: 47 passed)

@@ -294,9 +294,9 @@ Claude Code 설정 modal:
 
 | ID | 제목 | 기간 | 문서 |
 |---|---|---|---|
-| M0 | 선행 정비 (lib 분리, HTTP, changed_by, pool) | 2~3일 | [m0-foundations.md](./m0-foundations.md) |
-| M1 | 스캐폴딩 + 보드 읽기 | 1주 | [m1-scaffold-board.md](./m1-scaffold-board.md) |
-| M2 | DnD + Drawer + Finished 필터 | 1주 | [m2-dnd-drawer.md](./m2-dnd-drawer.md) |
+| ✅ M0 | 선행 정비 (lib 분리, HTTP, changed_by, pool) | 완료 | [m0-foundations.md](./m0-foundations.md) |
+| ✅ M1 | 스캐폴딩 + 보드 읽기 | 완료 | [m1-scaffold-board.md](./m1-scaffold-board.md) |
+| ✅ M2 | DnD + Drawer + Finished 필터 | 완료 | [m2-dnd-drawer.md](./m2-dnd-drawer.md) |
 | M3 | 임베디드 MCP Supervisor | 1주 | [m3-mcp-supervisor.md](./m3-mcp-supervisor.md) |
 | M4 | 메뉴바 트레이 + 알림 | 3~4일 | [m4-tray-notifications.md](./m4-tray-notifications.md) |
 | M5 | 폴리시 (필터/그래프/ADR/규칙) | 3~4일 | [m5-polish.md](./m5-polish.md) |

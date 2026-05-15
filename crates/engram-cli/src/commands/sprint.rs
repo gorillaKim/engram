@@ -49,7 +49,7 @@ pub async fn run(db: Db, args: SprintArgs) -> anyhow::Result<()> {
             }).transpose()?;
             let sprint = db.sprint_update(id, UpdateSprintInput {
                 name, status: parsed_status, goal, start_date: None, end_date: None,
-            }).await?;
+            }, "user").await?;
             println!("{}", serde_json::to_string_pretty(&sprint)?);
         }
     }

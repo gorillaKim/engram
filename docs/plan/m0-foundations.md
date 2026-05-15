@@ -194,10 +194,10 @@ curl -X POST http://127.0.0.1:3456/mcp \
 
 ## 완료 기준
 
-- [ ] `cargo build --workspace` clean
-- [ ] `cargo test --workspace` 기존 36건 + 신규 1건 = 37+ green
-- [ ] `engram-mcp --transport=http` 가 SSE 헤더 없이 JSON-RPC 응답
-- [ ] HTTP 서버에 SIGTERM 보내면 graceful shutdown
-- [ ] 같은 포트 즉시 재시작 가능 (SO_REUSEADDR)
-- [ ] `history.changed_by` 가 호출처별로 다르게 기록
-- [ ] ADR-0008 머지
+- [x] `cargo build --workspace` clean
+- [x] `cargo test --workspace` 기존 36건 + 신규 1건 = 37+ green
+- [x] `engram-mcp --transport=http` 가 SSE 헤더 없이 JSON-RPC 응답 (http.rs 구현)
+- [x] HTTP 서버에 SIGTERM 보내면 graceful shutdown (oneshot 채널)
+- [x] 같은 포트 즉시 재시작 가능 (SO_REUSEADDR — http.rs 적용)
+- [x] `history.changed_by` 가 호출처별로 다르게 기록 (test_history_records_changed_by_actor 통과)
+- [x] ADR-0008 머지 (ADR-0006, 0007, 0008 작성 완료)

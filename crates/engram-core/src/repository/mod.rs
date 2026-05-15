@@ -26,7 +26,10 @@ impl Db {
             .busy_timeout(std::time::Duration::from_millis(5000))
             .foreign_keys(true);
 
-        let pool = SqlitePool::connect_with(options).await?;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })
@@ -49,7 +52,10 @@ impl Db {
             .map_err(crate::Error::Db)?
             .foreign_keys(true);
 
-        let pool = SqlitePool::connect_with(options).await?;
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })

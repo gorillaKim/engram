@@ -66,5 +66,5 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         description: args["description"].as_str().map(String::from),
         status,
     };
-    Ok(serde_json::to_value(db.epic_update(id, input).await?).unwrap())
+    Ok(serde_json::to_value(db.epic_update(id, input, "agent").await?).unwrap())
 }

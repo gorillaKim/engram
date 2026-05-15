@@ -143,7 +143,7 @@ mod tests {
         }).await.unwrap();
         db.sprint_update(sprint.id, UpdateSprintInput {
             status: Some(SprintStatus::Active), ..Default::default()
-        }).await.unwrap();
+        }, "agent").await.unwrap();
 
         let epic = db.epic_create(CreateEpicInput {
             sprint_id: sprint.id, project_key: "proj".to_string(),
@@ -158,7 +158,7 @@ mod tests {
         // 상태 전이 발생 (history 기록됨)
         db.issue_update(issue.id, UpdateIssueInput {
             status: Some(IssueStatus::Ready), ..Default::default()
-        }).await.unwrap();
+        }, "agent").await.unwrap();
 
         // scope expansion: 1 planned + 2 discovered
         db.task_create(CreateTaskInput {

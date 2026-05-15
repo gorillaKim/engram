@@ -53,7 +53,7 @@ pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
         TaskCommand::Finish { id } => {
             let task = db.task_update(id, UpdateTaskInput {
                 status: Some(TaskStatus::Finished), ..Default::default()
-            }).await?;
+            }, "user").await?;
             println!("✅ 태스크 완료: {}", task.title);
         }
         TaskCommand::Next { project } => {
@@ -68,7 +68,7 @@ pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
                 status: status.as_deref().map(parse_task_status).transpose()?,
                 title,
                 ..Default::default()
-            }).await?;
+            }, "user").await?;
             println!("{}", serde_json::to_string_pretty(&task)?);
         }
         TaskCommand::InsertAfter { issue, after_task_id, title } => {
