@@ -22,6 +22,8 @@ engram/
 **의존성 방향은 한방향**: `engram-cli`, `engram-mcp` → `engram-core`.
 `engram-core` 가 MCP/CLI 의 타입을 import 하는 일은 **금지**.
 
+Phase 3 Desktop: `crates/engram-desktop/` — Tauri v2 앱. `engram-core`, `engram-mcp` 만 참조.
+
 ## 핵심 원칙 (ADR 요약)
 
 | # | 결정 | 문서 |
@@ -31,6 +33,8 @@ engram/
 | 3 | `issue_links` 는 `blocks` 단방향만 저장, 역방향은 쿼리로 도출 | `docs/adr/0003-blocks-one-way.md` |
 | 4 | Claude Code Hook 통합은 MVP(Phase 1) 필수 | `docs/adr/0004-hook-in-mvp.md` |
 | 5 | `tasks.ord` (REAL, fractional index) — `order` 예약어 회피 | `docs/adr/0005-fractional-ord.md` |
+| 6 | Desktop: Tauri v2 + React + Tailwind, 단일 바이너리 | `docs/adr/0006-desktop-tauri.md` |
+| 7 | Agent Demo Gate — 규칙+UI 어포던스, 코드 강제 없음 | `docs/adr/0007-agent-demo-gate.md` |
 
 ## 개발 명령
 
@@ -56,6 +60,7 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 | 테스트 작성 | `.claude/rules/testing-strategy.md` |
 | 설계 결정 추가 / 변경 | `.claude/rules/adr-format.md` |
 | `tasks.ord` 조작 | `.claude/rules/fractional-index.md` |
+| Demo→Finished 전이 / Agent 상태 전이 제한 | `.claude/rules/agent-demo-gate.md` |
 
 새 규칙이 필요하다고 판단되면 `.claude/rules/<slug>.md` 로 추가하고 이 표에 등록한다.
 
@@ -67,7 +72,8 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 - ✅ CLI clap 파싱 테스트 (issue / epic / task / note / sprint / hook) 16건
 - ✅ Hook 통합 — `engram hook install / uninstall / post-session-check` 동작 검증됨
 - ✅ Phase 2 선행 구현: `my_blocked_issues` (BFS + 사이클), 스코프 팽창 감지, `engram retro` 리포트, SSE transport
-- 📊 `cargo test --workspace`: **36 passed / 0 failed**
+- ✅ Phase 3 Desktop (M0~M5): Tauri v2 칸반보드, Drawer, MCP Supervisor, 트레이+알림, 필터, BlockingGraph
+- 📊 `cargo test --workspace`: **59 passed / 0 failed**
 
 ### 알려진 한계
 

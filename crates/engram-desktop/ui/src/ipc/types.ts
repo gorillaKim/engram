@@ -138,6 +138,7 @@ export interface SessionSnapshot {
   next_action: NextTask | null;
   pending_drafts: IssueBrief[];
   warnings: string[];
+  scope_expansion_ids: number[];
 }
 
 // ── Board (Kanban UI) ─────────────────────────────────────────────────────────

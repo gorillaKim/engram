@@ -13,6 +13,8 @@ pub struct SessionSnapshot {
     pub next_action: Option<crate::models::task::NextTask>,
     pub pending_drafts: Vec<IssueBrief>,
     pub warnings: Vec<String>,
+    /// Issue IDs where agent_discovered tasks > 50% (structured form of scope-expansion warnings)
+    pub scope_expansion_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -128,6 +130,7 @@ impl Db {
                 next_action: None,
                 pending_drafts: vec![],
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
+                scope_expansion_ids: vec![],
             });
         };
 
@@ -223,12 +226,24 @@ impl Db {
                 let rate = discovered * 100 / total;
                 if rate > 50 {
                     warnings.push(format!(
-                        "스코프 팽창 감지: 이슈 '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
-                        issue_snap.issue.title, rate, discovered, total
+                        "스코프 팽창 감지: 이슈 #{} '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
+                        issue_snap.issue.id, issue_snap.issue.title, rate, discovered, total
                     ));
                 }
             }
         }
+
+        // Collect scope expansion IDs alongside warning strings
+        let scope_expansion_ids: Vec<i64> = warnings.iter()
+            .filter(|w| w.contains("스코프 팽창 감지"))
+            .filter_map(|w| {
+                w.split_once("이슈 #").and_then(|(_, rest)| {
+                    rest.split_once(|c: char| !c.is_ascii_digit())
+                        .and_then(|(id_str, _)| id_str.parse::<i64>().ok())
+                        .or_else(|| rest.parse::<i64>().ok())
+                })
+            })
+            .collect();
 
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
@@ -239,6 +254,7 @@ impl Db {
             next_action,
             pending_drafts,
             warnings,
+            scope_expansion_ids,
         })
     }
 

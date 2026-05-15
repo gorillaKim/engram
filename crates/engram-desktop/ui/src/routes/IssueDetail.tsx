@@ -1,13 +1,17 @@
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { issueGet, issueSetStatus } from '../ipc/invoke';
+import { issueGet, issueSetStatus, blockedIssuesGraph } from '../ipc/invoke';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
+import { BlockingGraphView } from '../components/BlockingGraph';
 import { useUIStore } from '../store/ui';
+import { useBoardStatus } from '../hooks/useBoardStatus';
+import type { Issue } from '../ipc/types';
 
 export function IssueDetail() {
-  const { selectedIssueId, selectIssue } = useUIStore();
+  const { selectedIssueId, selectedProjectKey, selectIssue } = useUIStore();
   const qc = useQueryClient();
 
   const { data: issue } = useQuery({
@@ -15,6 +19,17 @@ export function IssueDetail() {
     queryFn: () => issueGet(selectedIssueId!),
     enabled: selectedIssueId != null,
   });
+
+  const { data: graphData } = useQuery({
+    queryKey: ['blockingGraph', selectedProjectKey],
+    queryFn: () => blockedIssuesGraph(selectedProjectKey!),
+    enabled: selectedIssueId != null && selectedProjectKey != null,
+    staleTime: 10_000,
+  });
+
+  // Build issue title map from board data for graph node labels
+  const { data: boardData } = useBoardStatus(selectedProjectKey ?? undefined);
+  const issueTitles = useIssueTitleMap(boardData?.boards ?? []);
 
   const transition = useMutation({
     mutationFn: (status: string) => issueSetStatus(selectedIssueId!, status),
@@ -71,6 +86,20 @@ export function IssueDetail() {
               <p className="text-sm text-slate-600 whitespace-pre-wrap">{issue.description}</p>
             )}
 
+            {/* Blocking Graph */}
+            {graphData && (
+              <section>
+                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  블로킹 관계
+                </h3>
+                <BlockingGraphView
+                  graph={graphData}
+                  focusIssueId={issue.id}
+                  issueTitles={issueTitles}
+                />
+              </section>
+            )}
+
             {/* Tasks */}
             <TaskChecklist issueId={issue.id} />
 
@@ -110,4 +139,18 @@ export function IssueDetail() {
       </div>
     </div>
   );
+}
+
+function useIssueTitleMap(boards: { project_key: string; required: Issue[]; ready: Issue[]; working: Issue[]; demo: Issue[]; finished: Issue[] }[]): Map<number, string> {
+  return useMemo(() => {
+    const map = new Map<number, string>();
+    for (const board of boards) {
+      for (const col of [board.required, board.ready, board.working, board.demo, board.finished]) {
+        for (const issue of col) {
+          map.set(issue.id, issue.title);
+        }
+      }
+    }
+    return map;
+  }, [boards]);
 }

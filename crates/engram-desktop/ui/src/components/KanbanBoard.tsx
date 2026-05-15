@@ -2,17 +2,26 @@ import { useState } from 'react';
 import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueCard } from './IssueCard';
+import { FilterBar } from './FilterBar';
+import { ScopeExpansionBanner } from './ScopeExpansionBanner';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import { useIssueDnd } from '../hooks/useIssueDnd';
+import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useUIStore } from '../store/ui';
-import type { Issue, IssueStatus } from '../ipc/types';
+import type { Issue, IssueStatus, IssueProjectBoard } from '../ipc/types';
 
 type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished';
-const COLUMNS: BoardColumn[] = ['required', 'ready', 'working', 'demo', 'finished'];
+const STANDARD_COLUMNS: BoardColumn[] = ['required', 'ready', 'working', 'demo', 'finished'];
 
 export function KanbanBoard() {
-  const { selectedProjectKey, selectIssue, hideFinished, toggleHideFinished } = useUIStore();
+  const {
+    selectedProjectKey, selectIssue,
+    hideFinished, toggleHideFinished,
+    boardFilters, setBoardFilters, resetBoardFilters,
+  } = useUIStore();
+
   const { data, isLoading, error } = useBoardStatus(selectedProjectKey ?? undefined);
+  const { data: session } = useSessionRestore(selectedProjectKey ?? undefined);
   const dnd = useIssueDnd(selectedProjectKey ?? undefined);
 
   const sensors = useSensors(
@@ -25,7 +34,15 @@ export function KanbanBoard() {
   if (error)    return <div className="p-8 text-red-500">Error loading board</div>;
 
   const boards = data?.boards ?? [];
-  const visibleColumns = hideFinished ? COLUMNS.filter((c) => c !== 'finished') : COLUMNS;
+  const warnings = session?.warnings ?? [];
+  const expansionIds = new Set<number>(session?.scope_expansion_ids ?? []);
+
+  // Apply client-side filters
+  const filteredBoards = applyFilters(boards, boardFilters);
+
+  const visibleColumns: BoardColumn[] = STANDARD_COLUMNS.filter(
+    (c) => !(hideFinished && c === 'finished')
+  );
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveIssue(null);
@@ -45,34 +62,40 @@ export function KanbanBoard() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveIssue(null)}
     >
-      <div className="flex flex-col gap-6 p-6 overflow-auto h-full">
+      <div className="flex flex-col gap-4 p-6 overflow-auto h-full">
         {/* Filter bar */}
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={hideFinished}
-              onChange={toggleHideFinished}
-              className="rounded border-slate-300 text-indigo-600"
-            />
-            완료 숨기기
-          </label>
-        </div>
+        <FilterBar
+          boards={boards}
+          filters={boardFilters}
+          hideFinished={hideFinished}
+          onToggleHideFinished={toggleHideFinished}
+          onChange={setBoardFilters}
+          onReset={resetBoardFilters}
+        />
 
-        {boards.length === 0 && (
+        {/* Scope expansion banner */}
+        {warnings.length > 0 && (
+          <ScopeExpansionBanner
+            warnings={warnings}
+            onIssueClick={selectIssue}
+          />
+        )}
+
+        {filteredBoards.length === 0 && (
           <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>
         )}
 
-        {boards.map((board) => (
+        {filteredBoards.map((board) => (
           <div key={board.project_key}>
             <h2 className="text-base font-semibold text-slate-700 mb-3">{board.project_key}</h2>
-            <div className={`grid gap-3 ${visibleColumns.length === 5 ? 'grid-cols-5' : 'grid-cols-4'}`}>
+            <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(0, 1fr))` }}>
               {visibleColumns.map((status) => (
                 <KanbanColumn
                   key={status}
                   status={status}
-                  issues={board[status]}
+                  issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
                   onIssueClick={(id) => selectIssue(id)}
+                  expansionIds={expansionIds}
                 />
               ))}
             </div>
@@ -83,10 +106,40 @@ export function KanbanBoard() {
       <DragOverlay>
         {activeIssue && (
           <div className="rotate-2 scale-105">
-            <IssueCard issue={activeIssue} />
+            <IssueCard issue={activeIssue} scopeExpanded={expansionIds.has(activeIssue.id)} />
           </div>
         )}
       </DragOverlay>
     </DndContext>
   );
+}
+
+function applyFilters(
+  boards: IssueProjectBoard[],
+  filters: ReturnType<typeof useUIStore.getState>['boardFilters'],
+): IssueProjectBoard[] {
+  let result = boards;
+
+  // Project filter
+  if (filters.projects.length > 0) {
+    result = result.filter((b) => filters.projects.includes(b.project_key));
+  }
+
+  // Priority filter (applied per column)
+  if (filters.priorities.length > 0) {
+    result = result.map((board) => {
+      const filterIssues = (issues: Issue[]) =>
+        issues.filter((i) => filters.priorities.includes(i.priority));
+      return {
+        ...board,
+        required: filterIssues(board.required),
+        ready: filterIssues(board.ready),
+        working: filterIssues(board.working),
+        demo: filterIssues(board.demo),
+        finished: filterIssues(board.finished),
+      };
+    });
+  }
+
+  return result;
 }

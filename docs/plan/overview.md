@@ -299,6 +299,6 @@ Claude Code 설정 modal:
 | ✅ M2 | DnD + Drawer + Finished 필터 | 완료 | [m2-dnd-drawer.md](./m2-dnd-drawer.md) |
 | ✅ M3 | 임베디드 MCP Supervisor | 완료 | [m3-mcp-supervisor.md](./m3-mcp-supervisor.md) |
 | ✅ M4 | 메뉴바 트레이 + 알림 | 완료 | [m4-tray-notifications.md](./m4-tray-notifications.md) |
-| M5 | 폴리시 (필터/그래프/ADR/규칙) | 3~4일 | [m5-polish.md](./m5-polish.md) |
+| ✅ M5 | 폴리시 (필터/그래프/ADR/규칙) | 완료 | [m5-polish.md](./m5-polish.md) |
 
 **총 예상**: 4.5~5주.

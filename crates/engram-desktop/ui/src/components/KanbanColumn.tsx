@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core';
 import type { Issue } from '../ipc/types';
 import { IssueCard } from './IssueCard';
 
-type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished';
+type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 
 const LABELS: Record<BoardColumn, string> = {
   required: 'Required',
@@ -10,24 +10,28 @@ const LABELS: Record<BoardColumn, string> = {
   working: 'Working',
   demo: 'Demo',
   finished: 'Finished',
+  cancelled: 'Cancelled',
 };
 
 interface Props {
   status: BoardColumn;
   issues: Issue[];
   onIssueClick?: (id: number) => void;
+  expansionIds?: Set<number>;
 }
 
-export function KanbanColumn({ status, issues, onIssueClick }: Props) {
+export function KanbanColumn({ status, issues, onIssueClick, expansionIds }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const isDemo = status === 'demo';
+  const isCancelled = status === 'cancelled';
 
   return (
     <div
       ref={setNodeRef}
       className={`flex flex-col min-h-[200px] rounded-lg p-3 transition-colors ${
         isOver ? 'ring-2 ring-indigo-400' :
-        isDemo ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-slate-50'
+        isDemo ? 'bg-amber-50 ring-1 ring-amber-200' :
+        isCancelled ? 'bg-slate-100 opacity-70' : 'bg-slate-50'
       }`}
     >
       <div className="flex items-center justify-between mb-3">
@@ -45,7 +49,12 @@ export function KanbanColumn({ status, issues, onIssueClick }: Props) {
       </div>
       <div className="flex flex-col gap-2">
         {issues.map((issue) => (
-          <IssueCard key={issue.id} issue={issue} onClick={onIssueClick} />
+          <IssueCard
+            key={issue.id}
+            issue={issue}
+            onClick={onIssueClick}
+            scopeExpanded={expansionIds?.has(issue.id)}
+          />
         ))}
       </div>
     </div>
