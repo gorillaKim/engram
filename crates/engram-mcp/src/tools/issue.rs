@@ -53,7 +53,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         epic_id:     args["epic_id"].as_i64().unwrap_or(0),
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
-        priority:    None, // TODO: parse from args["priority"]
+        goal:        args["goal"].as_str().map(String::from),
+        priority:    None,
     };
     Ok(serde_json::to_value(db.issue_create(input).await?).unwrap())
 }

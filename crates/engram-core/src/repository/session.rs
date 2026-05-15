@@ -101,10 +101,10 @@ impl Db {
             for issue in &issues {
                 use crate::models::issue::IssueStatus;
                 match &issue.status {
-                    IssueStatus::Done => done += 1,
-                    IssueStatus::InProgress | IssueStatus::InReview => in_prog += 1,
-                    IssueStatus::Approved | IssueStatus::Todo => todo_cnt += 1,
-                    IssueStatus::Draft => {
+                    IssueStatus::Finished => done += 1,
+                    IssueStatus::Working | IssueStatus::Demo => in_prog += 1,
+                    IssueStatus::Ready => todo_cnt += 1,
+                    IssueStatus::Required => {
                         pending_drafts.push(IssueBrief {
                             id: issue.id,
                             title: issue.title.clone(),
@@ -120,7 +120,7 @@ impl Db {
                 let active_notes = self.note_summaries(issue.id, false).await?;
                 let tasks = self.task_list(issue.id, None).await?;
                 let current_task = tasks.into_iter()
-                    .find(|t| t.status == crate::models::task::TaskStatus::Todo);
+                    .find(|t| t.status == crate::models::task::TaskStatus::Ready);
                 let blocked_by = self.issue_blocked_by(issue.id).await?
                     .into_iter().map(|l| l.source_id).collect();
 
@@ -183,7 +183,7 @@ impl Db {
             FROM tasks t
             JOIN issues i ON t.issue_id = i.id
             JOIN epics e ON i.epic_id = e.id
-            WHERE t.status = 'in_progress'"#.to_string();
+            WHERE t.status = 'working'"#.to_string();
 
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");

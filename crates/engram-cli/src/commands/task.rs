@@ -9,26 +9,26 @@ pub struct TaskArgs {
 
 #[derive(Subcommand)]
 pub enum TaskCommand {
-    Create { #[arg(long)] issue: i64, #[arg(long)] title: String },
-    List   { #[arg(long)] issue: i64 },
-    Done   { id: i64 },
-    Next   { #[arg(long)] project: Option<String> },
+    Create   { #[arg(long)] issue: i64, #[arg(long)] title: String, #[arg(long)] goal: Option<String> },
+    List     { #[arg(long)] issue: i64 },
+    Finish   { id: i64 },
+    Next     { #[arg(long)] project: Option<String> },
 }
 
 pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
     match args.command {
-        TaskCommand::Create { issue, title } => {
+        TaskCommand::Create { issue, title, goal } => {
             let task = db.task_create(CreateTaskInput {
-                issue_id: issue, title, description: None, after_task_id: None, source: None,
+                issue_id: issue, title, description: None, goal, after_task_id: None, source: None,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&task)?);
         }
         TaskCommand::List { issue } => {
             println!("{}", serde_json::to_string_pretty(&db.task_list(issue, None).await?)?);
         }
-        TaskCommand::Done { id } => {
+        TaskCommand::Finish { id } => {
             let task = db.task_update(id, UpdateTaskInput {
-                status: Some(TaskStatus::Done), ..Default::default()
+                status: Some(TaskStatus::Finished), ..Default::default()
             }).await?;
             println!("✅ 태스크 완료: {}", task.title);
         }

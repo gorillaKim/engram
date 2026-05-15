@@ -4,6 +4,7 @@ pub mod note;
 pub mod session;
 pub mod sprint;
 pub mod task;
+pub mod task_test;
 
 use engram_core::Db;
 use serde_json::Value;
@@ -15,6 +16,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
         epic::tool_definitions(),
         issue::tool_definitions(),
         task::tool_definitions(),
+        task_test::tool_definitions(),
         note::tool_definitions(),
         session::tool_definitions(),
     ]
@@ -50,6 +52,14 @@ pub async fn dispatch(
         "task_update"       => task::update(db, args).await,
         "task_insert_after" => task::insert_after(db, args).await,
         "task_next"         => task::next(db, args).await,
+        // Task Tests
+        "task_test_add"        => task_test::add(db, args).await,
+        "task_test_add_bulk"   => task_test::add_bulk(db, args).await,
+        "task_test_list"       => task_test::list(db, args).await,
+        "task_test_check"      => task_test::check(db, args).await,
+        "task_test_check_bulk" => task_test::check_bulk(db, args).await,
+        "task_test_uncheck"    => task_test::uncheck(db, args).await,
+        "task_test_remove"     => task_test::remove(db, args).await,
         // Note
         "note_add"     => note::add(db, args).await,
         "note_list"    => note::list(db, args).await,

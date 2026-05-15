@@ -4,6 +4,7 @@ pub mod issue;
 pub mod note;
 pub mod sprint;
 pub mod task;
+pub mod task_test;
 
 pub use epic::{Epic, EpicStatus, CreateEpicInput, UpdateEpicInput};
 pub use history::{History, EntityType};
@@ -11,3 +12,4 @@ pub use issue::{Issue, IssueStatus, IssuePriority, CreateIssueInput, UpdateIssue
 pub use note::{Note, NoteSummary, NoteType, CreateNoteInput};
 pub use sprint::{Sprint, SprintStatus, CreateSprintInput, UpdateSprintInput};
 pub use task::{Task, TaskStatus, TaskSource, CreateTaskInput, UpdateTaskInput};
+pub use task_test::TaskTest;

@@ -6,11 +6,12 @@ impl Db {
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
         let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO issues (epic_id, title, description, priority) VALUES (?, ?, ?, ?) RETURNING id",
+            "INSERT INTO issues (epic_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(input.epic_id)
         .bind(&input.title)
         .bind(&input.description)
+        .bind(&input.goal)
         .bind(&pval)
         .fetch_one(&self.pool)
         .await?;
@@ -19,7 +20,7 @@ impl Db {
 
     pub async fn issue_get(&self, id: i64) -> Result<Issue> {
         sqlx::query_as::<_, Issue>(
-            "SELECT id, epic_id, title, description, status, priority, created_at, updated_at FROM issues WHERE id = ?",
+            "SELECT id, epic_id, title, description, goal, status, priority, created_at, updated_at FROM issues WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -28,7 +29,7 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT id, epic_id, title, description, status, priority, created_at, updated_at FROM issues i WHERE 1=1".to_string();
+        let mut sql = "SELECT id, epic_id, title, description, goal, status, priority, created_at, updated_at FROM issues i WHERE 1=1".to_string();
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
         if filter.project_key.is_some() {
             sql.push_str(" AND EXISTS (SELECT 1 FROM epics e WHERE e.id = i.epic_id AND e.project_key = ?)");
@@ -62,6 +63,18 @@ impl Db {
             let pv = serde_json::to_value(p).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE issues SET priority = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(pv).bind(id).execute(&self.pool).await?;
+        }
+        if let Some(ref title) = input.title {
+            sqlx::query("UPDATE issues SET title = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(title).bind(id).execute(&self.pool).await?;
+        }
+        if let Some(ref desc) = input.description {
+            sqlx::query("UPDATE issues SET description = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(desc).bind(id).execute(&self.pool).await?;
+        }
+        if let Some(ref goal) = input.goal {
+            sqlx::query("UPDATE issues SET goal = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(goal).bind(id).execute(&self.pool).await?;
         }
         self.issue_get(id).await
     }

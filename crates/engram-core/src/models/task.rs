@@ -6,6 +6,7 @@ pub struct Task {
     pub issue_id: i64,
     pub title: String,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub status: TaskStatus,
     pub ord: f64,    // fractional index (order는 SQL 예약어)
     pub source: TaskSource,
@@ -17,10 +18,12 @@ pub struct Task {
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
-    Todo,
-    InProgress,
-    Done,
-    Skipped,
+    Required,
+    Ready,
+    Working,
+    Demo,
+    Finished,
+    Cancelled,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
@@ -37,6 +40,7 @@ pub struct CreateTaskInput {
     pub issue_id: i64,
     pub title: String,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub after_task_id: Option<i64>, // None이면 마지막에 추가
     pub source: Option<TaskSource>,
 }
@@ -45,6 +49,7 @@ pub struct CreateTaskInput {
 pub struct UpdateTaskInput {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub status: Option<TaskStatus>,
 }
 

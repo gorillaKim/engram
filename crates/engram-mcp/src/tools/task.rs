@@ -51,6 +51,7 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         issue_id:     args["issue_id"].as_i64().unwrap_or(0),
         title:        args["title"].as_str().unwrap_or("").to_string(),
         description:  args["description"].as_str().map(String::from),
+        goal:         args["goal"].as_str().map(String::from),
         after_task_id: args["after_task_id"].as_i64(),
         source:       None,
     };
@@ -72,6 +73,7 @@ pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Valu
         issue_id:     args["issue_id"].as_i64().unwrap_or(0),
         title:        args["title"].as_str().unwrap_or("").to_string(),
         description:  args["description"].as_str().map(String::from),
+        goal:         args["goal"].as_str().map(String::from),
         after_task_id: args["after_task_id"].as_i64(),
         source:       Some(TaskSource::AgentDiscovered),
     };

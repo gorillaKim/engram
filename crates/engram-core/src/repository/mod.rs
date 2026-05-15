@@ -5,6 +5,7 @@ pub mod note;
 pub mod session;
 pub mod sprint;
 pub mod task;
+pub mod task_test;
 
 use sqlx::SqlitePool;
 

@@ -1,0 +1,110 @@
+use crate::models::task_test::TaskTest;
+use crate::{Db, Error, Result};
+
+impl Db {
+    pub async fn task_test_add(&self, task_id: i64, label: String) -> Result<TaskTest> {
+        let id = sqlx::query_scalar::<_, i64>(
+            "INSERT INTO task_tests (task_id, label) VALUES (?, ?) RETURNING id",
+        )
+        .bind(task_id)
+        .bind(&label)
+        .fetch_one(&self.pool)
+        .await?;
+        self.task_test_get(id).await
+    }
+
+    pub async fn task_test_add_bulk(&self, task_id: i64, labels: Vec<String>) -> Result<Vec<TaskTest>> {
+        if labels.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut tx = self.pool.begin().await?;
+        let mut ids = Vec::with_capacity(labels.len());
+        for label in &labels {
+            let id = sqlx::query_scalar::<_, i64>(
+                "INSERT INTO task_tests (task_id, label) VALUES (?, ?) RETURNING id",
+            )
+            .bind(task_id)
+            .bind(label)
+            .fetch_one(&mut *tx)
+            .await?;
+            ids.push(id);
+        }
+        tx.commit().await?;
+
+        let mut result = Vec::with_capacity(ids.len());
+        for id in ids {
+            result.push(self.task_test_get(id).await?);
+        }
+        Ok(result)
+    }
+
+    pub async fn task_test_list(&self, task_id: i64) -> Result<Vec<TaskTest>> {
+        sqlx::query_as::<_, TaskTest>(
+            "SELECT id, task_id, label, checked, created_at, checked_at FROM task_tests WHERE task_id = ? ORDER BY id ASC",
+        )
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    pub async fn task_test_check(&self, id: i64) -> Result<TaskTest> {
+        sqlx::query(
+            "UPDATE task_tests SET checked = 1, checked_at = datetime('now') WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.task_test_get(id).await
+    }
+
+    pub async fn task_test_check_bulk(&self, ids: Vec<i64>) -> Result<Vec<TaskTest>> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let mut tx = self.pool.begin().await?;
+        for &id in &ids {
+            sqlx::query(
+                "UPDATE task_tests SET checked = 1, checked_at = datetime('now') WHERE id = ?",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+
+        let mut result = Vec::with_capacity(ids.len());
+        for id in ids {
+            result.push(self.task_test_get(id).await?);
+        }
+        Ok(result)
+    }
+
+    pub async fn task_test_uncheck(&self, id: i64) -> Result<TaskTest> {
+        sqlx::query(
+            "UPDATE task_tests SET checked = 0, checked_at = NULL WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.task_test_get(id).await
+    }
+
+    pub async fn task_test_remove(&self, id: i64) -> Result<()> {
+        sqlx::query("DELETE FROM task_tests WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn task_test_get(&self, id: i64) -> Result<TaskTest> {
+        sqlx::query_as::<_, TaskTest>(
+            "SELECT id, task_id, label, checked, created_at, checked_at FROM task_tests WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("task_test:{id}")))
+    }
+}

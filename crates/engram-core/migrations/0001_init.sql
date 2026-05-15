@@ -38,8 +38,9 @@ CREATE TABLE IF NOT EXISTS issues (
     epic_id     INTEGER NOT NULL REFERENCES epics(id) ON DELETE RESTRICT,
     title       TEXT    NOT NULL,
     description TEXT,
-    status      TEXT    NOT NULL DEFAULT 'draft'
-                CHECK(status IN ('draft','approved','todo','in_progress','in_review','done','cancelled')),
+    goal        TEXT,
+    status      TEXT    NOT NULL DEFAULT 'required'
+                CHECK(status IN ('required','ready','working','demo','finished','cancelled')),
     priority    TEXT    NOT NULL DEFAULT 'medium'
                 CHECK(priority IN ('critical','high','medium','low')),
     created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -65,13 +66,24 @@ CREATE TABLE IF NOT EXISTS tasks (
     issue_id    INTEGER NOT NULL REFERENCES issues(id) ON DELETE RESTRICT,
     title       TEXT    NOT NULL,
     description TEXT,
-    status      TEXT    NOT NULL DEFAULT 'todo'
-                CHECK(status IN ('todo','in_progress','done','skipped')),
+    goal        TEXT,
+    status      TEXT    NOT NULL DEFAULT 'required'
+                CHECK(status IN ('required','ready','working','demo','finished','cancelled')),
     ord         REAL    NOT NULL,   -- fractional index (order는 SQL 예약어 → ord)
     source      TEXT    NOT NULL DEFAULT 'planned'
                 CHECK(source IN ('planned','agent_discovered','user_added')),
     created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 태스크별 테스트 체크리스트 (Agent가 검증 항목을 누적)
+CREATE TABLE IF NOT EXISTS task_tests (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id     INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    label       TEXT    NOT NULL,
+    checked     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    checked_at  TEXT
 );
 
 -- Typed Notes (2단계 로딩: summary 항상 / detail 요청 시)
@@ -106,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_epics_sprint    ON epics(sprint_id, status);
 CREATE INDEX IF NOT EXISTS idx_epics_project   ON epics(project_key, status);
 CREATE INDEX IF NOT EXISTS idx_issues_epic     ON issues(epic_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_issue     ON tasks(issue_id, ord);
+CREATE INDEX IF NOT EXISTS idx_task_tests_task ON task_tests(task_id, checked);
 CREATE INDEX IF NOT EXISTS idx_notes_issue     ON notes(issue_id, resolved);
 CREATE INDEX IF NOT EXISTS idx_notes_type      ON notes(issue_id, note_type);
 CREATE INDEX IF NOT EXISTS idx_links_source    ON issue_links(source_id);

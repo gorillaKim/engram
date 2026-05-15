@@ -7,11 +7,12 @@ impl Db {
         let source = input.source.unwrap_or(TaskSource::Planned);
         let sv = serde_json::to_value(&source).unwrap().as_str().unwrap().to_string();
         let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO tasks (issue_id, title, description, ord, source) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            "INSERT INTO tasks (issue_id, title, description, goal, ord, source) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         )
         .bind(input.issue_id)
         .bind(&input.title)
         .bind(&input.description)
+        .bind(&input.goal)
         .bind(ord)
         .bind(&sv)
         .fetch_one(&self.pool)
@@ -21,7 +22,7 @@ impl Db {
 
     pub async fn task_get(&self, id: i64) -> Result<Task> {
         sqlx::query_as::<_, Task>(
-            "SELECT id, issue_id, title, description, status, ord, source, created_at, updated_at FROM tasks WHERE id = ?",
+            "SELECT id, issue_id, title, description, goal, status, ord, source, created_at, updated_at FROM tasks WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -31,7 +32,7 @@ impl Db {
 
     pub async fn task_list(&self, issue_id: i64, _status: Option<TaskStatus>) -> Result<Vec<Task>> {
         sqlx::query_as::<_, Task>(
-            "SELECT id, issue_id, title, description, status, ord, source, created_at, updated_at FROM tasks WHERE issue_id = ? ORDER BY ord ASC",
+            "SELECT id, issue_id, title, description, goal, status, ord, source, created_at, updated_at FROM tasks WHERE issue_id = ? ORDER BY ord ASC",
         )
         .bind(issue_id)
         .fetch_all(&self.pool)
@@ -49,6 +50,14 @@ impl Db {
             sqlx::query("UPDATE tasks SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
         }
+        if let Some(ref desc) = input.description {
+            sqlx::query("UPDATE tasks SET description = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(desc).bind(id).execute(&self.pool).await?;
+        }
+        if let Some(ref goal) = input.goal {
+            sqlx::query("UPDATE tasks SET goal = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(goal).bind(id).execute(&self.pool).await?;
+        }
         self.task_get(id).await
     }
 
@@ -62,16 +71,17 @@ impl Db {
                    i.id as issue_id, i.title as issue_title,
                    e.id as epic_id, e.title as epic_title, e.project_key,
                    CASE i.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END as priority_ord,
-                   CASE i.status WHEN 'in_progress' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END as status_ord
+                   CASE i.status WHEN 'working' THEN 0 WHEN 'ready' THEN 1 ELSE 2 END as status_ord
             FROM tasks t
             JOIN issues i ON t.issue_id = i.id
             JOIN epics e ON i.epic_id = e.id
-            WHERE t.status = 'todo'
-            AND i.status IN ('approved', 'todo', 'in_progress')
+            WHERE t.status = 'ready'
+            AND i.status IN ('ready', 'working')
             AND NOT EXISTS (
                 SELECT 1 FROM issue_links il
                 JOIN issues bi ON il.source_id = bi.id
-                WHERE il.target_id = i.id AND il.link_type = 'blocks' AND bi.status != 'done'
+                WHERE il.target_id = i.id AND il.link_type = 'blocks'
+                  AND bi.status NOT IN ('finished','cancelled')
             )
         "#.to_string();
 

@@ -12,14 +12,14 @@ pub enum IssueCommand {
     Create { #[arg(long)] epic: i64, #[arg(long)] title: String },
     List { #[arg(long)] project: Option<String>, #[arg(long)] epic: Option<i64> },
     Get { id: i64 },
-    Approve { id: i64 },
+    Ready { id: i64 },
 }
 
 pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
     match args.command {
         IssueCommand::Create { epic, title } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, title, description: None, priority: None,
+                epic_id: epic, title, description: None, goal: None, priority: None,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&issue)?);
         }
@@ -32,11 +32,11 @@ pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
         IssueCommand::Get { id } => {
             println!("{}", serde_json::to_string_pretty(&db.issue_get(id).await?)?);
         }
-        IssueCommand::Approve { id } => {
+        IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {
-                status: Some(IssueStatus::Approved), ..Default::default()
+                status: Some(IssueStatus::Ready), ..Default::default()
             }).await?;
-            println!("✅ 이슈 승인됨: {}", issue.title);
+            println!("✅ 이슈 준비됨: {}", issue.title);
         }
     }
     Ok(())

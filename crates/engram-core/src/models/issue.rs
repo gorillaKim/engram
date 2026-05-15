@@ -6,6 +6,7 @@ pub struct Issue {
     pub epic_id: i64,
     pub title: String,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub status: IssueStatus,
     pub priority: IssuePriority,
     pub created_at: String,
@@ -16,27 +17,27 @@ pub struct Issue {
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum IssueStatus {
-    Draft,
-    Approved,
-    Todo,
-    InProgress,
-    InReview,
-    Done,
+    Required,
+    Ready,
+    Working,
+    Demo,
+    Finished,
     Cancelled,
 }
 
 impl IssueStatus {
-    /// draft → approved → todo → in_progress → in_review → done
+    /// required → ready → working → (demo →) finished
+    /// demo ↔ working 재작업 허용, 어디서든 cancelled 가능
     pub fn can_transition_to(&self, next: &IssueStatus) -> bool {
         use IssueStatus::*;
         matches!(
             (self, next),
-            (Draft, Approved)
-                | (Approved, Todo)
-                | (Todo, InProgress)
-                | (InProgress, InReview)
-                | (InProgress, Done)
-                | (InReview, Done)
+            (Required, Ready)
+                | (Ready, Working)
+                | (Working, Demo)
+                | (Working, Finished)
+                | (Demo, Finished)
+                | (Demo, Working)
                 | (_, Cancelled)
         )
     }
@@ -87,6 +88,7 @@ pub struct CreateIssueInput {
     pub epic_id: i64,
     pub title: String,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub priority: Option<IssuePriority>,
 }
 
@@ -94,6 +96,7 @@ pub struct CreateIssueInput {
 pub struct UpdateIssueInput {
     pub title: Option<String>,
     pub description: Option<String>,
+    pub goal: Option<String>,
     pub status: Option<IssueStatus>,
     pub priority: Option<IssuePriority>,
 }
