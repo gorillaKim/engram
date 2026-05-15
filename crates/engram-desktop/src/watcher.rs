@@ -25,9 +25,11 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
     let mut last = BoardSnapshot::default();
     let mut cooldown_map: HashMap<String, Instant> = HashMap::new();
     let cooldown = Duration::from_secs(30);
+    let mut tick: u32 = 0;
 
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
+        tick = tick.wrapping_add(1);
 
         let cur = match snapshot(&db).await {
             Ok(s) => s,
@@ -57,6 +59,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
                 let key = format!("req:{id}");
                 if should_notify(&cooldown_map, &key, cooldown) {
                     send_notification(&app, "🆕 새 이슈 승인 대기", &format!("#{id} {title}"));
+                    let _ = app.emit("tray://new_required", serde_json::json!({ "id": id, "title": title }));
                     cooldown_map.insert(key, Instant::now());
                 }
             }
@@ -68,6 +71,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
                 let key = format!("demo:{id}");
                 if should_notify(&cooldown_map, &key, cooldown) {
                     send_notification(&app, "👀 검토 대기", &format!("#{id} {title}"));
+                    let _ = app.emit("tray://entered_demo", serde_json::json!({ "id": id, "title": title }));
                     cooldown_map.insert(key, Instant::now());
                 }
             }
@@ -77,16 +81,19 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
         if cur.blockers > last.blockers {
             let key = "blocker:count".to_string();
             if should_notify(&cooldown_map, &key, cooldown) {
-                send_notification(
-                    &app,
-                    "🚫 새 블로커 발생",
-                    &format!("{} 개 이슈가 블로킹됨", cur.blockers),
-                );
+                let body = format!("{} 개 이슈가 블로킹됨", cur.blockers);
+                send_notification(&app, "🚫 새 블로커 발생", &body);
+                let _ = app.emit("tray://new_blocker", serde_json::json!({ "count": cur.blockers }));
                 cooldown_map.insert(key, Instant::now());
             }
         }
 
         last = cur;
+
+        // Periodic eviction: every ~1 hour (720 ticks × 5s) remove expired cooldown entries
+        if tick % 720 == 0 {
+            cooldown_map.retain(|_, t| t.elapsed() < cooldown);
+        }
     }
 }
 

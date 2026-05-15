@@ -134,15 +134,18 @@ fn main() {
             commands::mcp_set_autostart,
         ])
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let sup = window
-                    .app_handle()
-                    .state::<Arc<McpSupervisor>>()
-                    .inner()
-                    .clone();
-                tauri::async_runtime::block_on(async move {
-                    let _ = sup.stop().await;
-                });
+            // Only stop MCP when the main window closes, not when popover closes
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } = event {
+                    let sup = window
+                        .app_handle()
+                        .state::<Arc<McpSupervisor>>()
+                        .inner()
+                        .clone();
+                    tauri::async_runtime::block_on(async move {
+                        let _ = sup.stop().await;
+                    });
+                }
             }
         })
         .run(tauri::generate_context!())

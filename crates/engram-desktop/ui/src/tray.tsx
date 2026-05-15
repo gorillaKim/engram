@@ -14,27 +14,32 @@ const qc = new QueryClient();
 
 function TrayApp() {
   const [summary, setSummary] = useState<TrayBoardSummary | null>(null);
-  const { log, add } = useNotificationStore();
+  const { log } = useNotificationStore();
 
   useEffect(() => {
     const unlistenSummary = listen<TrayBoardSummary>('tray://summary', (e) => {
       setSummary(e.payload);
     });
 
-    // Listen for notification events to build log
+    // Listen for notification events to build in-app log
     const unlistenRequired = listen<{ id: number; title: string }>('tray://new_required', (e) => {
-      add({ id: `req:${e.payload.id}`, title: '🆕 승인 대기', body: `#${e.payload.id} ${e.payload.title}` });
+      useNotificationStore.getState().add({ id: `req:${e.payload.id}`, title: '🆕 승인 대기', body: `#${e.payload.id} ${e.payload.title}` });
     });
     const unlistenDemo = listen<{ id: number; title: string }>('tray://entered_demo', (e) => {
-      add({ id: `demo:${e.payload.id}`, title: '👀 검토 대기', body: `#${e.payload.id} ${e.payload.title}` });
+      useNotificationStore.getState().add({ id: `demo:${e.payload.id}`, title: '👀 검토 대기', body: `#${e.payload.id} ${e.payload.title}` });
+    });
+    const unlistenBlocker = listen<{ count: number }>('tray://new_blocker', (e) => {
+      useNotificationStore.getState().add({ id: `blocker:${Date.now()}`, title: '🚫 새 블로커', body: `${e.payload.count}개 이슈가 블로킹됨` });
     });
 
     return () => {
-      unlistenSummary.then(fn => fn());
-      unlistenRequired.then(fn => fn());
-      unlistenDemo.then(fn => fn());
+      void unlistenSummary.then(fn => fn());
+      void unlistenRequired.then(fn => fn());
+      void unlistenDemo.then(fn => fn());
+      void unlistenBlocker.then(fn => fn());
     };
-  }, [add]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-slate-200 p-4 min-h-screen flex flex-col gap-4">
