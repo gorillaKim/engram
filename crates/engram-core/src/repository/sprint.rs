@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::sprint::*;
 use crate::{Db, Error, Result};
 
@@ -47,10 +48,18 @@ impl Db {
         if let Some(status) = &input.status {
             let s = serde_json::to_value(status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE sprints SET status = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(s)
+                .bind(&s)
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Sprint,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: None,
+                new_value: Some(s),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(name) = &input.name {
             sqlx::query("UPDATE sprints SET name = ?, updated_at = datetime('now') WHERE id = ?")
@@ -58,6 +67,14 @@ impl Db {
                 .bind(id)
                 .execute(&self.pool)
                 .await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Sprint,
+                entity_id: id,
+                field: "name".to_string(),
+                old_value: None,
+                new_value: Some(name.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         self.sprint_get(id).await
     }

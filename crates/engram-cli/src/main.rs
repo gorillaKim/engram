@@ -23,6 +23,8 @@ enum Commands {
     Note(commands::note::NoteArgs),
     /// 세션 관리
     Session(commands::session::SessionArgs),
+    /// 스프린트 회고 리포트 생성
+    Retro(commands::retro::RetroArgs),
     /// Claude Code Hook 설치/제거
     Hook(commands::hook::HookArgs),
     /// Hook에서 사용: 현재 세션 컨텍스트를 텍스트로 출력
@@ -44,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Task(args)    => commands::task::run(db, args).await?,
         Commands::Note(args)    => commands::note::run(db, args).await?,
         Commands::Session(args) => commands::session::run(db, args).await?,
+        Commands::Retro(args)   => commands::retro::run(db, args).await?,
         Commands::Hook(args)    => commands::hook::run(args).await?,
         Commands::SnapshotText { project } => {
             let snapshot = db.session_restore(project.as_deref()).await?;

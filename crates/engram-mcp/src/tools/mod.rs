@@ -6,6 +6,9 @@ pub mod sprint;
 pub mod task;
 pub mod task_test;
 
+#[cfg(test)]
+mod dispatch_test;
+
 use engram_core::Db;
 use serde_json::Value;
 use std::sync::Arc;
@@ -45,7 +48,8 @@ pub async fn dispatch(
         "issue_list"   => issue::list(db, args).await,
         "issue_update" => issue::update(db, args).await,
         "issue_link"   => issue::link(db, args).await,
-        "issue_unlink" => issue::unlink(db, args).await,
+        "issue_unlink"        => issue::unlink(db, args).await,
+        "my_blocked_issues"   => issue::my_blocked_issues(db, args).await,
         // Task
         "task_create"       => task::create(db, args).await,
         "task_list"         => task::list(db, args).await,

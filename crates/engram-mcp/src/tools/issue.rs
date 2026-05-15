@@ -4,6 +4,17 @@ use std::sync::Arc;
 
 pub fn tool_definitions() -> Vec<Value> {
     vec![
+        json!({
+            "name": "my_blocked_issues",
+            "description": "현재 프로젝트의 블로킹 의존성 그래프를 반환합니다. 해소 가능한 리프 blocker와 체인 경로를 보여줍니다. 작업이 막혀있을 때 호출하세요.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_key"],
+                "properties": {
+                    "project_key": { "type": "string" }
+                }
+            }
+        }),
         json!({ "name": "issue_create",
             "description": "새 이슈를 draft 상태로 생성합니다. 반드시 사용자 승인(issue_update status=approved) 후 작업을 시작하세요.",
             "inputSchema": { "type": "object", "required": ["epic_id", "title"],
@@ -75,14 +86,36 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.issue_update(id, UpdateIssueInput::default()).await?).unwrap())
+
+    let status: Option<IssueStatus> = args["status"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
+
+    let priority: Option<IssuePriority> = args["priority"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
+
+    let title: Option<String> = args["title"].as_str().map(String::from);
+    let description: Option<String> = args["description"].as_str().map(String::from);
+    let goal: Option<String> = args["goal"].as_str().map(String::from);
+
+    let input = UpdateIssueInput { status, priority, title, description, goal };
+    Ok(serde_json::to_value(db.issue_update(id, input).await?).unwrap())
 }
 
 pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let source_id = args["source_id"].as_i64().unwrap_or(0);
     let target_id = args["target_id"].as_i64().unwrap_or(0);
-    // TODO: parse link_type from string
-    Ok(serde_json::to_value(db.issue_link(source_id, target_id, LinkType::Blocks).await?).unwrap())
+    let link_type = match args["link_type"].as_str().unwrap_or("blocks") {
+        "relates_to" => LinkType::RelatesTo,
+        "duplicates" => LinkType::Duplicates,
+        _            => LinkType::Blocks,
+    };
+    Ok(serde_json::to_value(db.issue_link(source_id, target_id, link_type).await?).unwrap())
+}
+
+pub async fn my_blocked_issues(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let project_key = args["project_key"].as_str().unwrap_or("");
+    let graph = db.blocked_issues_graph(project_key).await?;
+    Ok(serde_json::to_value(&graph).unwrap())
 }
 
 pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

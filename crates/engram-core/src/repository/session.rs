@@ -62,6 +62,36 @@ pub struct TaskBrief {
     pub issue_title: String,
 }
 
+/// board_status 응답 구조
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BoardStatus {
+    pub sprint_id: i64,
+    pub sprint_name: String,
+    pub project_key: Option<String>,
+    pub projects: Vec<ProjectBoard>,
+    pub blocked_chains: Vec<BlockedChain>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectBoard {
+    pub project_key: String,
+    pub required: u32,
+    pub ready: u32,
+    pub working: u32,
+    pub demo: u32,
+    pub finished: u32,
+    pub cancelled: u32,
+    pub total: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockedChain {
+    pub blocker_id: i64,
+    pub blocker_title: String,
+    pub blocked_id: i64,
+    pub blocked_title: String,
+}
+
 impl Db {
     /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회
     pub async fn session_restore(
@@ -149,6 +179,38 @@ impl Db {
             ));
         }
 
+        // 스코프 팽창 감지: agent_discovered 태스크 비율 > 50% 이슈
+        for epic_snap in &active_epics {
+            for issue_snap in &epic_snap.active_issues {
+                let issue_id = issue_snap.issue.id;
+                let total: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ?",
+                )
+                .bind(issue_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+
+                if total == 0 { continue; }
+
+                let discovered: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ? AND source = 'agent_discovered'",
+                )
+                .bind(issue_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+
+                let rate = discovered * 100 / total;
+                if rate > 50 {
+                    warnings.push(format!(
+                        "스코프 팽창 감지: 이슈 '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
+                        issue_snap.issue.title, rate, discovered, total
+                    ));
+                }
+            }
+        }
+
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
@@ -219,5 +281,113 @@ impl Db {
 
         let ok = warnings.is_empty();
         Ok(SessionEndResult { warnings, in_progress_tasks, ok })
+    }
+
+    /// 보드 전체 현황 — 프로젝트별 이슈 상태 집계 + 블로킹 체인
+    pub async fn board_status_query(&self, project_key: Option<&str>) -> Result<BoardStatus> {
+        let sprint = self.sprint_current().await?;
+        let Some(sprint) = sprint else {
+            return Ok(BoardStatus {
+                sprint_id: 0,
+                sprint_name: "활성 스프린트 없음".to_string(),
+                project_key: project_key.map(String::from),
+                projects: vec![],
+                blocked_chains: vec![],
+            });
+        };
+
+        // 프로젝트별 이슈 상태 집계
+        let mut sql = r#"
+            SELECT e.project_key,
+                SUM(CASE WHEN i.status = 'required' THEN 1 ELSE 0 END) as required,
+                SUM(CASE WHEN i.status = 'ready' THEN 1 ELSE 0 END) as ready,
+                SUM(CASE WHEN i.status = 'working' THEN 1 ELSE 0 END) as working,
+                SUM(CASE WHEN i.status = 'demo' THEN 1 ELSE 0 END) as demo,
+                SUM(CASE WHEN i.status = 'finished' THEN 1 ELSE 0 END) as finished,
+                SUM(CASE WHEN i.status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
+                COUNT(*) as total
+            FROM issues i
+            JOIN epics e ON i.epic_id = e.id
+            WHERE e.sprint_id = ?
+        "#.to_string();
+        if project_key.is_some() {
+            sql.push_str(" AND e.project_key = ?");
+        }
+        sql.push_str(" GROUP BY e.project_key ORDER BY e.project_key");
+
+        #[derive(sqlx::FromRow)]
+        struct ProjRow {
+            project_key: String,
+            required: i64,
+            ready: i64,
+            working: i64,
+            demo: i64,
+            finished: i64,
+            cancelled: i64,
+            total: i64,
+        }
+
+        let mut q = sqlx::query_as::<_, ProjRow>(&sql).bind(sprint.id);
+        if let Some(pk) = project_key {
+            q = q.bind(pk);
+        }
+        let proj_rows = q.fetch_all(&self.pool).await?;
+
+        let projects = proj_rows.into_iter().map(|r| ProjectBoard {
+            project_key: r.project_key,
+            required: r.required as u32,
+            ready: r.ready as u32,
+            working: r.working as u32,
+            demo: r.demo as u32,
+            finished: r.finished as u32,
+            cancelled: r.cancelled as u32,
+            total: r.total as u32,
+        }).collect();
+
+        // 블로킹 체인 조회 — 미완료 blocker 만 포함
+        let mut bsql = r#"
+            SELECT il.source_id as blocker_id, bi.title as blocker_title,
+                   il.target_id as blocked_id, ti.title as blocked_title
+            FROM issue_links il
+            JOIN issues bi ON il.source_id = bi.id
+            JOIN issues ti ON il.target_id = ti.id
+            JOIN epics be ON bi.epic_id = be.id
+            JOIN epics te ON ti.epic_id = te.id
+            WHERE il.link_type = 'blocks'
+              AND be.sprint_id = ?
+              AND bi.status NOT IN ('finished', 'cancelled')
+        "#.to_string();
+        if project_key.is_some() {
+            bsql.push_str(" AND be.project_key = ?");
+        }
+
+        #[derive(sqlx::FromRow)]
+        struct ChainRow {
+            blocker_id: i64,
+            blocker_title: String,
+            blocked_id: i64,
+            blocked_title: String,
+        }
+
+        let mut bq = sqlx::query_as::<_, ChainRow>(&bsql).bind(sprint.id);
+        if let Some(pk) = project_key {
+            bq = bq.bind(pk);
+        }
+        let chain_rows = bq.fetch_all(&self.pool).await?;
+
+        let blocked_chains = chain_rows.into_iter().map(|r| BlockedChain {
+            blocker_id: r.blocker_id,
+            blocker_title: r.blocker_title,
+            blocked_id: r.blocked_id,
+            blocked_title: r.blocked_title,
+        }).collect();
+
+        Ok(BoardStatus {
+            sprint_id: sprint.id,
+            sprint_name: sprint.name,
+            project_key: project_key.map(String::from),
+            projects,
+            blocked_chains,
+        })
     }
 }

@@ -2,6 +2,9 @@ pub mod models;
 pub mod repository;
 
 pub use repository::Db;
+pub use repository::retro::RetroReport;
+pub use repository::session::{BoardStatus, ProjectBoard, BlockedChain};
+pub use repository::blocking::BlockingGraph;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

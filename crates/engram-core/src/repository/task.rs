@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::task::*;
 use crate::{Db, Error, Result};
 
@@ -44,11 +45,27 @@ impl Db {
         if let Some(ref status) = input.status {
             let sv = serde_json::to_value(status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(sv).bind(id).execute(&self.pool).await?;
+                .bind(&sv).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Task,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: None,
+                new_value: Some(sv),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref title) = input.title {
             sqlx::query("UPDATE tasks SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Task,
+                entity_id: id,
+                field: "title".to_string(),
+                old_value: None,
+                new_value: Some(title.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref desc) = input.description {
             sqlx::query("UPDATE tasks SET description = ?, updated_at = datetime('now') WHERE id = ?")

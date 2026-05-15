@@ -61,6 +61,16 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 
 ## 현재 진행 상황 요약
 
-- ✅ Phase 1 코어: models / repository / migrations / MCP tools 18개 / CLI 7 서브커맨드
-- ❌ tests/ 디렉터리 비어 있음 — `.claude/rules/testing-strategy.md` 기준으로 통합 테스트 추가 필요
-- ❌ Hook 통합 (`engram hook install`) 구현 미검증 — `crates/engram-cli/src/commands/hook.rs` 확인 필요
+- ✅ Phase 1 코어: models / repository / migrations / **MCP tools 34개** / **CLI 9 서브커맨드 (모든 액션 노출)**
+- ✅ 통합 테스트 `crates/engram-core/tests/workflow_test.rs` 7건 (full_sprint / blocked_by / fractional_ord / session_filter / task_next_priority / cross_project_blocking / scope_expansion)
+- ✅ MCP dispatch round-trip 테스트 `crates/engram-mcp/src/tools/dispatch_test.rs` 8건 — `.claude/rules/mcp-tool-shape.md` 준수
+- ✅ CLI clap 파싱 테스트 (issue / epic / task / note / sprint / hook) 16건
+- ✅ Hook 통합 — `engram hook install / uninstall / post-session-check` 동작 검증됨
+- ✅ Phase 2 선행 구현: `my_blocked_issues` (BFS + 사이클), 스코프 팽창 감지, `engram retro` 리포트, SSE transport
+- 📊 `cargo test --workspace`: **36 passed / 0 failed**
+
+### 알려진 한계
+
+- Hook installer 가 `PreToolUse:Bash` 매처로 등록 — 모든 Bash 호출마다 snapshot-text 실행되어 노이즈/토큰 부담. `SessionStart` 매처로 옮기는 게 본래 의도.
+- Plan 문서(`doxus://brain/Ideas/agent/Engram - Implementation Plan.md`) 의 issue/task 상태 enum 명세(`draft/approved/...`)는 현 구현(`required/ready/working/demo/finished/cancelled`)과 다름 (`ce814a2`에서 재설계). Plan 문서가 stale.
+- `note_type` 의 custom_type 컬럼은 미도입 (Phase 2 잔여 항목).

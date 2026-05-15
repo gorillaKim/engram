@@ -1,7 +1,9 @@
+pub mod blocking;
 pub mod epic;
 pub mod history;
 pub mod issue;
 pub mod note;
+pub mod retro;
 pub mod session;
 pub mod sprint;
 pub mod task;

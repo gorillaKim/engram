@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::note::*;
 use crate::{Db, Error, Result};
 
@@ -93,6 +94,14 @@ impl Db {
             .bind(id)
             .execute(&self.pool)
             .await?;
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Note,
+            entity_id: id,
+            field: "resolved".to_string(),
+            old_value: Some("false".to_string()),
+            new_value: Some("true".to_string()),
+            changed_by: "agent".to_string(),
+        }).await;
         self.note_get(id).await
     }
 }

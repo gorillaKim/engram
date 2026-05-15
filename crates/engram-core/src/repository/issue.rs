@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::issue::*;
 use crate::{Db, Error, Result};
 
@@ -55,26 +56,67 @@ impl Db {
                     format!("{:?} → {:?}", current.status, new_status)
                 ));
             }
-            let sv = serde_json::to_value(new_status).unwrap().as_str().unwrap().to_string();
+            let old_v = serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string();
+            let new_v = serde_json::to_value(new_status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE issues SET status = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(sv).bind(id).execute(&self.pool).await?;
+                .bind(&new_v).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: Some(old_v),
+                new_value: Some(new_v),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref p) = input.priority {
             let pv = serde_json::to_value(p).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE issues SET priority = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(pv).bind(id).execute(&self.pool).await?;
+                .bind(&pv).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "priority".to_string(),
+                old_value: None,
+                new_value: Some(pv),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref title) = input.title {
             sqlx::query("UPDATE issues SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "title".to_string(),
+                old_value: None,
+                new_value: Some(title.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref desc) = input.description {
             sqlx::query("UPDATE issues SET description = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(desc).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "description".to_string(),
+                old_value: None,
+                new_value: Some(desc.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(ref goal) = input.goal {
             sqlx::query("UPDATE issues SET goal = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(goal).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "goal".to_string(),
+                old_value: None,
+                new_value: Some(goal.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         self.issue_get(id).await
     }

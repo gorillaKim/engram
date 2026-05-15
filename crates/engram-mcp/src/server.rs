@@ -40,6 +40,10 @@ impl EngramMcpServer {
         Ok(())
     }
 
+    pub async fn handle_request(&self, req: &Value) -> Value {
+        self.handle(req).await
+    }
+
     async fn handle(&self, req: &Value) -> Value {
         let id = req.get("id").cloned().unwrap_or(Value::Null);
         let method = req["method"].as_str().unwrap_or("");

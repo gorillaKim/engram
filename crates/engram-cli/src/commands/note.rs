@@ -17,6 +17,8 @@ pub enum NoteCommand {
     },
     List { #[arg(long)] issue: i64 },
     Resolve { id: i64 },
+    /// 노트 상세 조회 (detail 포함)
+    Get { id: i64 },
 }
 
 pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
@@ -44,6 +46,42 @@ pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
             db.note_resolve(id).await?;
             println!("✅ 노트 해결됨: #{id}");
         }
+        NoteCommand::Get { id } => {
+            println!("{}", serde_json::to_string_pretty(&db.note_get(id).await?)?);
+        }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct Wrap { #[command(subcommand)] cmd: NoteCommand }
+
+    #[test]
+    fn test_parse_get() {
+        let w = Wrap::try_parse_from(["x", "get", "42"]).unwrap();
+        match w.cmd {
+            NoteCommand::Get { id } => assert_eq!(id, 42),
+            _ => panic!("Get 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_add_with_type() {
+        let w = Wrap::try_parse_from(
+            ["x", "add", "--issue", "1", "--type", "caveat", "--summary", "주의"]
+        ).unwrap();
+        match w.cmd {
+            NoteCommand::Add { issue, r#type, summary, .. } => {
+                assert_eq!(issue, 1);
+                assert_eq!(r#type, "caveat");
+                assert_eq!(summary, "주의");
+            }
+            _ => panic!("Add 변형이 파싱되어야 함"),
+        }
+    }
 }

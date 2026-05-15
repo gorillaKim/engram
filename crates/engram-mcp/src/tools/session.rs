@@ -59,8 +59,7 @@ pub async fn end(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn board_status(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    // TODO: 보드 전체 현황 + 블로킹 체인 집계
     let project_key = args["project_key"].as_str();
-    let snapshot = db.session_restore(project_key).await?;
-    Ok(json!({ "board": snapshot }))
+    let board = db.board_status_query(project_key).await?;
+    Ok(serde_json::to_value(board).unwrap())
 }

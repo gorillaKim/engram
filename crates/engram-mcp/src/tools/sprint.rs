@@ -46,5 +46,14 @@ pub async fn current(db: Arc<Db>, _args: &Value) -> engram_core::Result<Value> {
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.sprint_update(id, UpdateSprintInput::default()).await?).unwrap())
+    let status: Option<SprintStatus> = args["status"].as_str()
+        .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
+    let input = UpdateSprintInput {
+        name:       args["name"].as_str().map(String::from),
+        goal:       args["goal"].as_str().map(String::from),
+        status,
+        start_date: args["start_date"].as_str().map(String::from),
+        end_date:   args["end_date"].as_str().map(String::from),
+    };
+    Ok(serde_json::to_value(db.sprint_update(id, input).await?).unwrap())
 }

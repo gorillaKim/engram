@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::epic::*;
 use crate::{Db, Error, Result};
 
@@ -46,11 +47,27 @@ impl Db {
         if let Some(title) = &input.title {
             sqlx::query("UPDATE epics SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Epic,
+                entity_id: id,
+                field: "title".to_string(),
+                old_value: None,
+                new_value: Some(title.clone()),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         if let Some(status) = &input.status {
             let s = serde_json::to_value(status).unwrap().as_str().unwrap().to_string();
             sqlx::query("UPDATE epics SET status = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(s).bind(id).execute(&self.pool).await?;
+                .bind(&s).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Epic,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: None,
+                new_value: Some(s),
+                changed_by: "agent".to_string(),
+            }).await;
         }
         self.epic_get(id).await
     }
