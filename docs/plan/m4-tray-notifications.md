@@ -195,9 +195,9 @@ icons/tray-template.png                               (+)  모노크롬 16x16
 
 ## 완료 기준
 
-- [ ] 메뉴바 아이콘 + 동적 텍스트 표시
-- [ ] 좌클릭 popover 표시
-- [ ] 우클릭 컨텍스트 메뉴 동작
-- [ ] 3종 알림 (required/demo/blocker) + 30초 cooldown
-- [ ] MCP 상태 popover/메뉴 반영
-- [ ] App Nap 환경에서도 충돌 없음
+- [x] 메뉴바 아이콘 + 동적 텍스트 표시
+- [x] 좌클릭 popover 표시
+- [x] 우클릭 컨텍스트 메뉴 동작
+- [x] 3종 알림 (required/demo/blocker) + 30초 cooldown
+- [x] MCP 상태 popover/메뉴 반영
+- [x] App Nap 환경에서도 충돌 없음

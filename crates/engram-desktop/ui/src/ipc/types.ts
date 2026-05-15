@@ -192,3 +192,9 @@ export interface LogLine {
   msg: string;
   ts: string;
 }
+
+export interface TrayBoardSummary {
+  inbox: number;
+  demo_review: number;
+  blockers: number;
+}

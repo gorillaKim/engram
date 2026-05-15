@@ -4,6 +4,8 @@ mod commands;
 mod mcp_supervisor;
 mod settings;
 mod tracing_layer;
+mod tray;
+mod watcher;
 
 use crate::mcp_supervisor::McpSupervisor;
 use crate::tracing_layer::BroadcastLayer;
@@ -52,6 +54,18 @@ fn main() {
         .setup(move |app| {
             app.manage(db);
             app.manage(supervisor_for_setup);
+
+            // Build tray icon + menu
+            tray::build(app.handle())?;
+
+            // Spawn board watcher (emits tray://summary, sends notifications)
+            {
+                let db_for_watcher = app.state::<Arc<Db>>().inner().clone();
+                let ah_watcher = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    watcher::run(ah_watcher, db_for_watcher).await;
+                });
+            }
 
             let ah = app.handle().clone();
             let sup = app.state::<Arc<McpSupervisor>>().inner().clone();
