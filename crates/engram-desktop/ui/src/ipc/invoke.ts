@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   SessionSnapshot, IssueBoardStatus, Issue, Epic, Sprint,
   IssueFilter, Task, Note, CreateNoteInput, BlockingGraph,
+  SupervisorStatusSnapshot, CallRecord,
 } from './types';
 
 export const sessionRestore = (project_key?: string) =>
@@ -48,3 +49,23 @@ export const noteResolve = (id: number) =>
 
 export const blockedIssuesGraph = (project_key: string) =>
   invoke<BlockingGraph>('blocked_issues_graph', { project_key });
+
+// ── MCP Supervisor ────────────────────────────────────────────────────────────
+
+export const mcpStatus = () =>
+  invoke<SupervisorStatusSnapshot>('mcp_status');
+
+export const mcpStart = (port: number) =>
+  invoke<SupervisorStatusSnapshot>('mcp_start', { port });
+
+export const mcpStop = () =>
+  invoke<SupervisorStatusSnapshot>('mcp_stop');
+
+export const mcpRestart = (port: number) =>
+  invoke<SupervisorStatusSnapshot>('mcp_restart', { port });
+
+export const mcpRecentCalls = () =>
+  invoke<CallRecord[]>('mcp_recent_calls');
+
+export const mcpSetAutostart = (on: boolean) =>
+  invoke<void>('mcp_set_autostart', { on });

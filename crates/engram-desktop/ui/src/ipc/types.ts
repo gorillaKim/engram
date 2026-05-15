@@ -164,3 +164,30 @@ export interface IssueFilter {
   status?: IssueStatus;
   priority?: IssuePriority;
 }
+
+// ── MCP Supervisor ────────────────────────────────────────────────────────────
+
+export interface SupervisorStatusSnapshot {
+  running: boolean;
+  port: number;
+  started_at: string | null;
+  uptime_secs: number;
+  call_count: number;
+}
+
+export interface CallRecord {
+  name: string;
+  args_summary: string;
+  ok: boolean;
+  duration_ms: number;
+  ts: string;
+  session_id: string | null;
+  reason: string | null;
+}
+
+export interface LogLine {
+  level: string;
+  target: string;
+  msg: string;
+  ts: string;
+}

@@ -282,10 +282,10 @@ crates/engram-desktop/ui/src/                         (+/M)
 
 ## 완료 기준
 
-- [ ] 자동 기동/수동 기동 둘 다 작동
-- [ ] 시작/정지/재시작이 UI 에서 즉시 반영
-- [ ] 호출 이력 200개 ring buffer 유지
-- [ ] 로그 tail 실시간 갱신
-- [ ] 30초 timeout 동작
-- [ ] 윈도우 종료 시 graceful shutdown
-- [ ] `~/.engram/desktop.toml` 영속화
+- [x] 자동 기동/수동 기동 둘 다 작동
+- [x] 시작/정지/재시작이 UI 에서 즉시 반영
+- [x] 호출 이력 200개 ring buffer 유지
+- [x] 로그 tail 실시간 갱신
+- [x] 30초 timeout 동작
+- [x] 윈도우 종료 시 graceful shutdown
+- [x] `~/.engram/desktop.toml` 영속화

@@ -10,11 +10,15 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::sync::{oneshot, Mutex};
 use uuid::Uuid;
 
+#[derive(Clone, serde::Serialize)]
 pub struct CallRecord {
     pub name: String,
-    pub duration_ms: u64,
+    pub args_summary: String,
     pub ok: bool,
-    pub session_id: String,
+    pub duration_ms: u64,
+    pub ts: chrono::DateTime<chrono::Utc>,
+    pub session_id: Option<String>,
+    pub reason: Option<String>,
 }
 
 pub type CallHook = Arc<dyn Fn(CallRecord) + Send + Sync>;
@@ -83,17 +87,43 @@ async fn post_handler(
 
     let start = std::time::Instant::now();
     let server = crate::server::EngramMcpServer::new(Arc::clone(&state.db));
-    let response = server.handle_request(&body).await;
+    let timeout_result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        server.handle_request(&body),
+    )
+    .await;
     let duration_ms = start.elapsed().as_millis() as u64;
 
+    let (response, ok, reason) = match timeout_result {
+        Ok(resp) => {
+            let ok = resp.get("error").is_none();
+            (resp, ok, None)
+        }
+        Err(_) => {
+            let resp = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": body["id"],
+                "error": { "code": -32000, "message": "Tool call timed out (30s)" }
+            });
+            (resp, false, Some("timeout".to_string()))
+        }
+    };
+
     let tool_name = body["params"]["name"].as_str().unwrap_or("").to_string();
-    let ok = response.get("error").is_none();
+    let args_summary = body["params"]["arguments"]
+        .to_string()
+        .chars()
+        .take(100)
+        .collect::<String>();
     if !tool_name.is_empty() {
         (state.on_call)(CallRecord {
             name: tool_name,
-            duration_ms,
+            args_summary,
             ok,
-            session_id: session_id.clone(),
+            duration_ms,
+            ts: chrono::Utc::now(),
+            session_id: Some(session_id.clone()),
+            reason,
         });
     }
 

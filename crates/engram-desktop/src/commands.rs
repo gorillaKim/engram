@@ -1,3 +1,5 @@
+use crate::mcp_supervisor::{McpSupervisor, SupervisorStatusSnapshot};
+use crate::settings;
 use engram_core::{
     Db,
     models::{
@@ -10,6 +12,7 @@ use engram_core::{
     repository::session::{SessionSnapshot, IssueBoardStatus},
     repository::blocking::BlockingGraph,
 };
+use engram_mcp::http::CallRecord;
 use std::sync::Arc;
 use tauri::State;
 
@@ -217,6 +220,50 @@ pub async fn blocked_issues_graph(
     project_key: String,
 ) -> Result<BlockingGraph, String> {
     do_blocked_issues_graph(&db, &project_key).await.map_err(|e| e.to_string())
+}
+
+// ── MCP Supervisor commands ───────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn mcp_status(
+    sup: State<'_, Arc<McpSupervisor>>,
+) -> Result<SupervisorStatusSnapshot, String> {
+    Ok(sup.status().await)
+}
+
+#[tauri::command]
+pub async fn mcp_start(
+    sup: State<'_, Arc<McpSupervisor>>,
+    port: u16,
+) -> Result<SupervisorStatusSnapshot, String> {
+    sup.start(port).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn mcp_stop(
+    sup: State<'_, Arc<McpSupervisor>>,
+) -> Result<SupervisorStatusSnapshot, String> {
+    sup.stop().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn mcp_restart(
+    sup: State<'_, Arc<McpSupervisor>>,
+    port: u16,
+) -> Result<SupervisorStatusSnapshot, String> {
+    sup.restart(port).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn mcp_recent_calls(
+    sup: State<'_, Arc<McpSupervisor>>,
+) -> Result<Vec<CallRecord>, String> {
+    Ok(sup.recent_calls().await)
+}
+
+#[tauri::command]
+pub async fn mcp_set_autostart(on: bool) -> Result<(), String> {
+    settings::set_autostart(on).map_err(|e| e.to_string())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
