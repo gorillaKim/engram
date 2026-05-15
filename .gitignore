@@ -5,3 +5,5 @@
 *.db-wal
 *.db-shm
 .omc/
+node_modules/
+dist/
