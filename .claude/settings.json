@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/usr/bin/find /Users/madup/gorillaProject/engram -type f \\\\\\( -name \"*.rs\" -o -name \"*.toml\" -o -name \"*.sql\" \\\\\\))",
+      "mcp__plugin_oh-my-claudecode_t__ast_grep_search",
+      "mcp__doxus__doxus_search"
+    ]
+  }
+}
