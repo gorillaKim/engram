@@ -18,7 +18,7 @@ fn main() {
     let db = tauri::async_runtime::block_on(async {
         Arc::new(Db::open_default().await.expect("DB open failed"))
     });
-    let supervisor = McpSupervisor::new(Arc::clone(&db));
+    let supervisor = McpSupervisor::new(Arc::clone(&db), settings.mcp.autostart);
 
     // Layered tracing: fmt stderr + env-filter + broadcast for McpManager UI
     let log_tx = supervisor.log_sender();
@@ -74,10 +74,22 @@ fn main() {
 
             // Log pump: broadcast::Receiver → mcp://log event
             {
+                let ah_log = ah.clone();
                 let mut log_rx = sup.subscribe_logs();
                 tauri::async_runtime::spawn(async move {
                     while let Ok(line) = log_rx.recv().await {
-                        let _ = ah.emit("mcp://log", &line);
+                        let _ = ah_log.emit("mcp://log", &line);
+                    }
+                });
+            }
+
+            // Call pump: broadcast::Receiver<CallRecord> → mcp://call event
+            {
+                let ah_call = ah.clone();
+                let mut call_rx = sup.call_broadcast_sender().subscribe();
+                tauri::async_runtime::spawn(async move {
+                    while let Ok(rec) = call_rx.recv().await {
+                        let _ = ah_call.emit("mcp://call", &rec);
                     }
                 });
             }

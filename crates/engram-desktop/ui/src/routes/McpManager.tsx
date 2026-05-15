@@ -83,14 +83,19 @@ export function McpManager() {
           <label className="text-xs text-slate-500">포트</label>
           <input
             type="number"
+            min={1024}
+            max={65535}
             value={port}
-            onChange={e => setPort(Number(e.target.value))}
+            onChange={e => {
+              const val = Number(e.target.value);
+              if (val >= 1024 && val <= 65535) setPort(val);
+            }}
             className="w-24 text-sm border border-slate-300 rounded px-2 py-1 text-center"
           />
           <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer ml-auto">
             <input
               type="checkbox"
-              checked={status !== undefined}
+              checked={status?.autostart ?? true}
               onChange={e => autostartMut.mutate(e.target.checked)}
               className="rounded border-slate-300 text-indigo-600"
             />

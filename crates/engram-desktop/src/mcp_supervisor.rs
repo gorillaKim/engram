@@ -4,7 +4,7 @@ use engram_mcp::http::{CallHook, CallRecord};
 use std::{
     collections::VecDeque,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -20,6 +20,7 @@ pub struct SupervisorStatusSnapshot {
     pub started_at: Option<DateTime<Utc>>,
     pub uptime_secs: u64,
     pub call_count: u64,
+    pub autostart: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -42,13 +43,16 @@ pub struct McpSupervisor {
     db: Arc<Db>,
     state: Mutex<SupervisorState>,
     pub log_tx: broadcast::Sender<LogLine>,
+    call_broadcast_tx: broadcast::Sender<CallRecord>,
     call_log: Mutex<VecDeque<CallRecord>>,
     call_count: AtomicU64,
+    autostart: AtomicBool,
 }
 
 impl McpSupervisor {
-    pub fn new(db: Arc<Db>) -> Arc<Self> {
+    pub fn new(db: Arc<Db>, autostart: bool) -> Arc<Self> {
         let (log_tx, _) = broadcast::channel(256);
+        let (call_broadcast_tx, _) = broadcast::channel(256);
         Arc::new(Self {
             db,
             state: Mutex::new(SupervisorState {
@@ -59,12 +63,19 @@ impl McpSupervisor {
                 shutdown_tx: None,
             }),
             log_tx,
+            call_broadcast_tx,
             call_log: Mutex::new(VecDeque::with_capacity(200)),
             call_count: AtomicU64::new(0),
+            autostart: AtomicBool::new(autostart),
         })
     }
 
     pub async fn start(self: &Arc<Self>, port: u16) -> anyhow::Result<SupervisorStatusSnapshot> {
+        let mut s = self.state.lock().await;
+        if s.running {
+            anyhow::bail!("MCP server already running on port {}", s.port);
+        }
+
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let hook: CallHook = {
             let me = Arc::clone(self);
@@ -73,11 +84,19 @@ impl McpSupervisor {
             })
         };
         let db = Arc::clone(&self.db);
+        let me_monitor = Arc::clone(self);
         let task = tokio::spawn(async move {
-            engram_mcp::http::run_http_with_hook(db, port, hook, shutdown_rx).await
+            let result = engram_mcp::http::run_http_with_hook(db, port, hook, shutdown_rx).await;
+            // If task exits unexpectedly (before stop() was called), flip state
+            let mut s = me_monitor.state.lock().await;
+            if s.running {
+                s.running = false;
+                s.started_at = None;
+                tracing::warn!("MCP HTTP server exited unexpectedly");
+            }
+            result
         });
 
-        let mut s = self.state.lock().await;
         s.running = true;
         s.port = port;
         s.started_at = Some(Utc::now());
@@ -125,6 +144,7 @@ impl McpSupervisor {
 
     pub fn record_call(self: &Arc<Self>, rec: CallRecord) {
         self.call_count.fetch_add(1, Ordering::Relaxed);
+        let _ = self.call_broadcast_tx.send(rec.clone()); // ignore if no receivers
         // Use try_lock to avoid blocking; if busy, skip recording this call
         if let Ok(mut log) = self.call_log.try_lock() {
             if log.len() >= 200 {
@@ -132,6 +152,14 @@ impl McpSupervisor {
             }
             log.push_back(rec);
         }
+    }
+
+    pub fn call_broadcast_sender(&self) -> broadcast::Sender<CallRecord> {
+        self.call_broadcast_tx.clone()
+    }
+
+    pub fn set_autostart(&self, on: bool) {
+        self.autostart.store(on, Ordering::Relaxed);
     }
 
     fn snapshot_locked(&self, s: &SupervisorState) -> SupervisorStatusSnapshot {
@@ -145,6 +173,7 @@ impl McpSupervisor {
             started_at: s.started_at,
             uptime_secs,
             call_count: self.call_count.load(Ordering::Relaxed),
+            autostart: self.autostart.load(Ordering::Relaxed),
         }
     }
 }
@@ -156,7 +185,7 @@ mod tests {
 
     async fn make_supervisor() -> Arc<McpSupervisor> {
         let db = Arc::new(Db::open_in_memory().await.unwrap());
-        McpSupervisor::new(db)
+        McpSupervisor::new(db, false)
     }
 
     #[tokio::test]

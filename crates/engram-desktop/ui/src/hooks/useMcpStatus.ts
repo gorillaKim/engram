@@ -9,7 +9,7 @@ export function useMcpStatus() {
   const query = useQuery({
     queryKey: ['mcpStatus'],
     queryFn: mcpStatus,
-    refetchInterval: 10_000,
+    staleTime: Infinity, // updated via mcp://status events
   });
 
   useEffect(() => {

@@ -236,6 +236,9 @@ pub async fn mcp_start(
     sup: State<'_, Arc<McpSupervisor>>,
     port: u16,
 ) -> Result<SupervisorStatusSnapshot, String> {
+    if port < 1024 {
+        return Err("Port must be 1024 or higher".to_string());
+    }
     sup.start(port).await.map_err(|e| e.to_string())
 }
 
@@ -251,6 +254,9 @@ pub async fn mcp_restart(
     sup: State<'_, Arc<McpSupervisor>>,
     port: u16,
 ) -> Result<SupervisorStatusSnapshot, String> {
+    if port < 1024 {
+        return Err("Port must be 1024 or higher".to_string());
+    }
     sup.restart(port).await.map_err(|e| e.to_string())
 }
 
@@ -262,8 +268,15 @@ pub async fn mcp_recent_calls(
 }
 
 #[tauri::command]
-pub async fn mcp_set_autostart(on: bool) -> Result<(), String> {
-    settings::set_autostart(on).map_err(|e| e.to_string())
+pub async fn mcp_set_autostart(
+    sup: State<'_, Arc<McpSupervisor>>,
+    on: bool,
+) -> Result<(), String> {
+    sup.set_autostart(on);
+    tokio::task::spawn_blocking(move || settings::set_autostart(on))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

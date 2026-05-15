@@ -173,6 +173,7 @@ export interface SupervisorStatusSnapshot {
   started_at: string | null;
   uptime_secs: number;
   call_count: number;
+  autostart: boolean;
 }
 
 export interface CallRecord {
