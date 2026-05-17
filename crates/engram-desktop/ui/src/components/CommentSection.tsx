@@ -17,13 +17,13 @@ export function CommentSection({ issueId }: Props) {
     queryFn: () => noteList(issueId),
   });
 
-  const comments = notes.filter((n: Note) => n.note_type === 'context');
+  const comments = notes.filter((n: Note) => n.note_type === 'comment');
 
   const addComment = useMutation({
     mutationFn: (summary: string) =>
       noteAdd({
         issue_id: issueId,
-        note_type: 'context',
+        note_type: 'comment',
         summary,
         author: 'user',
       }),

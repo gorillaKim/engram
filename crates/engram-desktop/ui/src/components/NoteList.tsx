@@ -11,6 +11,7 @@ const NOTE_ICON: Record<NoteType, string> = {
   blocker_detail: '🚫',
   context: '✎',
   reference: '📎',
+  comment: '💬',
 };
 
 const NOTE_COLOR: Record<NoteType, string> = {
@@ -20,6 +21,7 @@ const NOTE_COLOR: Record<NoteType, string> = {
   blocker_detail: 'text-red-700 bg-red-50',
   context: 'text-slate-700 bg-slate-50',
   reference: 'text-blue-700 bg-blue-50',
+  comment: 'text-slate-700 bg-slate-50',
 };
 
 const NOTE_LABEL: Record<NoteType, string> = {
@@ -29,10 +31,11 @@ const NOTE_LABEL: Record<NoteType, string> = {
   blocker_detail: '블로커',
   context: '컨텍스트',
   reference: '참조',
+  comment: '코멘트',
 };
 
-// 생성 UI 에 노출할 타입 — context 는 CommentSection 으로 분리되어 있어 제외
-const CREATABLE_TYPES: NoteType[] = ['caveat', 'decision', 'discovery', 'blocker_detail', 'reference'];
+// 생성 UI 에 노출할 타입 — comment 는 CommentSection 으로 분리되어 있어 제외
+const CREATABLE_TYPES: NoteType[] = ['caveat', 'decision', 'discovery', 'blocker_detail', 'context', 'reference'];
 
 function NoteDetail({ id }: { id: number }) {
   const { data } = useQuery({
@@ -91,8 +94,8 @@ export function NoteList({ issueId }: Props) {
     onError: (err) => toast.error(`해결 처리 실패: ${err}`),
   });
 
-  // Exclude 'context' notes — those are rendered in CommentSection.
-  const active = notes.filter((n: Note) => !n.resolved && n.note_type !== 'context');
+  // Exclude 'comment' notes — those are rendered in CommentSection.
+  const active = notes.filter((n: Note) => !n.resolved && n.note_type !== 'comment');
 
   const canSubmit = newSummary.trim().length > 0;
 

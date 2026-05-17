@@ -527,3 +527,48 @@ async fn test_sprint_delete_empty_ok_and_blocked_when_has_epic() {
     db.sprint_delete(sprint_id).await.expect("이슈/에픽이 있어도 스프린트 삭제는 가능해야 함 (이슈는 백로그로 이동)");
     assert!(db.sprint_get(sprint_id).await.is_err(), "삭제된 스프린트 조회는 실패해야 함");
 }
+
+#[tokio::test]
+async fn test_stalled_issues_detects_working_issue() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    // 이슈 두 건: 하나는 working 으로 전이, 하나는 required 로 그대로 둠
+    let working_issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Working Issue".to_string(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(working_issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(working_issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working), ..Default::default()
+    }, "agent").await.unwrap();
+
+    let _required_issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Required Issue".to_string(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // threshold=0: working 상태인 이슈가 한 건 잡힌다
+    let stalled = db.stalled_issues(Some("test-project"), IssueStatus::Working, 0).await.unwrap();
+    assert_eq!(stalled.len(), 1, "working 이슈 1건이 잡혀야 함");
+    assert_eq!(stalled[0].id, working_issue.id);
+    assert_eq!(stalled[0].project_key, "test-project");
+    assert_eq!(stalled[0].status, IssueStatus::Working);
+    assert!(stalled[0].minutes_in_status >= 0);
+
+    // threshold=10000: 방금 만든 이슈가 10000분 정체일 수 없음 → 빈 목록
+    let none = db.stalled_issues(Some("test-project"), IssueStatus::Working, 10_000).await.unwrap();
+    assert!(none.is_empty(), "10000분 정체는 새 이슈에서 발견될 수 없음");
+
+    // required 상태도 잡혀야 함 (history 없는 경우 updated_at 폴백)
+    let req_stalled = db.stalled_issues(None, IssueStatus::Required, 0).await.unwrap();
+    assert_eq!(req_stalled.len(), 1, "required 상태 이슈가 한 건 (project_key 필터 없음)");
+
+    // 다른 프로젝트로 필터하면 빈 목록
+    let other_proj = db.stalled_issues(Some("other-project"), IssueStatus::Working, 0).await.unwrap();
+    assert!(other_proj.is_empty(), "다른 프로젝트 필터는 빈 결과");
+}

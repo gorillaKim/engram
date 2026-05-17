@@ -38,9 +38,26 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": { "id": { "type": "integer" }, "include_tasks": { "type": "boolean" }, "include_notes": { "type": "boolean" } }
             }
         }),
-        json!({ "name": "issue_list", "description": "이슈 목록을 조회합니다.",
+        json!({ "name": "issue_list",
+            "description": "이슈 목록을 조회합니다. sprint_id/project_key/status 필터를 조합해 활성 스프린트의 ready 이슈 큐 등을 만들 수 있습니다.",
             "inputSchema": { "type": "object",
-                "properties": { "epic_id": { "type": "integer" }, "project_key": { "type": "string" }, "status": { "type": "string" } }
+                "properties": {
+                    "epic_id":     { "type": "integer" },
+                    "sprint_id":   { "type": "integer" },
+                    "project_key": { "type": "string" },
+                    "status":      { "type": "string", "enum": ["required","ready","working","demo","finished","cancelled"] },
+                    "backlog_only":{ "type": "boolean" }
+                }
+            }
+        }),
+        json!({ "name": "stalled_issues",
+            "description": "지정 상태(기본 working)에서 threshold_minutes 이상 머문 이슈 목록을 반환합니다. 리더 에이전트가 정체된 작업을 단일 호출로 발견할 때 사용하세요. 반환값에는 entered_status_at, minutes_in_status 가 포함됩니다.",
+            "inputSchema": { "type": "object", "required": ["threshold_minutes"],
+                "properties": {
+                    "project_key":       { "type": "string" },
+                    "status":            { "type": "string", "enum": ["required","ready","working","demo","finished","cancelled"], "default": "working" },
+                    "threshold_minutes": { "type": "integer", "minimum": 1 }
+                }
             }
         }),
         json!({ "name": "issue_update", "description": "이슈 상태/정보를 수정합니다. draft→approved 전환으로 작업 시작을 승인합니다.",
@@ -93,12 +110,27 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let status: Option<IssueStatus> = args["status"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
     let filter = IssueFilter {
-        epic_id:     args["epic_id"].as_i64(),
-        project_key: args["project_key"].as_str().map(String::from),
-        ..Default::default()
+        epic_id:      args["epic_id"].as_i64(),
+        sprint_id:    args["sprint_id"].as_i64(),
+        backlog_only: args["backlog_only"].as_bool().unwrap_or(false),
+        project_key:  args["project_key"].as_str().map(String::from),
+        status,
+        priority:     None,
     };
     Ok(serde_json::to_value(db.issue_list(filter).await?).unwrap())
+}
+
+pub async fn stalled(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let threshold = args["threshold_minutes"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("threshold_minutes is required".to_string()))?;
+    let status: IssueStatus = args["status"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
+        .unwrap_or(IssueStatus::Working);
+    let project_key = args["project_key"].as_str();
+    Ok(serde_json::to_value(db.stalled_issues(project_key, status, threshold).await?).unwrap())
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

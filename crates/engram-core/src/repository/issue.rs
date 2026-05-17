@@ -175,6 +175,53 @@ impl Db {
         .map_err(Into::into)
     }
 
+    /// 특정 상태에서 `threshold_minutes` 이상 머문 이슈 목록을 반환한다.
+    ///
+    /// 진입 시각은 `history` 의 `field='status' AND new_value=<status>` 중 가장 최근 레코드의
+    /// `created_at` 으로 정의한다. history 가 없으면 `issues.updated_at` 으로 폴백한다.
+    ///
+    /// 리더 에이전트가 working 상태에서 정체된 이슈를 발견할 때 사용한다.
+    pub async fn stalled_issues(
+        &self,
+        project_key: Option<&str>,
+        status: IssueStatus,
+        threshold_minutes: i64,
+    ) -> Result<Vec<StalledIssue>> {
+        let status_v = serde_json::to_value(&status).unwrap().as_str().unwrap().to_string();
+
+        let mut sql = String::from(
+            "SELECT \
+                i.id AS id, \
+                i.title AS title, \
+                e.project_key AS project_key, \
+                i.status AS status, \
+                i.priority AS priority, \
+                COALESCE(MAX(h.created_at), i.updated_at) AS entered_status_at, \
+                CAST((julianday('now') - julianday(COALESCE(MAX(h.created_at), i.updated_at))) * 24 * 60 AS INTEGER) AS minutes_in_status \
+             FROM issues i \
+             JOIN epics e ON e.id = i.epic_id \
+             LEFT JOIN history h \
+                ON h.entity_type = 'issue' AND h.entity_id = i.id \
+               AND h.field = 'status' AND h.new_value = ? \
+             WHERE i.status = ?",
+        );
+        if project_key.is_some() {
+            sql.push_str(" AND e.project_key = ?");
+        }
+        sql.push_str(" GROUP BY i.id, i.title, e.project_key, i.status, i.priority, i.updated_at");
+        sql.push_str(" HAVING minutes_in_status >= ?");
+        sql.push_str(" ORDER BY minutes_in_status DESC");
+
+        let mut q = sqlx::query_as::<_, StalledIssue>(&sql)
+            .bind(&status_v) // h.new_value = ?
+            .bind(&status_v); // i.status = ?
+        if let Some(pk) = project_key {
+            q = q.bind(pk);
+        }
+        q = q.bind(threshold_minutes);
+        q.fetch_all(&self.pool).await.map_err(Into::into)
+    }
+
     /// 이슈가 source 또는 target 인 모든 링크 반환 (이슈 상세 UI 용).
     pub async fn issue_links_for(&self, issue_id: i64) -> Result<Vec<IssueLink>> {
         sqlx::query_as::<_, IssueLink>(

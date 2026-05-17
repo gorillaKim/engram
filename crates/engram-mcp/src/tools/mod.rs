@@ -57,6 +57,7 @@ pub async fn dispatch(
         "issue_unlink"        => issue::unlink(db, args).await,
         "my_blocked_issues"   => issue::my_blocked_issues(db, args).await,
         "issue_set_sprint"    => issue::set_sprint(db, args).await,
+        "stalled_issues"      => issue::stalled(db, args).await,
         // Task
         "task_create"       => task::create(db, args).await,
         "task_list"         => task::list(db, args).await,

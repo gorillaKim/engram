@@ -4,7 +4,7 @@ export type EpicStatus = 'active' | 'completed' | 'cancelled';
 export type SprintStatus = 'planning' | 'active' | 'completed' | 'cancelled';
 export type TaskStatus = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 export type TaskSource = 'planned' | 'agent_discovered' | 'user_added';
-export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 'context' | 'reference';
+export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 'context' | 'reference' | 'comment';
 
 export interface Issue {
   id: number;

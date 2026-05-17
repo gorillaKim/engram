@@ -112,3 +112,18 @@ pub struct IssueFilter {
     pub status: Option<IssueStatus>,
     pub priority: Option<IssuePriority>,
 }
+
+/// `stalled_issues` 응답 — 특정 상태에서 threshold 분 이상 머문 이슈.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct StalledIssue {
+    pub id: i64,
+    pub title: String,
+    pub project_key: String,
+    pub status: IssueStatus,
+    pub priority: IssuePriority,
+    /// 해당 상태로 진입한 시각 (history.created_at).
+    /// history 가 없으면 issues.updated_at 으로 폴백.
+    pub entered_status_at: String,
+    /// 현재까지 그 상태에서 머문 시간(분).
+    pub minutes_in_status: i64,
+}
