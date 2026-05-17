@@ -103,8 +103,34 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
                 tauri::PhysicalPosition::new(x as i32, y as i32),
             ));
             let _ = popover.set_visible_on_all_workspaces(true);
+            #[cfg(target_os = "macos")]
+            macos_enable_fullscreen_popover(&popover);
             let _ = popover.show();
             let _ = popover.set_focus();
         }
+    }
+}
+
+/// macOS 에서 트레이 팝오버가 사용자가 fullscreen 상태인 앱의 Space 위에도 떠야 한다.
+/// `set_visible_on_all_workspaces(true)` 는 `NSWindowCollectionBehaviorCanJoinAllSpaces`
+/// 만 세팅하지만, fullscreen Space 침투에는 `FullScreenAuxiliary` 가 추가로 필요하다.
+/// 또한 윈도우 레벨을 popUpMenu 수준(101)으로 올려 fullscreen 컨텐츠 위에 그린다.
+#[cfg(target_os = "macos")]
+fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
+    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+
+    let Ok(ns_ptr) = popover.ns_window() else { return };
+    if ns_ptr.is_null() {
+        return;
+    }
+    let ns_window: *const NSWindow = ns_ptr as *const NSWindow;
+    unsafe {
+        let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::Transient
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+        (*ns_window).setCollectionBehavior(behavior);
+        // NSPopUpMenuWindowLevel ≈ 101 — fullscreen 컨텐츠 위에 표시되는 표준 레벨.
+        // objc2-app-kit 0.2 의 NSWindowLevel 은 type alias 이므로 정수를 그대로 전달.
+        (*ns_window).setLevel(101);
     }
 }

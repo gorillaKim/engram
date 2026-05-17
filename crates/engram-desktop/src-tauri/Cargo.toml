@@ -22,3 +22,7 @@ chrono  = { version = "0.4", features = ["serde"] }
 toml    = "0.8"
 socket2 = "0.5"
 dirs    = "5"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2          = "0.5"
+objc2-app-kit  = { version = "0.2", default-features = false, features = ["std", "NSWindow", "NSResponder"] }
