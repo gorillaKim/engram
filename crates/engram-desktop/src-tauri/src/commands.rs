@@ -14,7 +14,7 @@ use engram_core::{
 };
 use engram_mcp::http::CallRecord;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 // ── Parse helpers ─────────────────────────────────────────────────────────────
 
@@ -277,6 +277,29 @@ pub async fn mcp_set_autostart(
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn hide_tray_popover(app: tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("tray_popover") {
+        let _ = w.hide();
+    }
+}
+
+#[tauri::command]
+pub fn show_main_window(app: tauri::AppHandle) {
+    // macOS: activate the app so it comes to front
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+    if let Some(popover) = app.get_webview_window("tray_popover") {
+        let _ = popover.hide();
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

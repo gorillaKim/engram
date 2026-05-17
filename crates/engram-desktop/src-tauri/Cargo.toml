@@ -7,9 +7,9 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-engram-core = { path = "../engram-core" }
-engram-mcp  = { path = "../engram-mcp" }
-tauri       = { version = "2", features = ["tray-icon", "image-png"] }
+engram-core = { path = "../../engram-core" }
+engram-mcp  = { path = "../../engram-mcp" }
+tauri       = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification    = "2"
 serde       = { version = "1", features = ["derive"] }

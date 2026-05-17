@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.madup.engram",
   "build": {
-    "frontendDist": "ui/dist",
+    "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm --dir ui dev",
-    "beforeBuildCommand": "pnpm --dir ui build"
+    "beforeDevCommand": "cd ../ui && pnpm dev",
+    "beforeBuildCommand": "cd ../ui && pnpm build"
   },
   "bundle": {
     "active": true,
@@ -28,7 +28,7 @@
         "label": "tray_popover",
         "url": "tray.html",
         "width": 380,
-        "height": 520,
+        "height": 360,
         "visible": false,
         "decorations": false,
         "alwaysOnTop": true,
@@ -39,10 +39,11 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "plugins": {
-    "single-instance": {},
-    "notification": {}
+    "single-instance": null,
+    "notification": null
   }
 }

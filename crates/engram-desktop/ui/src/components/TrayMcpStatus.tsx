@@ -34,17 +34,17 @@ export function TrayMcpStatus() {
   return (
     <div className="flex items-center justify-between text-xs">
       <div className="flex items-center gap-1.5">
-        <span className={`w-2 h-2 rounded-full ${status?.running ? 'bg-green-500' : 'bg-slate-400'}`} />
-        <span className="text-slate-700 font-medium">MCP</span>
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${status?.running ? 'bg-green-500' : 'bg-white/20'}`} />
+        <span className="text-white/75 font-medium">MCP</span>
         {status?.running && (
-          <span className="text-slate-400">:{status.port} · {status.call_count}calls</span>
+          <span className="text-white/35">:{status.port} · {status.call_count}calls</span>
         )}
       </div>
       <div className="flex gap-1">
         <button
           onClick={() => restartMut.mutate()}
           disabled={restartMut.isPending}
-          className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40"
+          className="px-1.5 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.14] text-white/55 disabled:opacity-30 transition-colors"
           title="재시작"
         >
           ↻
@@ -52,7 +52,7 @@ export function TrayMcpStatus() {
         <button
           onClick={() => stopMut.mutate()}
           disabled={!status?.running || stopMut.isPending}
-          className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40"
+          className="px-1.5 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.14] text-white/55 disabled:opacity-30 transition-colors"
           title="정지"
         >
           ■

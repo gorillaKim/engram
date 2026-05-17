@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for Engram desktop","local":true,"windows":["main","tray_popover"],"permissions":["core:default","core:window:allow-start-dragging","core:window:allow-hide","core:window:allow-show","core:window:allow-set-focus","core:window:allow-set-visible-on-all-workspaces","core:window:allow-set-position"]}}

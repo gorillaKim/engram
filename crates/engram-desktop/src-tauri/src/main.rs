@@ -132,19 +132,22 @@ fn main() {
             commands::mcp_restart,
             commands::mcp_recent_calls,
             commands::mcp_set_autostart,
+            commands::hide_tray_popover,
+            commands::show_main_window,
         ])
         .on_window_event(|window, event| {
-            // Only stop MCP when the main window closes, not when popover closes
+            // Auto-hide tray popover when it loses focus (native popover behaviour)
+            if window.label() == "tray_popover" {
+                if let tauri::WindowEvent::Focused(false) = event {
+                    let _ = window.hide();
+                }
+                return;
+            }
+            // Hide main window on close instead of destroying it (menu bar app pattern)
             if window.label() == "main" {
-                if let tauri::WindowEvent::CloseRequested { .. } = event {
-                    let sup = window
-                        .app_handle()
-                        .state::<Arc<McpSupervisor>>()
-                        .inner()
-                        .clone();
-                    tauri::async_runtime::block_on(async move {
-                        let _ = sup.stop().await;
-                    });
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })

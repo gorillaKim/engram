@@ -52,6 +52,7 @@ pub async fn run_http_with_hook(
     socket.set_reuse_address(true)?;
     socket.bind(&SocketAddr::from(([127, 0, 0, 1], port)).into())?;
     socket.listen(128)?;
+    socket.set_nonblocking(true)?;
     let listener = tokio::net::TcpListener::from_std(socket.into())?;
 
     tracing::info!("Engram MCP HTTP server listening on http://127.0.0.1:{port}/mcp");

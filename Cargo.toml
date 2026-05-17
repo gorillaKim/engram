@@ -3,7 +3,7 @@ members = [
     "crates/engram-core",
     "crates/engram-mcp",
     "crates/engram-cli",
-    "crates/engram-desktop",
+    "crates/engram-desktop/src-tauri",
 ]
 resolver = "2"
 
