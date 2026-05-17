@@ -40,10 +40,9 @@ impl Db {
         let sprint = self.sprint_get(sprint_id).await?;
 
         let issues = sqlx::query_as::<_, crate::models::issue::Issue>(
-            r#"SELECT i.id, i.epic_id, i.title, i.description, i.goal, i.status, i.priority, i.created_at, i.updated_at
+            r#"SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.created_at, i.updated_at
                FROM issues i
-               JOIN epics e ON i.epic_id = e.id
-               WHERE e.sprint_id = ?
+               WHERE i.sprint_id = ?
                ORDER BY i.id ASC"#,
         )
         .bind(sprint_id)
@@ -146,12 +145,12 @@ mod tests {
         }, "agent").await.unwrap();
 
         let epic = db.epic_create(CreateEpicInput {
-            sprint_id: sprint.id, project_key: "proj".to_string(),
+            project_key: "proj".to_string(),
             title: "Epic".to_string(), description: None,
         }).await.unwrap();
 
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, title: "Issue 1".to_string(),
+            epic_id: epic.id, sprint_id: Some(sprint.id), title: "Issue 1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
 

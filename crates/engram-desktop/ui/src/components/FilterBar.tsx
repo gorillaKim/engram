@@ -6,6 +6,8 @@ interface Props {
   filters: BoardFilters;
   hideFinished: boolean;
   onToggleHideFinished: () => void;
+  showCancelled: boolean;
+  onToggleShowCancelled: () => void;
   onChange: (f: Partial<BoardFilters>) => void;
   onReset: () => void;
 }
@@ -25,7 +27,10 @@ function toggle<T>(arr: T[], val: T): T[] {
   return arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val];
 }
 
-export function FilterBar({ boards, filters, hideFinished, onToggleHideFinished, onChange, onReset }: Props) {
+export function FilterBar({
+  boards, filters, hideFinished, onToggleHideFinished,
+  showCancelled, onToggleShowCancelled, onChange, onReset,
+}: Props) {
   const allProjects = boards.map((b) => b.project_key);
   const hasActiveFilters = filters.projects.length > 0 || filters.priorities.length > 0;
 
@@ -40,6 +45,17 @@ export function FilterBar({ boards, filters, hideFinished, onToggleHideFinished,
           className="rounded border-slate-300 text-indigo-600"
         />
         완료 숨기기
+      </label>
+
+      {/* Show cancelled toggle */}
+      <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={showCancelled}
+          onChange={onToggleShowCancelled}
+          className="rounded border-slate-300 text-indigo-600"
+        />
+        취소 보기
       </label>
 
       {/* Project filter (only shown when multiple projects) */}

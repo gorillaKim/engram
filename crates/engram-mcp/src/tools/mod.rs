@@ -37,11 +37,17 @@ pub async fn dispatch(
         "sprint_list"    => sprint::list(db, args).await,
         "sprint_current" => sprint::current(db, args).await,
         "sprint_update"  => sprint::update(db, args).await,
+        "sprint_delete"  => sprint::delete(db, args).await,
         // Epic
         "epic_create"  => epic::create(db, args).await,
         "epic_get"     => epic::get(db, args).await,
         "epic_list"    => epic::list(db, args).await,
-        "epic_update"  => epic::update(db, args).await,
+        "epic_update"       => epic::update(db, args).await,
+        "epic_delete"       => epic::delete(db, args).await,
+        // 백로그 / 스프린트 이동 헬퍼 (이슈가 sprint_id 를 직접 보유하는 신모델에서는
+        //   epic 단위 헬퍼는 "에픽 안의 모든 이슈를 옮기는" 편의 shim 으로 동작한다)
+        "epic_list_backlog" => epic::list_backlog(db, args).await,
+        "epic_set_sprint"   => epic::set_sprint(db, args).await,
         // Issue
         "issue_create" => issue::create(db, args).await,
         "issue_get"    => issue::get(db, args).await,
@@ -50,12 +56,14 @@ pub async fn dispatch(
         "issue_link"   => issue::link(db, args).await,
         "issue_unlink"        => issue::unlink(db, args).await,
         "my_blocked_issues"   => issue::my_blocked_issues(db, args).await,
+        "issue_set_sprint"    => issue::set_sprint(db, args).await,
         // Task
         "task_create"       => task::create(db, args).await,
         "task_list"         => task::list(db, args).await,
         "task_update"       => task::update(db, args).await,
         "task_insert_after" => task::insert_after(db, args).await,
         "task_next"         => task::next(db, args).await,
+        "task_delete"       => task::delete(db, args).await,
         // Task Tests
         "task_test_add"        => task_test::add(db, args).await,
         "task_test_add_bulk"   => task_test::add_bulk(db, args).await,

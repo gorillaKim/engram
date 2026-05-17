@@ -42,7 +42,12 @@ pub struct IssueArgs {
 
 #[derive(Subcommand)]
 pub enum IssueCommand {
-    Create { #[arg(long)] epic: i64, #[arg(long)] title: String },
+    Create {
+        #[arg(long)] epic: i64,
+        /// 소속 스프린트 ID (생략 시 백로그)
+        #[arg(long)] sprint: Option<i64>,
+        #[arg(long)] title: String,
+    },
     List { #[arg(long)] project: Option<String>, #[arg(long)] epic: Option<i64> },
     Get { id: i64 },
     Ready { id: i64 },
@@ -67,9 +72,9 @@ pub enum IssueCommand {
 
 pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
     match args.command {
-        IssueCommand::Create { epic, title } => {
+        IssueCommand::Create { epic, sprint, title } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, title, description: None, goal: None, priority: None,
+                epic_id: epic, sprint_id: sprint, title, description: None, goal: None, priority: None,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&issue)?);
         }

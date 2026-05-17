@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { historyList } from '../ipc/invoke';
 import type { HistoryEntry } from '../ipc/types';
@@ -6,6 +7,8 @@ const ACTOR_LABEL: Record<string, string> = {
   user: '사용자',
   agent: 'AI 에이전트',
 };
+
+const PAGE = 10;
 
 interface Props {
   entityType: 'issue' | 'epic' | 'task' | 'sprint' | 'note';
@@ -18,6 +21,13 @@ export function HistorySection({ entityType, entityId }: Props) {
     queryFn: () => historyList(entityType, entityId),
   });
 
+  const [visible, setVisible] = useState(PAGE);
+
+  // 최신순 정렬
+  const sorted = entries.slice().reverse();
+  const shown = sorted.slice(0, visible);
+  const hasMore = visible < sorted.length;
+
   return (
     <section>
       <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -29,7 +39,7 @@ export function HistorySection({ entityType, entityId }: Props) {
       )}
 
       <ul className="space-y-1">
-        {entries.slice().reverse().map((h: HistoryEntry) => {
+        {shown.map((h: HistoryEntry) => {
           const actor = ACTOR_LABEL[h.changed_by] ?? h.changed_by;
           return (
             <li key={h.id} className="text-xs text-slate-600 flex items-baseline gap-2">
@@ -44,6 +54,16 @@ export function HistorySection({ entityType, entityId }: Props) {
           );
         })}
       </ul>
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setVisible((v) => v + PAGE)}
+          className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+        >
+          더보기 ({sorted.length - visible}건 남음)
+        </button>
+      )}
     </section>
   );
 }

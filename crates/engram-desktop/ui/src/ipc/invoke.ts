@@ -25,11 +25,12 @@ export const issueSetStatus = (id: number, status: string) =>
 export const issueSetPriority = (id: number, priority: string) =>
   invoke<Issue>('issue_set_priority', { id, priority });
 
-export const epicList = (sprint_id?: number, project_key?: string) =>
-  invoke<Epic[]>('epic_list', { sprint_id: sprint_id ?? null, project_key: project_key ?? null });
+export const epicList = (project_key?: string) =>
+  invoke<Epic[]>('epic_list', { project_key: project_key ?? null });
 
-export const epicSetSprint = (id: number, sprint_id: number) =>
-  invoke<Epic>('epic_set_sprint', { id, sprint_id });
+/** 이슈의 sprint_id 를 변경. null 을 넘기면 백로그로 이동. */
+export const issueSetSprint = (id: number, sprint_id: number | null) =>
+  invoke<Issue>('issue_set_sprint', { id, sprint_id });
 
 export const sprintCurrent = () =>
   invoke<Sprint | null>('sprint_current');
@@ -52,6 +53,9 @@ export const sprintUpdate = (id: number, status?: string, name?: string, goal?: 
     goal: goal ?? null,
     status: status ?? null,
   });
+
+export const sprintDelete = (id: number) =>
+  invoke<void>('sprint_delete', { id });
 
 export const taskList = (issue_id: number) =>
   invoke<Task[]>('task_list', { issue_id });
@@ -98,7 +102,6 @@ export const mcpSetAutostart = (on: boolean) =>
 
 export const epicCreate = (input: CreateEpicInput) =>
   invoke<Epic>('epic_create', {
-    sprint_id: input.sprint_id,
     project_key: input.project_key,
     title: input.title,
     description: input.description ?? null,
@@ -107,6 +110,7 @@ export const epicCreate = (input: CreateEpicInput) =>
 export const issueCreate = (input: CreateIssueInput) =>
   invoke<Issue>('issue_create', {
     epic_id: input.epic_id,
+    sprint_id: input.sprint_id ?? null,
     title: input.title,
     description: input.description ?? null,
     goal: input.goal ?? null,
@@ -115,6 +119,9 @@ export const issueCreate = (input: CreateIssueInput) =>
 
 export const taskCreate = (input: CreateTaskInput) =>
   invoke<Task>('task_create', { issue_id: input.issue_id, title: input.title });
+
+export const taskDelete = (id: number) =>
+  invoke<void>('task_delete', { id });
 
 export const issueLink = (source_id: number, target_id: number, link_type: LinkType) =>
   invoke<IssueLink>('issue_link', { source_id, target_id, link_type });
@@ -127,6 +134,20 @@ export const issueLinks = (issue_id: number) =>
 
 export const epicSetStatus = (id: number, status: EpicStatus) =>
   invoke<Epic>('epic_set_status', { id, status });
+
+export const epicUpdate = (
+  id: number,
+  input: { title?: string; description?: string | null; status?: EpicStatus },
+) =>
+  invoke<Epic>('epic_update', {
+    id,
+    title: input.title ?? null,
+    description: input.description ?? null,
+    status: input.status ?? null,
+  });
+
+export const epicDelete = (id: number) =>
+  invoke<void>('epic_delete', { id });
 
 export const historyList = (entity_type: string, entity_id: number) =>
   invoke<HistoryEntry[]>('history_list', { entity_type, entity_id });

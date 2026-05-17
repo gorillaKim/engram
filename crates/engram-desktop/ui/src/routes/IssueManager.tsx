@@ -1,36 +1,78 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { sprintList, sprintUpdate, epicList, epicSetSprint, issueList } from '../ipc/invoke';
+import {
+  sprintList, sprintUpdate, sprintDelete,
+  epicList, epicDelete,
+  issueList, issueSetSprint,
+} from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { CreateSprintModal } from '../components/CreateSprintModal';
 import { CreateEpicModal } from '../components/CreateEpicModal';
 import { CreateIssueModal } from '../components/CreateIssueModal';
+import { EditEpicModal } from '../components/EditEpicModal';
 import { PriorityBadge } from '../components/PriorityBadge';
 import type { Sprint, Epic, Issue, SprintStatus } from '../ipc/types';
 
 // ── Sprint sidebar ──────────────────────────────────────────────────────────
 
+/** 사이드바에서 "백로그(스프린트 미지정)" 를 선택했을 때 selectedSprintId 로 사용하는 sentinel */
+const BACKLOG_ID = 0;
+
 const STATUS_LABEL: Record<SprintStatus, string> = {
   planning: '계획',
   active: '활성',
   completed: '완료',
+  cancelled: '취소',
 };
 
 const STATUS_CLS: Record<SprintStatus, string> = {
   planning: 'bg-yellow-100 text-yellow-700',
   active: 'bg-green-100 text-green-700',
   completed: 'bg-slate-100 text-slate-500',
+  cancelled: 'bg-red-50 text-red-400',
 };
 
+function BacklogItem({
+  selected, onClick, count,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  count?: number;
+}) {
+  return (
+    <div
+      onClick={onClick}
+      className={`p-3 rounded-lg cursor-pointer mb-1 ${selected ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-slate-50'}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">백로그</span>
+        {count != null && <span className="text-xs text-slate-400">{count}개</span>}
+      </div>
+      <p className="text-sm font-medium text-slate-800 mt-1">스프린트 미지정</p>
+      <p className="text-xs text-slate-400 mt-0.5">아직 스프린트에 들어가지 않은 이슈</p>
+    </div>
+  );
+}
+
 function SprintItem({
-  sprint, selected, onClick, onActivate,
+  sprint, selected, onClick, onActivate, onComplete, onDelete,
 }: {
   sprint: Sprint;
   selected: boolean;
   onClick: () => void;
   onActivate: () => void;
+  onComplete: () => void;
+  onDelete: () => void;
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const t = setTimeout(() => setConfirmDelete(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDelete]);
+
   return (
     <div
       onClick={onClick}
@@ -40,15 +82,44 @@ function SprintItem({
         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_CLS[sprint.status]}`}>
           {STATUS_LABEL[sprint.status]}
         </span>
-        {sprint.status === 'planning' && (
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onActivate(); }}
-            className="text-xs px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded"
-          >
-            활성화
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {sprint.status === 'planning' && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onActivate(); }}
+              className="text-xs px-2 py-0.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded"
+            >
+              활성화
+            </button>
+          )}
+          {sprint.status === 'active' && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onComplete(); }}
+              className="text-xs px-2 py-0.5 bg-green-600 hover:bg-green-500 text-white rounded"
+            >
+              완료
+            </button>
+          )}
+          {confirmDelete ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); onDelete(); }}
+              className="text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded"
+            >
+              삭제 확인
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+              title="스프린트 삭제"
+              className="text-xs px-1.5 py-0.5 text-slate-400 hover:text-red-600"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
       <p className="text-sm font-medium text-slate-800 mt-1 truncate">{sprint.name}</p>
       {sprint.goal && <p className="text-xs text-slate-400 mt-0.5 truncate">{sprint.goal}</p>}
@@ -81,32 +152,50 @@ const ISSUE_STATUS_LABEL: Record<string, string> = {
   cancelled:'취소',
 };
 
-// ── Epic row ────────────────────────────────────────────────────────────────
+// ── Epic row (groups issues belonging to one epic, in current sprint or backlog) ─
 
 function EpicRow({
-  epic, sprints, onIssueClick, onAddIssue,
+  epic, issues, sprints, onIssueClick, onAddIssue, onEdit,
 }: {
   epic: Epic;
+  issues: Issue[];
   sprints: Sprint[];
   onIssueClick: (id: number) => void;
   onAddIssue: () => void;
+  onEdit: (epic: Epic) => void;
 }) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState(true);
+  const [confirmDeleteEpic, setConfirmDeleteEpic] = useState(false);
 
-  const { data: issues = [] } = useQuery<Issue[]>({
-    queryKey: ['issueList', { epic_id: epic.id }],
-    queryFn: () => issueList({ epic_id: epic.id }),
-    staleTime: 10_000,
-  });
+  useEffect(() => {
+    if (!confirmDeleteEpic) return;
+    const t = setTimeout(() => setConfirmDeleteEpic(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteEpic]);
 
-  const moveSprint = useMutation({
-    mutationFn: (sprint_id: number) => epicSetSprint(epic.id, sprint_id),
+  const moveIssueSprint = useMutation({
+    mutationFn: ({ issueId, sprintId }: { issueId: number; sprintId: number | null }) =>
+      issueSetSprint(issueId, sprintId),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['epicList'] });
-      toast.success('에픽 스프린트가 변경되었습니다');
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('이슈 스프린트가 변경되었습니다');
     },
     onError: (e) => toast.error(`변경 실패: ${e}`),
+  });
+
+  const deleteEpic = useMutation({
+    mutationFn: () => epicDelete(epic.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['epicList'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('에픽이 삭제되었습니다');
+    },
+    onError: (e) => toast.error(`에픽 삭제 실패: ${e}`),
   });
 
   const epicStatusCls: Record<string, string> = {
@@ -132,25 +221,10 @@ function EpicRow({
         </span>
 
         <span className="text-sm font-semibold text-slate-800 flex-1 min-w-0 truncate">
-          {epic.title}
+          [{epic.project_key}] {epic.title}
         </span>
 
         <span className="text-xs text-slate-400">{issues.length}개 이슈</span>
-
-        {/* Sprint change select */}
-        <select
-          value={epic.sprint_id}
-          onChange={(e) => {
-            const newId = Number(e.target.value);
-            if (newId !== epic.sprint_id) moveSprint.mutate(newId);
-          }}
-          onClick={(e) => e.stopPropagation()}
-          className="text-xs px-2 py-1 bg-white border border-slate-200 rounded text-slate-600"
-        >
-          {sprints.map((s) => (
-            <option key={s.id} value={s.id}>{s.name}</option>
-          ))}
-        </select>
 
         <button
           type="button"
@@ -159,6 +233,34 @@ function EpicRow({
         >
           + 이슈
         </button>
+
+        <button
+          type="button"
+          onClick={() => onEdit(epic)}
+          title="에픽 수정"
+          className="text-xs px-1.5 py-1 text-slate-400 hover:text-slate-700"
+        >
+          ✎
+        </button>
+
+        {confirmDeleteEpic ? (
+          <button
+            type="button"
+            onClick={() => { setConfirmDeleteEpic(false); deleteEpic.mutate(); }}
+            className="text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded"
+          >
+            삭제 확인
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmDeleteEpic(true)}
+            title="에픽 삭제"
+            className="text-xs px-1.5 py-1 text-slate-400 hover:text-red-600"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Issue list */}
@@ -178,6 +280,26 @@ function EpicRow({
                 </span>
                 <PriorityBadge priority={issue.priority} />
                 <span className="text-sm text-slate-700 flex-1 truncate">{issue.title}</span>
+
+                {/* Sprint move dropdown (per-issue) */}
+                <select
+                  value={issue.sprint_id ?? ''}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const newId = v === '' ? null : Number(v);
+                    if (newId !== issue.sprint_id) {
+                      moveIssueSprint.mutate({ issueId: issue.id, sprintId: newId });
+                    }
+                  }}
+                  className="text-xs px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-600"
+                >
+                  <option value="">백로그</option>
+                  {sprints.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+
                 <span className="text-xs text-slate-400">#{issue.id}</span>
               </div>
             ))
@@ -197,6 +319,7 @@ export function IssueManager() {
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
   const [epicModalOpen, setEpicModalOpen] = useState(false);
   const [issueModalEpicId, setIssueModalEpicId] = useState<number | null>(null);
+  const [editEpic, setEditEpic] = useState<Epic | null>(null);
 
   const { data: sprints = [] } = useQuery<Sprint[]>({
     queryKey: ['sprintList'],
@@ -204,19 +327,54 @@ export function IssueManager() {
     refetchInterval: 30_000,
   });
 
-  // Auto-select active sprint on first load
+  const isBacklog = selectedSprintId === BACKLOG_ID;
+
   useEffect(() => {
     if (sprints.length === 0) return;
+    if (selectedSprintId === BACKLOG_ID) return;
     if (selectedSprintId != null && sprints.some((s) => s.id === selectedSprintId)) return;
     const active = sprints.find((s) => s.status === 'active') ?? sprints[0];
     selectSprint(active.id);
   }, [sprints, selectedSprintId, selectSprint]);
 
-  const { data: epics = [] } = useQuery<Epic[]>({
-    queryKey: ['epicList', selectedSprintId],
-    queryFn: () => epicList(selectedSprintId!),
+  // 현재 뷰의 이슈 — 스프린트 선택 시 sprint_id 필터, 백로그 선택 시 backlog_only.
+  const { data: issuesInView = [] } = useQuery<Issue[]>({
+    queryKey: ['issueList', isBacklog ? 'backlog' : selectedSprintId],
+    queryFn: () => isBacklog
+      ? issueList({ backlog_only: true } as any)
+      : issueList({ sprint_id: selectedSprintId } as any),
     enabled: selectedSprintId != null,
   });
+
+  // 백로그 카운트 (사이드바 표시용) — 항상 별도 쿼리.
+  const { data: backlogIssues = [] } = useQuery<Issue[]>({
+    queryKey: ['issueList', 'backlog'],
+    queryFn: () => issueList({ backlog_only: true } as any),
+    refetchInterval: 30_000,
+  });
+
+  // 모든 에픽 (제목/설명 조회용 lookup).
+  const { data: allEpics = [] } = useQuery<Epic[]>({
+    queryKey: ['epicList'],
+    queryFn: () => epicList(),
+    refetchInterval: 30_000,
+  });
+
+  // 이슈를 epic_id 별로 그룹핑.
+  const grouped = useMemo(() => {
+    const byEpic = new Map<number, Issue[]>();
+    for (const issue of issuesInView) {
+      const arr = byEpic.get(issue.epic_id) ?? [];
+      arr.push(issue);
+      byEpic.set(issue.epic_id, arr);
+    }
+    const result: { epic: Epic; issues: Issue[] }[] = [];
+    for (const [epicId, issues] of byEpic) {
+      const epic = allEpics.find((e) => e.id === epicId);
+      if (epic) result.push({ epic, issues });
+    }
+    return result;
+  }, [issuesInView, allEpics]);
 
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
@@ -230,7 +388,33 @@ export function IssueManager() {
     onError: (e) => toast.error(`활성화 실패: ${e}`),
   });
 
-  const selectedSprint = sprints.find((s) => s.id === selectedSprintId);
+  const completeSprint = useMutation({
+    mutationFn: (id: number) => sprintUpdate(id, 'completed'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sprintList'] });
+      qc.invalidateQueries({ queryKey: ['sprintCurrent'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('스프린트가 완료되었습니다');
+    },
+    onError: (e) => toast.error(`완료 처리 실패: ${e}`),
+  });
+
+  const deleteSprint = useMutation({
+    mutationFn: (id: number) => sprintDelete(id),
+    onSuccess: (_, deletedId) => {
+      if (selectedSprintId === deletedId) selectSprint(null);
+      qc.invalidateQueries({ queryKey: ['sprintList'] });
+      qc.invalidateQueries({ queryKey: ['sprintCurrent'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('스프린트가 삭제되었습니다');
+    },
+    onError: (e) => toast.error(`삭제 실패: ${e}`),
+  });
+
+  const selectedSprint = isBacklog ? null : sprints.find((s) => s.id === selectedSprintId);
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -248,6 +432,11 @@ export function IssueManager() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-2">
+          <BacklogItem
+            selected={isBacklog}
+            onClick={() => selectSprint(BACKLOG_ID)}
+            count={backlogIssues.length}
+          />
           {sprints.length === 0 && (
             <p className="text-xs text-slate-400 text-center mt-4">스프린트가 없습니다</p>
           )}
@@ -257,11 +446,9 @@ export function IssueManager() {
               sprint={sprint}
               selected={sprint.id === selectedSprintId}
               onClick={() => selectSprint(sprint.id)}
-              onActivate={() => {
-                if (confirm(`"${sprint.name}"을 활성화하시겠습니까?\n기존 활성 스프린트가 있으면 대체됩니다.`)) {
-                  activateSprint.mutate(sprint.id);
-                }
-              }}
+              onActivate={() => activateSprint.mutate(sprint.id)}
+              onComplete={() => completeSprint.mutate(sprint.id)}
+              onDelete={() => deleteSprint.mutate(sprint.id)}
             />
           ))}
         </div>
@@ -273,40 +460,56 @@ export function IssueManager() {
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 flex-shrink-0">
           <div>
             <h2 className="text-base font-semibold text-slate-800">
-              {selectedSprint ? selectedSprint.name : '스프린트를 선택하세요'}
+              {isBacklog ? '백로그' : (selectedSprint ? selectedSprint.name : '스프린트를 선택하세요')}
             </h2>
-            {selectedSprint?.goal && (
+            {isBacklog && (
+              <p className="text-xs text-slate-400 mt-0.5">스프린트에 아직 들어가지 않은 이슈 모음</p>
+            )}
+            {!isBacklog && selectedSprint?.goal && (
               <p className="text-xs text-slate-400 mt-0.5">{selectedSprint.goal}</p>
             )}
           </div>
-          {selectedSprintId != null && (
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={() => setEpicModalOpen(true)}
-              className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md"
+              className="text-sm px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md"
             >
               + 새 에픽
             </button>
-          )}
+            {allEpics.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setIssueModalEpicId(allEpics[0].id)}
+                className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md"
+              >
+                + 새 이슈
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Epic + Issue tree */}
         <div className="flex-1 overflow-y-auto p-6">
           {selectedSprintId == null && (
-            <p className="text-slate-400 text-center mt-20">왼쪽에서 스프린트를 선택하세요</p>
+            <p className="text-slate-400 text-center mt-20">왼쪽에서 스프린트나 백로그를 선택하세요</p>
           )}
-          {selectedSprintId != null && epics.length === 0 && (
+          {selectedSprintId != null && grouped.length === 0 && (
             <p className="text-slate-400 text-center mt-20">
-              에픽이 없습니다. "+ 새 에픽" 버튼으로 추가하세요.
+              {isBacklog
+                ? '백로그가 비어 있습니다. 새 이슈를 백로그로 추가하세요.'
+                : '이슈가 없습니다. "+ 새 이슈" 로 이 스프린트에 이슈를 추가하세요.'}
             </p>
           )}
-          {epics.map((epic) => (
+          {grouped.map(({ epic, issues }) => (
             <EpicRow
               key={epic.id}
               epic={epic}
+              issues={issues}
               sprints={sprints}
               onIssueClick={selectIssue}
               onAddIssue={() => setIssueModalEpicId(epic.id)}
+              onEdit={setEditEpic}
             />
           ))}
         </div>
@@ -320,12 +523,16 @@ export function IssueManager() {
       <CreateEpicModal
         open={epicModalOpen}
         onClose={() => setEpicModalOpen(false)}
-        sprintId={selectedSprintId ?? undefined}
       />
       <CreateIssueModal
         open={issueModalEpicId != null}
         onClose={() => setIssueModalEpicId(null)}
         defaultEpicId={issueModalEpicId ?? undefined}
+        defaultSprintId={isBacklog ? null : (selectedSprintId ?? null)}
+      />
+      <EditEpicModal
+        epic={editEpic}
+        onClose={() => setEditEpic(null)}
       />
     </div>
   );

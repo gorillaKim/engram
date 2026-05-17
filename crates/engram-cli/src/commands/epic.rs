@@ -19,13 +19,11 @@ pub struct EpicArgs {
 #[derive(Subcommand)]
 pub enum EpicCommand {
     Create {
-        #[arg(long)] sprint: i64,
         #[arg(long)] project: String,
         #[arg(long)] title: String,
     },
     List {
         #[arg(long)] project: Option<String>,
-        #[arg(long)] sprint: Option<i64>,
     },
     Get { id: i64 },
     /// 에픽 상태/제목/설명 수정
@@ -39,15 +37,15 @@ pub enum EpicCommand {
 
 pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
     match args.command {
-        EpicCommand::Create { sprint, project, title } => {
+        EpicCommand::Create { project, title } => {
             let epic = db.epic_create(CreateEpicInput {
-                sprint_id: sprint, project_key: project, title, description: None,
+                project_key: project, title, description: None,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&epic)?);
         }
-        EpicCommand::List { project, sprint } => {
+        EpicCommand::List { project } => {
             println!("{}", serde_json::to_string_pretty(
-                &db.epic_list(sprint, project.as_deref(), None).await?
+                &db.epic_list(project.as_deref(), None).await?
             )?);
         }
         EpicCommand::Get { id } => {
@@ -55,7 +53,6 @@ pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
         }
         EpicCommand::Update { id, status, title, description } => {
             let epic = db.epic_update(id, UpdateEpicInput {
-                sprint_id: None,
                 status: status.as_deref().map(parse_epic_status).transpose()?,
                 title,
                 description,

@@ -111,6 +111,9 @@ pub struct IssueProjectBoard {
     pub working: Vec<crate::models::Issue>,
     pub demo: Vec<crate::models::Issue>,
     pub finished: Vec<crate::models::Issue>,
+    /// 취소된 이슈 — UI 에서 토글 시 표시한다. board 에 포함시키되 기본은 숨김.
+    #[serde(default)]
+    pub cancelled: Vec<crate::models::Issue>,
 }
 
 impl Db {
@@ -134,17 +137,29 @@ impl Db {
             });
         };
 
-        // 에픽 목록 조회 (project_key 필터)
-        let epics = self.epic_list(Some(sprint.id), project_key, None).await?;
+        // 현재 스프린트에 속한 이슈를 조회한 뒤 epic_id 로 그룹핑.
+        // (에픽은 sprint-agnostic 카테고리이므로 sprint 로 직접 거를 수 없다 — 이슈 기준.)
+        let sprint_issues = self.issue_list(crate::models::issue::IssueFilter {
+            sprint_id: Some(sprint.id),
+            project_key: project_key.map(String::from),
+            ..Default::default()
+        }).await?;
+
+        // 이슈를 epic_id 별로 묶는다 (삽입 순서 유지를 위해 IndexMap 대신 Vec<(epic_id, ...)>).
+        let mut grouped: Vec<(i64, Vec<crate::models::issue::Issue>)> = Vec::new();
+        for issue in sprint_issues {
+            if let Some((_, v)) = grouped.iter_mut().find(|(eid, _)| *eid == issue.epic_id) {
+                v.push(issue);
+            } else {
+                grouped.push((issue.epic_id, vec![issue]));
+            }
+        }
 
         let mut active_epics = Vec::new();
         let mut pending_drafts = Vec::new();
 
-        for epic in epics {
-            let issues = self.issue_list(crate::models::issue::IssueFilter {
-                epic_id: Some(epic.id),
-                ..Default::default()
-            }).await?;
+        for (epic_id, issues) in grouped {
+            let epic = self.epic_get(epic_id).await?;
 
             let mut active_issues = Vec::new();
             let (mut done, mut in_prog, mut todo_cnt, total) =
@@ -343,7 +358,7 @@ impl Db {
                 COUNT(*) as total
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            WHERE e.sprint_id = ?
+            WHERE i.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -389,7 +404,7 @@ impl Db {
             JOIN epics be ON bi.epic_id = be.id
             JOIN epics te ON ti.epic_id = te.id
             WHERE il.link_type = 'blocks'
-              AND be.sprint_id = ?
+              AND bi.sprint_id = ?
               AND bi.status NOT IN ('finished', 'cancelled')
         "#.to_string();
         if project_key.is_some() {
@@ -442,13 +457,12 @@ impl Db {
         };
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.title, i.description, i.goal,
+            SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal,
                    i.status, i.priority, i.created_at, i.updated_at,
                    e.project_key as proj
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            WHERE e.sprint_id = ?
-              AND i.status NOT IN ('cancelled')
+            WHERE i.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -459,6 +473,7 @@ impl Db {
         struct IssueRow {
             id: i64,
             epic_id: i64,
+            sprint_id: Option<i64>,
             title: String,
             description: Option<String>,
             goal: Option<String>,
@@ -488,6 +503,7 @@ impl Db {
                         working: vec![],
                         demo: vec![],
                         finished: vec![],
+                        cancelled: vec![],
                     });
                     boards.last_mut().unwrap()
                 }
@@ -495,6 +511,7 @@ impl Db {
             let issue = crate::models::Issue {
                 id: r.id,
                 epic_id: r.epic_id,
+                sprint_id: r.sprint_id,
                 title: r.title,
                 description: r.description,
                 goal: r.goal,
@@ -505,12 +522,12 @@ impl Db {
             };
             use crate::models::issue::IssueStatus::*;
             match r.status {
-                Required => board.required.push(issue),
-                Ready    => board.ready.push(issue),
-                Working  => board.working.push(issue),
-                Demo     => board.demo.push(issue),
-                Finished => board.finished.push(issue),
-                Cancelled => {}
+                Required  => board.required.push(issue),
+                Ready     => board.ready.push(issue),
+                Working   => board.working.push(issue),
+                Demo      => board.demo.push(issue),
+                Finished  => board.finished.push(issue),
+                Cancelled => board.cancelled.push(issue),
             }
         }
 

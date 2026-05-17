@@ -18,9 +18,14 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({ "name": "sprint_current", "description": "현재 활성 스프린트를 조회합니다.",
             "inputSchema": { "type": "object" }
         }),
-        json!({ "name": "sprint_update", "description": "스프린트 정보를 수정합니다.",
+        json!({ "name": "sprint_update", "description": "스프린트 정보를 수정합니다. status='active' 로 전환하면 기존 활성 스프린트는 자동으로 planning 으로 강등됩니다 — 동시 활성은 1개만 허용됩니다.",
             "inputSchema": { "type": "object", "required": ["id"],
                 "properties": { "id": { "type": "integer" }, "status": { "type": "string" }, "goal": { "type": "string" } }
+            }
+        }),
+        json!({ "name": "sprint_delete", "description": "스프린트를 삭제합니다. 에픽이 하나라도 연결된 스프린트는 삭제할 수 없습니다 — 먼저 에픽을 다른 스프린트로 이동하세요.",
+            "inputSchema": { "type": "object", "required": ["id"],
+                "properties": { "id": { "type": "integer" } }
             }
         }),
     ]
@@ -56,4 +61,11 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         end_date:   args["end_date"].as_str().map(String::from),
     };
     Ok(serde_json::to_value(db.sprint_update(id, input, "agent").await?).unwrap())
+}
+
+pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    db.sprint_delete(id).await?;
+    Ok(json!({ "ok": true, "deleted_id": id }))
 }

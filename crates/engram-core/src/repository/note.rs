@@ -6,8 +6,10 @@ impl Db {
     pub async fn note_add(&self, input: CreateNoteInput) -> Result<Note> {
         let author = input.author.unwrap_or_else(|| "agent".to_string());
         let nt = serde_json::to_value(&input.note_type).unwrap().as_str().unwrap().to_string();
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        // RETURNING * — WAL 가시성 회피.
+        sqlx::query_as::<_, Note>(
+            "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author) VALUES (?, ?, ?, ?, ?, ?)
+             RETURNING id, issue_id, task_id, note_type, summary, detail, author, resolved, created_at, resolved_at",
         )
         .bind(input.issue_id)
         .bind(input.task_id)
@@ -16,8 +18,8 @@ impl Db {
         .bind(&input.detail)
         .bind(&author)
         .fetch_one(&self.pool)
-        .await?;
-        self.note_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn note_get(&self, id: i64) -> Result<Note> {

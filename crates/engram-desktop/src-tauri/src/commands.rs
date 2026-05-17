@@ -74,10 +74,9 @@ pub async fn do_issue_set_priority(
 
 pub async fn do_epic_list(
     db: &Db,
-    sprint_id: Option<i64>,
     project_key: Option<&str>,
 ) -> engram_core::Result<Vec<Epic>> {
-    db.epic_list(sprint_id, project_key, None).await
+    db.epic_list(project_key, None).await
 }
 
 pub async fn do_sprint_current(db: &Db) -> engram_core::Result<Option<Sprint>> {
@@ -96,6 +95,10 @@ pub async fn do_sprint_create(
     end_date: Option<String>,
 ) -> engram_core::Result<Sprint> {
     db.sprint_create(CreateSprintInput { name, goal, start_date, end_date }).await
+}
+
+pub async fn do_sprint_delete(db: &Db, id: i64) -> engram_core::Result<()> {
+    db.sprint_delete(id).await
 }
 
 pub async fn do_task_list(db: &Db, issue_id: i64) -> engram_core::Result<Vec<Task>> {
@@ -136,17 +139,17 @@ pub async fn do_blocked_issues_graph(
 
 pub async fn do_epic_create(
     db: &Db,
-    sprint_id: i64,
     project_key: String,
     title: String,
     description: Option<String>,
 ) -> engram_core::Result<Epic> {
-    db.epic_create(CreateEpicInput { sprint_id, project_key, title, description }).await
+    db.epic_create(CreateEpicInput { project_key, title, description }).await
 }
 
 pub async fn do_issue_create(
     db: &Db,
     epic_id: i64,
+    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
     goal: Option<String>,
@@ -157,7 +160,7 @@ pub async fn do_issue_create(
         None => None,
     };
     db.issue_create(CreateIssueInput {
-        epic_id, title, description, goal, priority: parsed_priority,
+        epic_id, sprint_id, title, description, goal, priority: parsed_priority,
     }).await
 }
 
@@ -214,7 +217,7 @@ pub async fn do_history_list(
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn session_restore(
     db: State<'_, Arc<Db>>,
     project_key: Option<String>,
@@ -222,7 +225,7 @@ pub async fn session_restore(
     do_session_restore(&db, project_key.as_deref()).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn board_status(
     db: State<'_, Arc<Db>>,
     project_key: Option<String>,
@@ -230,7 +233,7 @@ pub async fn board_status(
     do_board_status(&db, project_key.as_deref()).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_list(
     db: State<'_, Arc<Db>>,
     filter: IssueFilter,
@@ -238,12 +241,12 @@ pub async fn issue_list(
     do_issue_list(&db, filter).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_get(db: State<'_, Arc<Db>>, id: i64) -> Result<Issue, String> {
     do_issue_get(&db, id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_set_status(
     db: State<'_, Arc<Db>>,
     id: i64,
@@ -252,7 +255,7 @@ pub async fn issue_set_status(
     do_issue_set_status(&db, id, &status).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_set_priority(
     db: State<'_, Arc<Db>>,
     id: i64,
@@ -261,37 +264,34 @@ pub async fn issue_set_priority(
     do_issue_set_priority(&db, id, &priority).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn epic_list(
     db: State<'_, Arc<Db>>,
-    sprint_id: Option<i64>,
     project_key: Option<String>,
 ) -> Result<Vec<Epic>, String> {
-    do_epic_list(&db, sprint_id, project_key.as_deref()).await.map_err(|e| e.to_string())
+    do_epic_list(&db, project_key.as_deref()).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-pub async fn epic_set_sprint(
+#[tauri::command(rename_all = "snake_case")]
+pub async fn issue_set_sprint(
     db: State<'_, Arc<Db>>,
     id: i64,
-    sprint_id: i64,
-) -> Result<Epic, String> {
-    db.epic_update(id, UpdateEpicInput { sprint_id: Some(sprint_id), ..Default::default() }, "user")
-        .await
-        .map_err(|e| e.to_string())
+    sprint_id: Option<i64>,
+) -> Result<Issue, String> {
+    db.issue_set_sprint(id, sprint_id, "user").await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn sprint_current(db: State<'_, Arc<Db>>) -> Result<Option<Sprint>, String> {
     do_sprint_current(&db).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn sprint_list(db: State<'_, Arc<Db>>) -> Result<Vec<Sprint>, String> {
     do_sprint_list(&db).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn sprint_create(
     db: State<'_, Arc<Db>>,
     name: String,
@@ -302,7 +302,7 @@ pub async fn sprint_create(
     do_sprint_create(&db, name, goal, start_date, end_date).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn sprint_update(
     db: State<'_, Arc<Db>>,
     id: i64,
@@ -321,12 +321,20 @@ pub async fn sprint_update(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn sprint_delete(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), String> {
+    do_sprint_delete(&db, id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn task_list(db: State<'_, Arc<Db>>, issue_id: i64) -> Result<Vec<Task>, String> {
     do_task_list(&db, issue_id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn task_set_status(
     db: State<'_, Arc<Db>>,
     id: i64,
@@ -335,17 +343,17 @@ pub async fn task_set_status(
     do_task_set_status(&db, id, &status).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn note_list(db: State<'_, Arc<Db>>, issue_id: i64) -> Result<Vec<Note>, String> {
     do_note_list(&db, issue_id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn note_get(db: State<'_, Arc<Db>>, id: i64) -> Result<Note, String> {
     do_note_get(&db, id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn note_add(
     db: State<'_, Arc<Db>>,
     input: CreateNoteInput,
@@ -353,12 +361,12 @@ pub async fn note_add(
     do_note_add(&db, input).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn note_resolve(db: State<'_, Arc<Db>>, id: i64) -> Result<Note, String> {
     do_note_resolve(&db, id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn blocked_issues_graph(
     db: State<'_, Arc<Db>>,
     project_key: String,
@@ -368,30 +376,30 @@ pub async fn blocked_issues_graph(
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn epic_create(
     db: State<'_, Arc<Db>>,
-    sprint_id: i64,
     project_key: String,
     title: String,
     description: Option<String>,
 ) -> Result<Epic, String> {
-    do_epic_create(&db, sprint_id, project_key, title, description).await.map_err(|e| e.to_string())
+    do_epic_create(&db, project_key, title, description).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_create(
     db: State<'_, Arc<Db>>,
     epic_id: i64,
+    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
     goal: Option<String>,
     priority: Option<String>,
 ) -> Result<Issue, String> {
-    do_issue_create(&db, epic_id, title, description, goal, priority).await.map_err(|e| e.to_string())
+    do_issue_create(&db, epic_id, sprint_id, title, description, goal, priority).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn task_create(
     db: State<'_, Arc<Db>>,
     issue_id: i64,
@@ -400,7 +408,15 @@ pub async fn task_create(
     do_task_create(&db, issue_id, title).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn task_delete(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), String> {
+    db.task_delete(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_link(
     db: State<'_, Arc<Db>>,
     source_id: i64,
@@ -410,7 +426,7 @@ pub async fn issue_link(
     do_issue_link(&db, source_id, target_id, &link_type).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_unlink(
     db: State<'_, Arc<Db>>,
     link_id: i64,
@@ -418,7 +434,7 @@ pub async fn issue_unlink(
     do_issue_unlink(&db, link_id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn issue_links(
     db: State<'_, Arc<Db>>,
     issue_id: i64,
@@ -426,7 +442,7 @@ pub async fn issue_links(
     do_issue_links(&db, issue_id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn epic_set_status(
     db: State<'_, Arc<Db>>,
     id: i64,
@@ -435,7 +451,33 @@ pub async fn epic_set_status(
     do_epic_set_status(&db, id, &status).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
+pub async fn epic_update(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    status: Option<String>,
+) -> Result<Epic, String> {
+    let status_parsed = if let Some(s) = status {
+        Some(parse::<EpicStatus>(&s).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    db.epic_update(id, UpdateEpicInput { title, description, status: status_parsed, ..Default::default() }, "user")
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn epic_delete(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), String> {
+    db.epic_delete(id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub async fn history_list(
     db: State<'_, Arc<Db>>,
     entity_type: String,
@@ -446,14 +488,14 @@ pub async fn history_list(
 
 // ── MCP Supervisor commands ───────────────────────────────────────────────────
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_status(
     sup: State<'_, Arc<McpSupervisor>>,
 ) -> Result<SupervisorStatusSnapshot, String> {
     Ok(sup.status().await)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_start(
     sup: State<'_, Arc<McpSupervisor>>,
     port: u16,
@@ -464,14 +506,14 @@ pub async fn mcp_start(
     sup.start(port).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_stop(
     sup: State<'_, Arc<McpSupervisor>>,
 ) -> Result<SupervisorStatusSnapshot, String> {
     sup.stop().await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_restart(
     sup: State<'_, Arc<McpSupervisor>>,
     port: u16,
@@ -482,14 +524,14 @@ pub async fn mcp_restart(
     sup.restart(port).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_recent_calls(
     sup: State<'_, Arc<McpSupervisor>>,
 ) -> Result<Vec<CallRecord>, String> {
     Ok(sup.recent_calls().await)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn mcp_set_autostart(
     sup: State<'_, Arc<McpSupervisor>>,
     on: bool,
@@ -501,14 +543,14 @@ pub async fn mcp_set_autostart(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn hide_tray_popover(app: tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("tray_popover") {
         let _ = w.hide();
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub fn show_main_window(app: tauri::AppHandle) {
     // macOS: activate the app so it comes to front
     #[cfg(target_os = "macos")]
@@ -552,11 +594,11 @@ mod tests {
             status: Some(SprintStatus::Active), ..Default::default()
         }, "agent").await.unwrap();
         let epic = db.epic_create(CreateEpicInput {
-            sprint_id: sprint.id, project_key: "proj".to_string(),
+            project_key: "proj".to_string(),
             title: "E1".to_string(), description: None,
         }).await.unwrap();
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, title: "I1".to_string(),
+            epic_id: epic.id, sprint_id: Some(sprint.id), title: "I1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
         (epic.id, issue.id)
@@ -604,13 +646,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_issue_set_status_invalid_transition_returns_err() {
+    async fn test_issue_set_status_any_transition_allowed() {
+        // 사용자가 칸반에서 카드를 양방향으로 자유롭게 옮길 수 있어야 한다 —
+        // can_transition_to 는 항상 true. 우회 가드는 워커 에이전트 프롬프트 책임.
         let db = setup().await;
         let (_, issue_id) = seed_issue(&db).await;
-        // required → working is not allowed
-        let err = do_issue_set_status(&db, issue_id, "working").await.unwrap_err();
-        assert!(err.to_string().contains("transition") || err.to_string().contains("Invalid"),
-            "expected InvalidTransition error, got: {err}");
+        let updated = do_issue_set_status(&db, issue_id, "working").await.unwrap();
+        assert_eq!(updated.status, IssueStatus::Working);
+
+        // 역방향도 OK
+        let reverted = do_issue_set_status(&db, issue_id, "required").await.unwrap();
+        assert_eq!(reverted.status, IssueStatus::Required);
     }
 
     #[tokio::test]

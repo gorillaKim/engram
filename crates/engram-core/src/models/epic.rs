@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Epic {
     pub id: i64,
-    pub sprint_id: i64,
     pub project_key: String,
     pub title: String,
     pub description: Option<String>,
@@ -23,7 +22,6 @@ pub enum EpicStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateEpicInput {
-    pub sprint_id: i64,
     pub project_key: String,
     pub title: String,
     pub description: Option<String>,
@@ -31,7 +29,6 @@ pub struct CreateEpicInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateEpicInput {
-    pub sprint_id: Option<i64>,
     pub title: Option<String>,
     pub description: Option<String>,
     pub status: Option<EpicStatus>,

@@ -16,14 +16,21 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "issue_create",
-            "description": "새 이슈를 draft 상태로 생성합니다. 반드시 사용자 승인(issue_update status=approved) 후 작업을 시작하세요.",
+            "description": "새 이슈를 required(승인대기) 상태로 생성합니다. sprint_id 를 지정하면 해당 스프린트에, 생략하면 백로그에 들어갑니다. 작업 시작 전 반드시 사용자가 ready 로 승격해야 합니다.",
             "inputSchema": { "type": "object", "required": ["epic_id", "title"],
                 "properties": {
                     "epic_id":     { "type": "integer" },
+                    "sprint_id":   { "type": "integer", "description": "소속 스프린트 ID (생략 시 백로그)" },
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
                     "priority":    { "type": "string", "enum": ["critical","high","medium","low"] }
                 }
+            }
+        }),
+        json!({ "name": "issue_set_sprint",
+            "description": "이슈의 소속 스프린트를 변경합니다. sprint_id 를 생략하면 백로그로 이동합니다.",
+            "inputSchema": { "type": "object", "required": ["id"],
+                "properties": { "id": { "type": "integer" }, "sprint_id": { "type": "integer" } }
             }
         }),
         json!({ "name": "issue_get", "description": "이슈 상세를 조회합니다.",
@@ -60,14 +67,24 @@ pub fn tool_definitions() -> Vec<Value> {
 }
 
 pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let priority: Option<IssuePriority> = args["priority"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
     let input = CreateIssueInput {
         epic_id:     args["epic_id"].as_i64().unwrap_or(0),
+        sprint_id:   args["sprint_id"].as_i64(),
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
         goal:        args["goal"].as_str().map(String::from),
-        priority:    None,
+        priority,
     };
     Ok(serde_json::to_value(db.issue_create(input).await?).unwrap())
+}
+
+pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let sprint_id = args["sprint_id"].as_i64(); // None → 백로그로 이동
+    Ok(serde_json::to_value(db.issue_set_sprint(id, sprint_id, "agent").await?).unwrap())
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

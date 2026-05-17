@@ -23,6 +23,9 @@ pub enum SprintCommand {
         #[arg(long)] status: Option<String>,
         #[arg(long)] goal: Option<String>,
     },
+    Delete {
+        id: i64,
+    },
 }
 
 pub async fn run(db: Db, args: SprintArgs) -> anyhow::Result<()> {
@@ -38,6 +41,10 @@ pub async fn run(db: Db, args: SprintArgs) -> anyhow::Result<()> {
         }
         SprintCommand::Current => {
             println!("{}", serde_json::to_string_pretty(&db.sprint_current().await?)?);
+        }
+        SprintCommand::Delete { id } => {
+            db.sprint_delete(id).await?;
+            println!("{}", serde_json::json!({ "ok": true, "deleted_id": id }));
         }
         SprintCommand::Update { id, name, status, goal } => {
             let parsed_status = status.as_deref().map(|s| match s {

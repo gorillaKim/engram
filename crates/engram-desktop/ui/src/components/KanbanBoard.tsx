@@ -13,13 +13,14 @@ import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useUIStore } from '../store/ui';
 import type { Issue, IssueStatus, IssueProjectBoard } from '../ipc/types';
 
-type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished';
+type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 const STANDARD_COLUMNS: BoardColumn[] = ['required', 'ready', 'working', 'demo', 'finished'];
 
 export function KanbanBoard() {
   const {
     selectedProjectKey, selectIssue,
     hideFinished, toggleHideFinished,
+    showCancelled, toggleShowCancelled,
     boardFilters, setBoardFilters, resetBoardFilters,
   } = useUIStore();
 
@@ -46,9 +47,10 @@ export function KanbanBoard() {
   // Apply client-side filters
   const filteredBoards = applyFilters(boards, boardFilters);
 
-  const visibleColumns: BoardColumn[] = STANDARD_COLUMNS.filter(
-    (c) => !(hideFinished && c === 'finished')
-  );
+  const visibleColumns: BoardColumn[] = [
+    ...STANDARD_COLUMNS.filter((c) => !(hideFinished && c === 'finished')),
+    ...(showCancelled ? (['cancelled'] as BoardColumn[]) : []),
+  ];
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveIssue(null);
@@ -75,6 +77,8 @@ export function KanbanBoard() {
           filters={boardFilters}
           hideFinished={hideFinished}
           onToggleHideFinished={toggleHideFinished}
+          showCancelled={showCancelled}
+          onToggleShowCancelled={toggleShowCancelled}
           onChange={setBoardFilters}
           onReset={resetBoardFilters}
         />
@@ -188,6 +192,7 @@ function applyFilters(
         working: filterIssues(board.working),
         demo: filterIssues(board.demo),
         finished: filterIssues(board.finished),
+        cancelled: filterIssues(board.cancelled ?? []),
       };
     });
   }

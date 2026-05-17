@@ -1,27 +1,39 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicList, issueCreate } from '../ipc/invoke';
-import type { Epic, IssuePriority } from '../ipc/types';
+import { epicList, issueCreate, sprintList } from '../ipc/invoke';
+import type { Epic, IssuePriority, Sprint } from '../ipc/types';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   projectKey?: string;
   defaultEpicId?: number;
+  /** 기본 선택 스프린트. null 이면 백로그로 기본 선택 */
+  defaultSprintId?: number | null;
 }
 
 const PRIORITIES: IssuePriority[] = ['critical', 'high', 'medium', 'low'];
 
-export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: Props) {
+export function CreateIssueModal({
+  open, onClose, projectKey, defaultEpicId, defaultSprintId,
+}: Props) {
   const qc = useQueryClient();
+
   const { data: epics = [] } = useQuery({
     queryKey: ['epicList', projectKey],
-    queryFn: () => epicList(undefined, projectKey),
+    queryFn: () => epicList(projectKey),
+    enabled: open,
+  });
+
+  const { data: sprints = [] } = useQuery<Sprint[]>({
+    queryKey: ['sprintList'],
+    queryFn: sprintList,
     enabled: open,
   });
 
   const [epicId, setEpicId] = useState<number | ''>('');
+  const [sprintId, setSprintId] = useState<number | null>(null); // null = 백로그
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<IssuePriority>('medium');
@@ -29,16 +41,18 @@ export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: P
   useEffect(() => {
     if (open) {
       setEpicId(defaultEpicId ?? (epics[0]?.id ?? ''));
+      setSprintId(defaultSprintId ?? null);
       setTitle('');
       setDescription('');
       setPriority('medium');
     }
-  }, [open, defaultEpicId, epics]);
+  }, [open, defaultEpicId, defaultSprintId, epics]);
 
   const create = useMutation({
     mutationFn: () =>
       issueCreate({
         epic_id: epicId as number,
+        sprint_id: sprintId,
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
@@ -46,7 +60,9 @@ export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: P
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['boardStatus'] });
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
-      toast.success('이슈가 생성되었습니다');
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['issueListBacklog'] });
+      toast.success(sprintId == null ? '이슈가 백로그에 추가되었습니다' : '이슈가 생성되었습니다');
       onClose();
     },
     onError: (err) => toast.error(`이슈 생성 실패: ${err}`),
@@ -55,6 +71,7 @@ export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: P
   if (!open) return null;
 
   const canSubmit = title.trim().length > 0 && typeof epicId === 'number';
+  const selectableSprints = sprints.filter((s) => s.status !== 'cancelled');
 
   return (
     <div
@@ -76,6 +93,22 @@ export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: P
               {epics.map((epic: Epic) => (
                 <option key={epic.id} value={epic.id}>
                   [{epic.project_key}] {epic.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">스프린트</label>
+            <select
+              value={sprintId ?? ''}
+              onChange={(e) => setSprintId(e.target.value === '' ? null : Number(e.target.value))}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="">백로그 (스프린트 미지정)</option>
+              {selectableSprints.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} {s.status === 'active' ? '· 활성' : s.status === 'completed' ? '· 완료' : '· 계획'}
                 </option>
               ))}
             </select>

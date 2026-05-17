@@ -29,8 +29,7 @@ async fn seed_sprint_epic(db: &Db) -> (i64, i64) {
     }, "agent").await.unwrap();
 
     let epic = db.epic_create(CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "test-project".to_string(),
+        project_key:"test-project".to_string(),
         title: "Test Epic".to_string(),
         description: None,
     }).await.unwrap();
@@ -41,12 +40,13 @@ async fn seed_sprint_epic(db: &Db) -> (i64, i64) {
 #[tokio::test]
 async fn test_full_sprint_workflow() {
     let db = setup().await;
-    let (_, epic_id) = seed_sprint_epic(&db).await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
 
     // 이슈 생성 (required)
     let issue = db.issue_create(CreateIssueInput {
         epic_id,
-        title: "Test Issue".to_string(),
+        sprint_id: Some(sprint_id),
+        title:"Test Issue".to_string(),
         description: None,
         goal: Some("인증 흐름 완전 전환".to_string()),
         priority: None,
@@ -108,14 +108,14 @@ async fn test_full_sprint_workflow() {
 #[tokio::test]
 async fn test_blocked_by_reverse_query() {
     let db = setup().await;
-    let (_, epic_id) = seed_sprint_epic(&db).await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
 
     let issue_a = db.issue_create(CreateIssueInput {
-        epic_id, title: "Issue A".to_string(), description: None, goal: None, priority: None,
+        epic_id, sprint_id: Some(sprint_id), title:"Issue A".to_string(), description: None, goal: None, priority: None,
     }).await.unwrap();
 
     let issue_b = db.issue_create(CreateIssueInput {
-        epic_id, title: "Issue B".to_string(), description: None, goal: None, priority: None,
+        epic_id, sprint_id: Some(sprint_id), title:"Issue B".to_string(), description: None, goal: None, priority: None,
     }).await.unwrap();
 
     // A blocks B
@@ -132,10 +132,10 @@ async fn test_blocked_by_reverse_query() {
 #[tokio::test]
 async fn test_fractional_ord_insert() {
     let db = setup().await;
-    let (_, epic_id) = seed_sprint_epic(&db).await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
 
     let issue = db.issue_create(CreateIssueInput {
-        epic_id, title: "Issue".to_string(), description: None, goal: None, priority: None,
+        epic_id, sprint_id: Some(sprint_id), title:"Issue".to_string(), description: None, goal: None, priority: None,
     }).await.unwrap();
 
     let t1 = db.task_create(CreateTaskInput {
@@ -181,15 +181,13 @@ async fn test_session_restore_filters_by_project() {
     }, "agent").await.unwrap();
 
     let epic_a = db.epic_create(CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "proj-a".to_string(),
+        project_key:"proj-a".to_string(),
         title: "Epic A".to_string(),
         description: None,
     }).await.unwrap();
 
     let epic_b = db.epic_create(CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "proj-b".to_string(),
+        project_key:"proj-b".to_string(),
         title: "Epic B".to_string(),
         description: None,
     }).await.unwrap();
@@ -197,7 +195,8 @@ async fn test_session_restore_filters_by_project() {
     // proj-a 이슈 생성 후 Ready 전환
     let issue_a = db.issue_create(CreateIssueInput {
         epic_id: epic_a.id,
-        title: "Issue A".to_string(),
+        sprint_id: Some(sprint.id),
+        title:"Issue A".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -210,7 +209,8 @@ async fn test_session_restore_filters_by_project() {
     // proj-b 이슈 생성 후 Ready 전환
     let issue_b = db.issue_create(CreateIssueInput {
         epic_id: epic_b.id,
-        title: "Issue B".to_string(),
+        sprint_id: Some(sprint.id),
+        title:"Issue B".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -234,12 +234,13 @@ async fn test_session_restore_filters_by_project() {
 #[tokio::test]
 async fn test_task_next_priority_ordering() {
     let db = setup().await;
-    let (_, epic_id) = seed_sprint_epic(&db).await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
 
     // 이슈 A: Critical
     let issue_a = db.issue_create(CreateIssueInput {
         epic_id,
-        title: "Critical Issue".to_string(),
+        sprint_id: Some(sprint_id),
+        title:"Critical Issue".to_string(),
         description: None,
         goal: None,
         priority: Some(IssuePriority::Critical),
@@ -252,7 +253,8 @@ async fn test_task_next_priority_ordering() {
     // 이슈 B: High
     let issue_b = db.issue_create(CreateIssueInput {
         epic_id,
-        title: "High Issue".to_string(),
+        sprint_id: Some(sprint_id),
+        title:"High Issue".to_string(),
         description: None,
         goal: None,
         priority: Some(IssuePriority::High),
@@ -311,14 +313,12 @@ async fn test_cross_project_blocking() {
     }, "agent").await.unwrap();
 
     let epic_a = db.epic_create(CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "proj-a".to_string(),
+        project_key:"proj-a".to_string(),
         title: "Epic A".to_string(),
         description: None,
     }).await.unwrap();
     let epic_b = db.epic_create(CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "proj-b".to_string(),
+        project_key:"proj-b".to_string(),
         title: "Epic B".to_string(),
         description: None,
     }).await.unwrap();
@@ -326,7 +326,8 @@ async fn test_cross_project_blocking() {
     // proj-a 이슈 A (Ready)
     let issue_a = db.issue_create(CreateIssueInput {
         epic_id: epic_a.id,
-        title: "Issue A (blocker)".to_string(),
+        sprint_id: Some(sprint.id),
+        title:"Issue A (blocker)".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -339,7 +340,8 @@ async fn test_cross_project_blocking() {
     // proj-b 이슈 B (Ready)
     let issue_b = db.issue_create(CreateIssueInput {
         epic_id: epic_b.id,
-        title: "Issue B (blocked)".to_string(),
+        sprint_id: Some(sprint.id),
+        title:"Issue B (blocked)".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -389,12 +391,13 @@ async fn test_cross_project_blocking() {
 #[tokio::test]
 async fn test_scope_expansion_warning() {
     let db = setup().await;
-    let (_, epic_id) = seed_sprint_epic(&db).await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
 
     // 이슈 생성 및 Ready 전환
     let issue = db.issue_create(CreateIssueInput {
         epic_id,
-        title: "Scope Expansion Issue".to_string(),
+        sprint_id: Some(sprint_id),
+        title:"Scope Expansion Issue".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -446,15 +449,15 @@ async fn test_history_records_changed_by_actor() {
     }, "user").await.unwrap();
 
     let epic = db.epic_create(engram_core::models::epic::CreateEpicInput {
-        sprint_id: sprint.id,
-        project_key: "actor-test".to_string(),
+        project_key:"actor-test".to_string(),
         title: "Actor Epic".to_string(),
         description: None,
     }).await.unwrap();
 
     let issue = db.issue_create(CreateIssueInput {
         epic_id: epic.id,
-        title: "Actor Issue".to_string(),
+        sprint_id: Some(sprint.id),
+        title:"Actor Issue".to_string(),
         description: None,
         goal: None,
         priority: None,
@@ -476,4 +479,51 @@ async fn test_history_records_changed_by_actor() {
 
     let demo_entry = status_history.iter().rfind(|h| h.new_value.as_deref() == Some("demo")).unwrap();
     assert_eq!(demo_entry.changed_by, "agent", "demo 전이는 agent가 한 것으로 기록되어야 함");
+}
+
+#[tokio::test]
+async fn test_sprint_single_active_invariant() {
+    let db = setup().await;
+
+    let s1 = db.sprint_create(CreateSprintInput {
+        name: "S1".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let s2 = db.sprint_create(CreateSprintInput {
+        name: "S2".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+
+    db.sprint_update(s1.id, UpdateSprintInput {
+        status: Some(SprintStatus::Active), ..Default::default()
+    }, "user").await.unwrap();
+    assert_eq!(db.sprint_get(s1.id).await.unwrap().status, SprintStatus::Active);
+
+    // s2 활성화 → s1 은 자동으로 planning 으로 강등되어야 함
+    db.sprint_update(s2.id, UpdateSprintInput {
+        status: Some(SprintStatus::Active), ..Default::default()
+    }, "user").await.unwrap();
+
+    assert_eq!(db.sprint_get(s1.id).await.unwrap().status, SprintStatus::Planning,
+        "이전 활성 스프린트는 planning 으로 강등되어야 함");
+    assert_eq!(db.sprint_get(s2.id).await.unwrap().status, SprintStatus::Active);
+
+    let active = db.sprint_list(None).await.unwrap()
+        .into_iter().filter(|s| s.status == SprintStatus::Active).count();
+    assert_eq!(active, 1, "활성 스프린트는 항상 1개 이하여야 함");
+}
+
+#[tokio::test]
+async fn test_sprint_delete_empty_ok_and_blocked_when_has_epic() {
+    let db = setup().await;
+
+    let empty = db.sprint_create(CreateSprintInput {
+        name: "Empty".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db.sprint_delete(empty.id).await.expect("빈 스프린트는 삭제 가능해야 함");
+    assert!(db.sprint_get(empty.id).await.is_err(), "삭제된 스프린트 조회는 실패해야 함");
+
+    // 새 설계: 이슈는 issues.sprint_id 로 직접 스프린트 소속.
+    // 스프린트 삭제 시 ON DELETE SET NULL 로 이슈가 자동으로 백로그로 이동.
+    let (sprint_id, _) = seed_sprint_epic(&db).await;
+    db.sprint_delete(sprint_id).await.expect("이슈/에픽이 있어도 스프린트 삭제는 가능해야 함 (이슈는 백로그로 이동)");
+    assert!(db.sprint_get(sprint_id).await.is_err(), "삭제된 스프린트 조회는 실패해야 함");
 }

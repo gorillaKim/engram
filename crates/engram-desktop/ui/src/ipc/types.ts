@@ -1,7 +1,7 @@
 export type IssueStatus = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 export type IssuePriority = 'critical' | 'high' | 'medium' | 'low';
 export type EpicStatus = 'active' | 'completed' | 'cancelled';
-export type SprintStatus = 'planning' | 'active' | 'completed';
+export type SprintStatus = 'planning' | 'active' | 'completed' | 'cancelled';
 export type TaskStatus = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 export type TaskSource = 'planned' | 'agent_discovered' | 'user_added';
 export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 'context' | 'reference';
@@ -9,6 +9,8 @@ export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 
 export interface Issue {
   id: number;
   epic_id: number;
+  /** null이면 백로그(스프린트 미지정). Sprint↔Issue 는 직접 매핑. */
+  sprint_id: number | null;
   title: string;
   description: string | null;
   goal: string | null;
@@ -20,7 +22,6 @@ export interface Issue {
 
 export interface Epic {
   id: number;
-  sprint_id: number;
   project_key: string;
   title: string;
   description: string | null;
@@ -157,6 +158,8 @@ export interface IssueProjectBoard {
   working: Issue[];
   demo: Issue[];
   finished: Issue[];
+  /** 취소된 이슈 모음 — 사용자가 "취소 보기" 를 켰을 때 노출 */
+  cancelled: Issue[];
 }
 
 export interface IssueBoardStatus {
@@ -211,6 +214,8 @@ export interface TrayBoardSummary {
 
 export interface CreateIssueInput {
   epic_id: number;
+  /** null/undefined 이면 백로그(스프린트 미지정) */
+  sprint_id?: number | null;
   title: string;
   description?: string;
   goal?: string;
@@ -218,7 +223,6 @@ export interface CreateIssueInput {
 }
 
 export interface CreateEpicInput {
-  sprint_id: number;
   project_key: string;
   title: string;
   description?: string;

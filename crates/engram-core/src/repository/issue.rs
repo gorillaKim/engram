@@ -6,22 +6,25 @@ impl Db {
     pub async fn issue_create(&self, input: CreateIssueInput) -> Result<Issue> {
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO issues (epic_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?) RETURNING id",
+        // RETURNING * 단일 쿼리 — sprint/epic_create 와 동일 패턴.
+        sqlx::query_as::<_, Issue>(
+            "INSERT INTO issues (epic_id, sprint_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?)
+             RETURNING id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at",
         )
         .bind(input.epic_id)
+        .bind(input.sprint_id)
         .bind(&input.title)
         .bind(&input.description)
         .bind(&input.goal)
         .bind(&pval)
         .fetch_one(&self.pool)
-        .await?;
-        self.issue_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn issue_get(&self, id: i64) -> Result<Issue> {
         sqlx::query_as::<_, Issue>(
-            "SELECT id, epic_id, title, description, goal, status, priority, created_at, updated_at FROM issues WHERE id = ?",
+            "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at FROM issues WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -30,8 +33,10 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT id, epic_id, title, description, goal, status, priority, created_at, updated_at FROM issues i WHERE 1=1".to_string();
+        let mut sql = "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at FROM issues i WHERE 1=1".to_string();
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
+        if filter.sprint_id.is_some()   { sql.push_str(" AND i.sprint_id = ?"); }
+        if filter.backlog_only           { sql.push_str(" AND i.sprint_id IS NULL"); }
         if filter.project_key.is_some() {
             sql.push_str(" AND EXISTS (SELECT 1 FROM epics e WHERE e.id = i.epic_id AND e.project_key = ?)");
         }
@@ -40,12 +45,32 @@ impl Db {
 
         let mut q = sqlx::query_as::<_, Issue>(&sql);
         if let Some(e) = filter.epic_id     { q = q.bind(e); }
+        if let Some(s) = filter.sprint_id   { q = q.bind(s); }
         if let Some(p) = filter.project_key { q = q.bind(p); }
         if let Some(s) = filter.status {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
             q = q.bind(sv);
         }
         q.fetch_all(&self.pool).await.map_err(Into::into)
+    }
+
+    /// 이슈의 스프린트 소속을 변경한다. None 을 넘기면 백로그로 이동.
+    pub async fn issue_set_sprint(&self, id: i64, sprint_id: Option<i64>, changed_by: &str) -> Result<Issue> {
+        let current = self.issue_get(id).await?;
+        sqlx::query("UPDATE issues SET sprint_id = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(sprint_id)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Issue,
+            entity_id: id,
+            field: "sprint_id".to_string(),
+            old_value: Some(current.sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())),
+            new_value: Some(sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())),
+            changed_by: changed_by.to_string(),
+        }).await;
+        self.issue_get(id).await
     }
 
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
@@ -123,17 +148,12 @@ impl Db {
 
     pub async fn issue_link(&self, source_id: i64, target_id: i64, link_type: LinkType) -> Result<IssueLink> {
         let lt = serde_json::to_value(&link_type).unwrap().as_str().unwrap().to_string();
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO issue_links (source_id, target_id, link_type) VALUES (?, ?, ?) RETURNING id",
+        // RETURNING * — WAL 가시성 회피.
+        sqlx::query_as::<_, IssueLink>(
+            "INSERT INTO issue_links (source_id, target_id, link_type) VALUES (?, ?, ?)
+             RETURNING id, source_id, target_id, link_type, created_at",
         )
         .bind(source_id).bind(target_id).bind(&lt)
-        .fetch_one(&self.pool)
-        .await?;
-
-        sqlx::query_as::<_, IssueLink>(
-            "SELECT id, source_id, target_id, link_type, created_at FROM issue_links WHERE id = ?",
-        )
-        .bind(id)
         .fetch_one(&self.pool)
         .await
         .map_err(Into::into)

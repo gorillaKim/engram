@@ -3,14 +3,16 @@ use crate::{Db, Error, Result};
 
 impl Db {
     pub async fn task_test_add(&self, task_id: i64, label: String) -> Result<TaskTest> {
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO task_tests (task_id, label) VALUES (?, ?) RETURNING id",
+        // RETURNING * — INSERT 후 별도 SELECT 시 WAL 풀의 가시성 지연으로 실패 가능.
+        sqlx::query_as::<_, TaskTest>(
+            "INSERT INTO task_tests (task_id, label) VALUES (?, ?)
+             RETURNING id, task_id, label, checked, created_at, checked_at",
         )
         .bind(task_id)
         .bind(&label)
         .fetch_one(&self.pool)
-        .await?;
-        self.task_test_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn task_test_add_bulk(&self, task_id: i64, labels: Vec<String>) -> Result<Vec<TaskTest>> {
@@ -18,23 +20,19 @@ impl Db {
             return Ok(vec![]);
         }
         let mut tx = self.pool.begin().await?;
-        let mut ids = Vec::with_capacity(labels.len());
+        let mut result = Vec::with_capacity(labels.len());
         for label in &labels {
-            let id = sqlx::query_scalar::<_, i64>(
-                "INSERT INTO task_tests (task_id, label) VALUES (?, ?) RETURNING id",
+            let row: TaskTest = sqlx::query_as::<_, TaskTest>(
+                "INSERT INTO task_tests (task_id, label) VALUES (?, ?)
+                 RETURNING id, task_id, label, checked, created_at, checked_at",
             )
             .bind(task_id)
             .bind(label)
             .fetch_one(&mut *tx)
             .await?;
-            ids.push(id);
+            result.push(row);
         }
         tx.commit().await?;
-
-        let mut result = Vec::with_capacity(ids.len());
-        for id in ids {
-            result.push(self.task_test_get(id).await?);
-        }
         Ok(result)
     }
 

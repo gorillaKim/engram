@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { taskList, taskSetStatus, taskCreate } from '../ipc/invoke';
+import { taskList, taskSetStatus, taskCreate, taskDelete } from '../ipc/invoke';
 import type { Task } from '../ipc/types';
 
 const SOURCE_LABEL: Record<Task['source'], string> = {
@@ -17,6 +17,14 @@ interface Props {
 export function TaskChecklist({ issueId }: Props) {
   const qc = useQueryClient();
   const [newTitle, setNewTitle] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (confirmDeleteId == null) return;
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
+
   const { data: tasks = [] } = useQuery({
     queryKey: ['tasks', issueId],
     queryFn: () => taskList(issueId),
@@ -35,6 +43,15 @@ export function TaskChecklist({ issueId }: Props) {
       setNewTitle('');
     },
     onError: (err) => toast.error(`태스크 생성 실패: ${err}`),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: number) => taskDelete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks', issueId] });
+      toast.success('태스크가 삭제되었습니다');
+    },
+    onError: (err) => toast.error(`태스크 삭제 실패: ${err}`),
   });
 
   const done = tasks.filter((t) => t.status === 'finished').length;
@@ -58,23 +75,44 @@ export function TaskChecklist({ issueId }: Props) {
       )}
       {tasks.map((task) => {
         const finished = task.status === 'finished';
+        const isConfirm = confirmDeleteId === task.id;
         return (
-          <label key={task.id} className="flex items-start gap-2 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={finished}
-              onChange={() =>
-                toggle.mutate({ id: task.id, status: finished ? 'ready' : 'finished' })
-              }
-              className="mt-0.5 rounded border-slate-300 text-indigo-600"
-            />
-            <span className={`text-sm flex-1 ${finished ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-              {task.title}
-              {SOURCE_LABEL[task.source] && (
-                <span className="ml-1 text-xs opacity-60">{SOURCE_LABEL[task.source]}</span>
-              )}
-            </span>
-          </label>
+          <div key={task.id} className="flex items-start gap-2 group">
+            <label className="flex items-start gap-2 cursor-pointer flex-1 min-w-0">
+              <input
+                type="checkbox"
+                checked={finished}
+                onChange={() =>
+                  toggle.mutate({ id: task.id, status: finished ? 'ready' : 'finished' })
+                }
+                className="mt-0.5 rounded border-slate-300 text-indigo-600"
+              />
+              <span className={`text-sm flex-1 min-w-0 ${finished ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                {task.title}
+                {SOURCE_LABEL[task.source] && (
+                  <span className="ml-1 text-xs opacity-60">{SOURCE_LABEL[task.source]}</span>
+                )}
+              </span>
+            </label>
+            {isConfirm ? (
+              <button
+                type="button"
+                onClick={() => { setConfirmDeleteId(null); remove.mutate(task.id); }}
+                className="text-xs px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded"
+              >
+                삭제 확인
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteId(task.id)}
+                title="태스크 삭제"
+                className="text-xs px-1.5 text-slate-300 hover:text-red-600 opacity-0 group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         );
       })}
       <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct Issue {
     pub id: i64,
     pub epic_id: i64,
+    /// 소속 스프린트. None 이면 백로그 (Sprint↔Issue 직접 매핑 — ADR-0008 참고).
+    pub sprint_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub goal: Option<String>,
@@ -26,20 +28,14 @@ pub enum IssueStatus {
 }
 
 impl IssueStatus {
-    /// required → ready → working → (demo →) finished
-    /// demo ↔ working 재작업 허용, 어디서든 cancelled 가능
-    pub fn can_transition_to(&self, next: &IssueStatus) -> bool {
-        use IssueStatus::*;
-        matches!(
-            (self, next),
-            (Required, Ready)
-                | (Ready, Working)
-                | (Working, Demo)
-                | (Working, Finished)
-                | (Demo, Finished)
-                | (Demo, Working)
-                | (_, Cancelled)
-        )
+    /// 사용자 / Agent 모두 임의의 상태로 자유롭게 전이할 수 있다.
+    /// 권장 흐름은 required → ready → working → (demo →) finished 지만
+    /// 칸반 UX 에서 카드를 양방향으로 옮길 수 있어야 하기 때문에 가드를 두지 않는다.
+    ///
+    /// Agent 가 demo → finished / *→ cancelled 를 호출하지 못하게 막는 책임은
+    /// `.claude/rules/agent-demo-gate.md` (워커 에이전트 프롬프트) 가 진다 — 코드 강제 없음.
+    pub fn can_transition_to(&self, _next: &IssueStatus) -> bool {
+        true
     }
 }
 
@@ -86,6 +82,8 @@ pub enum LinkType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIssueInput {
     pub epic_id: i64,
+    /// None 이면 백로그(스프린트 미지정).
+    pub sprint_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub goal: Option<String>,
@@ -105,6 +103,11 @@ pub struct UpdateIssueInput {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFilter {
     pub epic_id: Option<i64>,
+    /// 특정 스프린트의 이슈만 (`Some`).
+    pub sprint_id: Option<i64>,
+    /// `true` 면 백로그(sprint_id IS NULL) 이슈만 — `sprint_id` 필터보다 우선.
+    #[serde(default)]
+    pub backlog_only: bool,
     pub project_key: Option<String>,
     pub status: Option<IssueStatus>,
     pub priority: Option<IssuePriority>,

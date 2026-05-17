@@ -7,8 +7,10 @@ impl Db {
         let ord = self.next_ord(input.issue_id, input.after_task_id).await?;
         let source = input.source.unwrap_or(TaskSource::Planned);
         let sv = serde_json::to_value(&source).unwrap().as_str().unwrap().to_string();
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO tasks (issue_id, title, description, goal, ord, source) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        // RETURNING * — INSERT 후 다른 풀 커넥션이 행을 못 보는 WAL 가시성 이슈 회피.
+        sqlx::query_as::<_, Task>(
+            "INSERT INTO tasks (issue_id, title, description, goal, ord, source) VALUES (?, ?, ?, ?, ?, ?)
+             RETURNING id, issue_id, title, description, goal, status, ord, source, created_at, updated_at",
         )
         .bind(input.issue_id)
         .bind(&input.title)
@@ -17,8 +19,8 @@ impl Db {
         .bind(ord)
         .bind(&sv)
         .fetch_one(&self.pool)
-        .await?;
-        self.task_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn task_get(&self, id: i64) -> Result<Task> {
@@ -39,6 +41,17 @@ impl Db {
         .fetch_all(&self.pool)
         .await
         .map_err(Into::into)
+    }
+
+    /// 태스크 삭제.
+    /// FK: task_tests 는 CASCADE 로 같이 삭제, notes.task_id 는 SET NULL.
+    pub async fn task_delete(&self, id: i64) -> Result<()> {
+        self.task_get(id).await?; // 존재 확인
+        sqlx::query("DELETE FROM tasks WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     pub async fn task_update(&self, id: i64, input: UpdateTaskInput, changed_by: &str) -> Result<Task> {
