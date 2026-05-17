@@ -55,6 +55,7 @@ pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
         }
         EpicCommand::Update { id, status, title, description } => {
             let epic = db.epic_update(id, UpdateEpicInput {
+                sprint_id: None,
                 status: status.as_deref().map(parse_epic_status).transpose()?,
                 title,
                 description,

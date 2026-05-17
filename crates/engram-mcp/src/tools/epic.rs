@@ -62,6 +62,7 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let status: Option<EpicStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
     let input = UpdateEpicInput {
+        sprint_id:   None,
         title:       args["title"].as_str().map(String::from),
         description: args["description"].as_str().map(String::from),
         status,

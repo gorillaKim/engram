@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { IssuePriority } from '../ipc/types';
 
-type View = 'board' | 'sprint' | 'mcp';
+type View = 'board' | 'issues' | 'mcp';
 
 export interface BoardFilters {
   projects: string[];          // empty = all projects
@@ -13,11 +13,13 @@ interface UIState {
   view: View;
   selectedIssueId: number | null;
   selectedProjectKey: string | null;
+  selectedSprintId: number | null;
   hideFinished: boolean;
   boardFilters: BoardFilters;
   setView: (v: View) => void;
   selectIssue: (id: number | null) => void;
   selectProject: (key: string | null) => void;
+  selectSprint: (id: number | null) => void;
   toggleHideFinished: () => void;
   setBoardFilters: (f: Partial<BoardFilters>) => void;
   resetBoardFilters: () => void;
@@ -32,11 +34,13 @@ export const useUIStore = create<UIState>((set) => ({
   view: 'board',
   selectedIssueId: null,
   selectedProjectKey: null,
+  selectedSprintId: null,
   hideFinished: false,
   boardFilters: { ...DEFAULT_FILTERS },
   setView: (view) => set({ view }),
   selectIssue: (id) => set({ selectedIssueId: id }),
   selectProject: (key) => set({ selectedProjectKey: key }),
+  selectSprint: (id) => set({ selectedSprintId: id }),
   toggleHideFinished: () => set((s) => ({ hideFinished: !s.hideFinished })),
   setBoardFilters: (f) => set((s) => ({ boardFilters: { ...s.boardFilters, ...f } })),
   resetBoardFilters: () => set({ boardFilters: { ...DEFAULT_FILTERS } }),

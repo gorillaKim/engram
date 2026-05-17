@@ -7,15 +7,18 @@ interface Props {
   open: boolean;
   onClose: () => void;
   defaultProjectKey?: string;
+  sprintId?: number;
 }
 
-export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
+export function CreateEpicModal({ open, onClose, defaultProjectKey, sprintId: sprintIdProp }: Props) {
   const qc = useQueryClient();
-  const { data: sprint } = useQuery({
+  const { data: currentSprint } = useQuery({
     queryKey: ['sprintCurrent'],
     queryFn: () => sprintCurrent(),
-    enabled: open,
+    enabled: open && sprintIdProp == null,
   });
+  const effectiveSprintId = sprintIdProp ?? currentSprint?.id;
+  const sprint = currentSprint;
 
   const [projectKey, setProjectKey] = useState('');
   const [title, setTitle] = useState('');
@@ -31,9 +34,9 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
 
   const create = useMutation({
     mutationFn: () => {
-      if (!sprint) throw new Error('활성 스프린트가 없습니다');
+      if (!effectiveSprintId) throw new Error('스프린트를 지정하세요');
       return epicCreate({
-        sprint_id: sprint.id,
+        sprint_id: effectiveSprintId,
         project_key: projectKey.trim(),
         title: title.trim(),
         description: description.trim() || undefined,
@@ -51,7 +54,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
 
   if (!open) return null;
 
-  const canSubmit = title.trim().length > 0 && projectKey.trim().length > 0 && !!sprint;
+  const canSubmit = title.trim().length > 0 && projectKey.trim().length > 0 && !!effectiveSprintId;
 
   return (
     <div
@@ -61,8 +64,8 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-full max-w-md mx-4">
         <h3 className="text-lg font-semibold text-white mb-4">새 에픽 생성</h3>
 
-        {!sprint && (
-          <p className="text-xs text-amber-300 mb-3">활성 스프린트가 없습니다. CLI에서 sprint를 active로 만드세요.</p>
+        {!effectiveSprintId && (
+          <p className="text-xs text-amber-300 mb-3">활성 스프린트가 없습니다. 먼저 스프린트를 생성하거나 활성화하세요.</p>
         )}
 
         <div className="space-y-4">
@@ -98,8 +101,8 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
             />
           </div>
 
-          {sprint && (
-            <p className="text-xs text-slate-500">스프린트: {sprint.name}</p>
+          {effectiveSprintId && (
+            <p className="text-xs text-slate-500">스프린트: {sprint?.name ?? `#${effectiveSprintId}`}</p>
           )}
         </div>
 

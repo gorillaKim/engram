@@ -74,9 +74,10 @@ pub async fn do_issue_set_priority(
 
 pub async fn do_epic_list(
     db: &Db,
+    sprint_id: Option<i64>,
     project_key: Option<&str>,
 ) -> engram_core::Result<Vec<Epic>> {
-    db.epic_list(None, project_key, None).await
+    db.epic_list(sprint_id, project_key, None).await
 }
 
 pub async fn do_sprint_current(db: &Db) -> engram_core::Result<Option<Sprint>> {
@@ -263,9 +264,21 @@ pub async fn issue_set_priority(
 #[tauri::command]
 pub async fn epic_list(
     db: State<'_, Arc<Db>>,
+    sprint_id: Option<i64>,
     project_key: Option<String>,
 ) -> Result<Vec<Epic>, String> {
-    do_epic_list(&db, project_key.as_deref()).await.map_err(|e| e.to_string())
+    do_epic_list(&db, sprint_id, project_key.as_deref()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn epic_set_sprint(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    sprint_id: i64,
+) -> Result<Epic, String> {
+    db.epic_update(id, UpdateEpicInput { sprint_id: Some(sprint_id), ..Default::default() }, "user")
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -287,6 +300,25 @@ pub async fn sprint_create(
     end_date: Option<String>,
 ) -> Result<Sprint, String> {
     do_sprint_create(&db, name, goal, start_date, end_date).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn sprint_update(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    name: Option<String>,
+    goal: Option<String>,
+    status: Option<String>,
+) -> Result<Sprint, String> {
+    use engram_core::models::sprint::UpdateSprintInput;
+    let status_parsed = if let Some(s) = status {
+        Some(parse::<engram_core::models::sprint::SprintStatus>(&s).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    db.sprint_update(id, UpdateSprintInput { name, goal, status: status_parsed, ..Default::default() }, "user")
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

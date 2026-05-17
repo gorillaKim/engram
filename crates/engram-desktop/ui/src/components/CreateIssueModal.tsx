@@ -17,7 +17,7 @@ export function CreateIssueModal({ open, onClose, projectKey, defaultEpicId }: P
   const qc = useQueryClient();
   const { data: epics = [] } = useQuery({
     queryKey: ['epicList', projectKey],
-    queryFn: () => epicList(projectKey),
+    queryFn: () => epicList(undefined, projectKey),
     enabled: open,
   });
 

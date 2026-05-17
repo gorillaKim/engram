@@ -25,8 +25,11 @@ export const issueSetStatus = (id: number, status: string) =>
 export const issueSetPriority = (id: number, priority: string) =>
   invoke<Issue>('issue_set_priority', { id, priority });
 
-export const epicList = (project_key?: string) =>
-  invoke<Epic[]>('epic_list', { project_key: project_key ?? null });
+export const epicList = (sprint_id?: number, project_key?: string) =>
+  invoke<Epic[]>('epic_list', { sprint_id: sprint_id ?? null, project_key: project_key ?? null });
+
+export const epicSetSprint = (id: number, sprint_id: number) =>
+  invoke<Epic>('epic_set_sprint', { id, sprint_id });
 
 export const sprintCurrent = () =>
   invoke<Sprint | null>('sprint_current');
@@ -40,6 +43,14 @@ export const sprintCreate = (input: CreateSprintInput) =>
     goal: input.goal ?? null,
     start_date: input.start_date ?? null,
     end_date: input.end_date ?? null,
+  });
+
+export const sprintUpdate = (id: number, status?: string, name?: string, goal?: string) =>
+  invoke<Sprint>('sprint_update', {
+    id,
+    name: name ?? null,
+    goal: goal ?? null,
+    status: status ?? null,
   });
 
 export const taskList = (issue_id: number) =>

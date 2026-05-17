@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { KanbanBoard } from './components/KanbanBoard';
 import { IssueDetail } from './routes/IssueDetail';
+import { IssueManager } from './routes/IssueManager';
 import { McpManager } from './routes/McpManager';
 import { useUIStore } from './store/ui';
 
@@ -19,7 +20,13 @@ function AppContent() {
             onClick={() => setView('board')}
             className={`text-sm px-3 py-1 rounded ${view === 'board' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            칸반
+            칸반보드
+          </button>
+          <button
+            onClick={() => setView('issues')}
+            className={`text-sm px-3 py-1 rounded ${view === 'issues' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            이슈관리
           </button>
           <button
             onClick={() => setView('mcp')}
@@ -30,7 +37,9 @@ function AppContent() {
         </div>
       </header>
       <main className="flex-1 overflow-hidden">
-        {view === 'board' ? <KanbanBoard /> : <McpManager />}
+        {view === 'board' && <KanbanBoard />}
+        {view === 'issues' && <IssueManager />}
+        {view === 'mcp' && <McpManager />}
       </main>
       {selectedIssueId != null && <IssueDetail />}
     </div>

@@ -121,6 +121,8 @@ fn main() {
             commands::sprint_current,
             commands::sprint_list,
             commands::sprint_create,
+            commands::sprint_update,
+            commands::epic_set_sprint,
             commands::task_list,
             commands::task_set_status,
             commands::note_list,

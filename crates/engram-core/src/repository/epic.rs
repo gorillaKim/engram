@@ -45,6 +45,18 @@ impl Db {
     }
 
     pub async fn epic_update(&self, id: i64, input: UpdateEpicInput, changed_by: &str) -> Result<Epic> {
+        if let Some(sprint_id) = input.sprint_id {
+            sqlx::query("UPDATE epics SET sprint_id = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(sprint_id).bind(id).execute(&self.pool).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Epic,
+                entity_id: id,
+                field: "sprint_id".to_string(),
+                old_value: None,
+                new_value: Some(sprint_id.to_string()),
+                changed_by: changed_by.to_string(),
+            }).await;
+        }
         if let Some(title) = &input.title {
             sqlx::query("UPDATE epics SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
