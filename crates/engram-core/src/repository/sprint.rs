@@ -4,16 +4,17 @@ use crate::{Db, Error, Result};
 
 impl Db {
     pub async fn sprint_create(&self, input: CreateSprintInput) -> Result<Sprint> {
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO sprints (name, goal, start_date, end_date) VALUES (?, ?, ?, ?) RETURNING id",
+        sqlx::query_as::<_, Sprint>(
+            "INSERT INTO sprints (name, goal, start_date, end_date) VALUES (?, ?, ?, ?)
+             RETURNING id, name, goal, status, start_date, end_date, created_at, updated_at",
         )
         .bind(&input.name)
         .bind(&input.goal)
         .bind(&input.start_date)
         .bind(&input.end_date)
         .fetch_one(&self.pool)
-        .await?;
-        self.sprint_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn sprint_get(&self, id: i64) -> Result<Sprint> {

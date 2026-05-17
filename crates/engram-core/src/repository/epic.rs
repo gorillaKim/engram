@@ -4,16 +4,17 @@ use crate::{Db, Error, Result};
 
 impl Db {
     pub async fn epic_create(&self, input: CreateEpicInput) -> Result<Epic> {
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO epics (sprint_id, project_key, title, description) VALUES (?, ?, ?, ?) RETURNING id",
+        sqlx::query_as::<_, Epic>(
+            "INSERT INTO epics (sprint_id, project_key, title, description) VALUES (?, ?, ?, ?)
+             RETURNING id, sprint_id, project_key, title, description, status, created_at, updated_at",
         )
         .bind(input.sprint_id)
         .bind(&input.project_key)
         .bind(&input.title)
         .bind(&input.description)
         .fetch_one(&self.pool)
-        .await?;
-        self.epic_get(id).await
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn epic_get(&self, id: i64) -> Result<Epic> {
