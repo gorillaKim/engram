@@ -3,11 +3,15 @@ use crate::settings;
 use engram_core::{
     Db,
     models::{
-        epic::Epic,
-        issue::{Issue, IssueFilter, IssueStatus, IssuePriority, UpdateIssueInput},
+        epic::{Epic, CreateEpicInput, EpicStatus, UpdateEpicInput},
+        history::{History, EntityType},
+        issue::{
+            Issue, IssueFilter, IssueLink, IssueStatus, IssuePriority,
+            CreateIssueInput, LinkType, UpdateIssueInput,
+        },
         note::{Note, CreateNoteInput},
-        sprint::Sprint,
-        task::{Task, TaskStatus, UpdateTaskInput},
+        sprint::{Sprint, CreateSprintInput},
+        task::{Task, CreateTaskInput, TaskSource, TaskStatus, UpdateTaskInput},
     },
     repository::session::{SessionSnapshot, IssueBoardStatus},
     repository::blocking::BlockingGraph,
@@ -79,6 +83,20 @@ pub async fn do_sprint_current(db: &Db) -> engram_core::Result<Option<Sprint>> {
     db.sprint_current().await
 }
 
+pub async fn do_sprint_list(db: &Db) -> engram_core::Result<Vec<Sprint>> {
+    db.sprint_list(None).await
+}
+
+pub async fn do_sprint_create(
+    db: &Db,
+    name: String,
+    goal: Option<String>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+) -> engram_core::Result<Sprint> {
+    db.sprint_create(CreateSprintInput { name, goal, start_date, end_date }).await
+}
+
 pub async fn do_task_list(db: &Db, issue_id: i64) -> engram_core::Result<Vec<Task>> {
     db.task_list(issue_id, None).await
 }
@@ -113,6 +131,84 @@ pub async fn do_blocked_issues_graph(
     project_key: &str,
 ) -> engram_core::Result<BlockingGraph> {
     db.blocked_issues_graph(project_key).await
+}
+
+pub async fn do_epic_create(
+    db: &Db,
+    sprint_id: i64,
+    project_key: String,
+    title: String,
+    description: Option<String>,
+) -> engram_core::Result<Epic> {
+    db.epic_create(CreateEpicInput { sprint_id, project_key, title, description }).await
+}
+
+pub async fn do_issue_create(
+    db: &Db,
+    epic_id: i64,
+    title: String,
+    description: Option<String>,
+    goal: Option<String>,
+    priority: Option<String>,
+) -> engram_core::Result<Issue> {
+    let parsed_priority = match priority {
+        Some(p) => Some(parse::<IssuePriority>(&p)?),
+        None => None,
+    };
+    db.issue_create(CreateIssueInput {
+        epic_id, title, description, goal, priority: parsed_priority,
+    }).await
+}
+
+pub async fn do_task_create(
+    db: &Db,
+    issue_id: i64,
+    title: String,
+) -> engram_core::Result<Task> {
+    db.task_create(CreateTaskInput {
+        issue_id,
+        title,
+        description: None,
+        goal: None,
+        after_task_id: None,
+        source: Some(TaskSource::UserAdded),
+    }).await
+}
+
+pub async fn do_issue_link(
+    db: &Db,
+    source_id: i64,
+    target_id: i64,
+    link_type: &str,
+) -> engram_core::Result<IssueLink> {
+    let parsed: LinkType = parse(link_type)?;
+    db.issue_link(source_id, target_id, parsed).await
+}
+
+pub async fn do_issue_unlink(db: &Db, link_id: i64) -> engram_core::Result<()> {
+    db.issue_unlink(link_id).await
+}
+
+pub async fn do_issue_links(db: &Db, issue_id: i64) -> engram_core::Result<Vec<IssueLink>> {
+    db.issue_links_for(issue_id).await
+}
+
+pub async fn do_epic_set_status(
+    db: &Db,
+    id: i64,
+    status: &str,
+) -> engram_core::Result<Epic> {
+    let parsed: EpicStatus = parse(status)?;
+    db.epic_update(id, UpdateEpicInput { status: Some(parsed), ..Default::default() }, "user").await
+}
+
+pub async fn do_history_list(
+    db: &Db,
+    entity_type: &str,
+    entity_id: i64,
+) -> engram_core::Result<Vec<History>> {
+    let parsed: EntityType = parse(entity_type)?;
+    db.history_list(parsed, entity_id).await
 }
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
@@ -178,6 +274,22 @@ pub async fn sprint_current(db: State<'_, Arc<Db>>) -> Result<Option<Sprint>, St
 }
 
 #[tauri::command]
+pub async fn sprint_list(db: State<'_, Arc<Db>>) -> Result<Vec<Sprint>, String> {
+    do_sprint_list(&db).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn sprint_create(
+    db: State<'_, Arc<Db>>,
+    name: String,
+    goal: Option<String>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+) -> Result<Sprint, String> {
+    do_sprint_create(&db, name, goal, start_date, end_date).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn task_list(db: State<'_, Arc<Db>>, issue_id: i64) -> Result<Vec<Task>, String> {
     do_task_list(&db, issue_id).await.map_err(|e| e.to_string())
 }
@@ -220,6 +332,84 @@ pub async fn blocked_issues_graph(
     project_key: String,
 ) -> Result<BlockingGraph, String> {
     do_blocked_issues_graph(&db, &project_key).await.map_err(|e| e.to_string())
+}
+
+// ── Dashboard CRUD ────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn epic_create(
+    db: State<'_, Arc<Db>>,
+    sprint_id: i64,
+    project_key: String,
+    title: String,
+    description: Option<String>,
+) -> Result<Epic, String> {
+    do_epic_create(&db, sprint_id, project_key, title, description).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn issue_create(
+    db: State<'_, Arc<Db>>,
+    epic_id: i64,
+    title: String,
+    description: Option<String>,
+    goal: Option<String>,
+    priority: Option<String>,
+) -> Result<Issue, String> {
+    do_issue_create(&db, epic_id, title, description, goal, priority).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn task_create(
+    db: State<'_, Arc<Db>>,
+    issue_id: i64,
+    title: String,
+) -> Result<Task, String> {
+    do_task_create(&db, issue_id, title).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn issue_link(
+    db: State<'_, Arc<Db>>,
+    source_id: i64,
+    target_id: i64,
+    link_type: String,
+) -> Result<IssueLink, String> {
+    do_issue_link(&db, source_id, target_id, &link_type).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn issue_unlink(
+    db: State<'_, Arc<Db>>,
+    link_id: i64,
+) -> Result<(), String> {
+    do_issue_unlink(&db, link_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn issue_links(
+    db: State<'_, Arc<Db>>,
+    issue_id: i64,
+) -> Result<Vec<IssueLink>, String> {
+    do_issue_links(&db, issue_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn epic_set_status(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    status: String,
+) -> Result<Epic, String> {
+    do_epic_set_status(&db, id, &status).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn history_list(
+    db: State<'_, Arc<Db>>,
+    entity_type: String,
+    entity_id: i64,
+) -> Result<Vec<History>, String> {
+    do_history_list(&db, &entity_type, entity_id).await.map_err(|e| e.to_string())
 }
 
 // ── MCP Supervisor commands ───────────────────────────────────────────────────

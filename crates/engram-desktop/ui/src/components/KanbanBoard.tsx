@@ -4,6 +4,9 @@ import { KanbanColumn } from './KanbanColumn';
 import { IssueCard } from './IssueCard';
 import { FilterBar } from './FilterBar';
 import { ScopeExpansionBanner } from './ScopeExpansionBanner';
+import { CreateIssueModal } from './CreateIssueModal';
+import { CreateEpicModal } from './CreateEpicModal';
+import { CreateSprintModal } from './CreateSprintModal';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import { useIssueDnd } from '../hooks/useIssueDnd';
 import { useSessionRestore } from '../hooks/useSessionRestore';
@@ -29,6 +32,9 @@ export function KanbanBoard() {
   );
 
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
+  const [issueModalProject, setIssueModalProject] = useState<string | null>(null);
+  const [epicModalProject, setEpicModalProject] = useState<string | null>(null);
+  const [sprintModalOpen, setSprintModalOpen] = useState(false);
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading board…</div>;
   if (error)    return <div className="p-8 text-red-500">Error loading board</div>;
@@ -85,9 +91,38 @@ export function KanbanBoard() {
           <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>
         )}
 
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-400">{filteredBoards.length} 프로젝트</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSprintModalOpen(true)}
+              className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded-md"
+            >
+              + 새 스프린트
+            </button>
+            <button
+              type="button"
+              onClick={() => setEpicModalProject(selectedProjectKey ?? '')}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md"
+            >
+              + 새 에픽
+            </button>
+          </div>
+        </div>
+
         {filteredBoards.map((board) => (
           <div key={board.project_key}>
-            <h2 className="text-base font-semibold text-slate-700 mb-3">{board.project_key}</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
+              <button
+                type="button"
+                onClick={() => setIssueModalProject(board.project_key)}
+                className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
+              >
+                + 이슈 추가
+              </button>
+            </div>
             <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(0, 1fr))` }}>
               {visibleColumns.map((status) => (
                 <KanbanColumn
@@ -96,12 +131,28 @@ export function KanbanBoard() {
                   issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
                   onIssueClick={(id) => selectIssue(id)}
                   expansionIds={expansionIds}
+                  onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
                 />
               ))}
             </div>
           </div>
         ))}
       </div>
+
+      <CreateSprintModal
+        open={sprintModalOpen}
+        onClose={() => setSprintModalOpen(false)}
+      />
+      <CreateIssueModal
+        open={issueModalProject !== null}
+        onClose={() => setIssueModalProject(null)}
+        projectKey={issueModalProject ?? undefined}
+      />
+      <CreateEpicModal
+        open={epicModalProject !== null}
+        onClose={() => setEpicModalProject(null)}
+        defaultProjectKey={epicModalProject ?? undefined}
+      />
 
       <DragOverlay>
         {activeIssue && (

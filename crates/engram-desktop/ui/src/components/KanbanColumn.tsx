@@ -18,12 +18,14 @@ interface Props {
   issues: Issue[];
   onIssueClick?: (id: number) => void;
   expansionIds?: Set<number>;
+  onCreateIssue?: () => void;
 }
 
-export function KanbanColumn({ status, issues, onIssueClick, expansionIds }: Props) {
+export function KanbanColumn({ status, issues, onIssueClick, expansionIds, onCreateIssue }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const isDemo = status === 'demo';
   const isCancelled = status === 'cancelled';
+  const isRequired = status === 'required';
 
   return (
     <div
@@ -35,16 +37,28 @@ export function KanbanColumn({ status, issues, onIssueClick, expansionIds }: Pro
       }`}
     >
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-          {LABELS[status]}
-        </span>
-        <span className="text-xs bg-slate-200 text-slate-600 rounded-full px-2 py-0.5">
-          {issues.length}
-        </span>
-        {isDemo && issues.length > 0 && (
-          <span className="text-xs bg-amber-100 text-amber-900 rounded px-1.5 py-0.5 ml-1">
-            검토대기
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {LABELS[status]}
           </span>
+          <span className="text-xs bg-slate-200 text-slate-600 rounded-full px-2 py-0.5">
+            {issues.length}
+          </span>
+          {isDemo && issues.length > 0 && (
+            <span className="text-xs bg-amber-100 text-amber-900 rounded px-1.5 py-0.5 ml-1">
+              검토대기
+            </span>
+          )}
+        </div>
+        {isRequired && onCreateIssue && (
+          <button
+            type="button"
+            onClick={onCreateIssue}
+            title="이슈 생성"
+            className="text-slate-400 hover:text-indigo-600 text-base leading-none px-1 rounded hover:bg-slate-200"
+          >
+            +
+          </button>
         )}
       </div>
       <div className="flex flex-col gap-2">

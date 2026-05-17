@@ -154,4 +154,16 @@ impl Db {
         .await
         .map_err(Into::into)
     }
+
+    /// 이슈가 source 또는 target 인 모든 링크 반환 (이슈 상세 UI 용).
+    pub async fn issue_links_for(&self, issue_id: i64) -> Result<Vec<IssueLink>> {
+        sqlx::query_as::<_, IssueLink>(
+            "SELECT id, source_id, target_id, link_type, created_at FROM issue_links WHERE source_id = ? OR target_id = ? ORDER BY id ASC",
+        )
+        .bind(issue_id)
+        .bind(issue_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
 }

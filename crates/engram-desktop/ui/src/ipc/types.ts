@@ -40,6 +40,13 @@ export interface Sprint {
   updated_at: string;
 }
 
+export interface CreateSprintInput {
+  name: string;
+  goal?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
 export interface Task {
   id: number;
   issue_id: number;
@@ -198,4 +205,47 @@ export interface TrayBoardSummary {
   inbox: number;
   demo_review: number;
   blockers: number;
+}
+
+// ── Dashboard CRUD ────────────────────────────────────────────────────────────
+
+export interface CreateIssueInput {
+  epic_id: number;
+  title: string;
+  description?: string;
+  goal?: string;
+  priority?: IssuePriority;
+}
+
+export interface CreateEpicInput {
+  sprint_id: number;
+  project_key: string;
+  title: string;
+  description?: string;
+}
+
+export interface CreateTaskInput {
+  issue_id: number;
+  title: string;
+}
+
+export type LinkType = 'blocks' | 'relates_to' | 'duplicates';
+
+export interface IssueLink {
+  id: number;
+  source_id: number;
+  target_id: number;
+  link_type: LinkType;
+  created_at: string;
+}
+
+export interface HistoryEntry {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  field: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_by: string;
+  created_at: string;
 }

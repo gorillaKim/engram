@@ -3,6 +3,8 @@ import type {
   SessionSnapshot, IssueBoardStatus, Issue, Epic, Sprint,
   IssueFilter, Task, Note, CreateNoteInput, BlockingGraph,
   SupervisorStatusSnapshot, CallRecord,
+  CreateEpicInput, CreateIssueInput, CreateTaskInput,
+  IssueLink, LinkType, EpicStatus, HistoryEntry, CreateSprintInput,
 } from './types';
 
 export const sessionRestore = (project_key?: string) =>
@@ -28,6 +30,17 @@ export const epicList = (project_key?: string) =>
 
 export const sprintCurrent = () =>
   invoke<Sprint | null>('sprint_current');
+
+export const sprintList = () =>
+  invoke<Sprint[]>('sprint_list');
+
+export const sprintCreate = (input: CreateSprintInput) =>
+  invoke<Sprint>('sprint_create', {
+    name: input.name,
+    goal: input.goal ?? null,
+    start_date: input.start_date ?? null,
+    end_date: input.end_date ?? null,
+  });
 
 export const taskList = (issue_id: number) =>
   invoke<Task[]>('task_list', { issue_id });
@@ -69,3 +82,40 @@ export const mcpRecentCalls = () =>
 
 export const mcpSetAutostart = (on: boolean) =>
   invoke<void>('mcp_set_autostart', { on });
+
+// ── Dashboard CRUD ────────────────────────────────────────────────────────────
+
+export const epicCreate = (input: CreateEpicInput) =>
+  invoke<Epic>('epic_create', {
+    sprint_id: input.sprint_id,
+    project_key: input.project_key,
+    title: input.title,
+    description: input.description ?? null,
+  });
+
+export const issueCreate = (input: CreateIssueInput) =>
+  invoke<Issue>('issue_create', {
+    epic_id: input.epic_id,
+    title: input.title,
+    description: input.description ?? null,
+    goal: input.goal ?? null,
+    priority: input.priority ?? null,
+  });
+
+export const taskCreate = (input: CreateTaskInput) =>
+  invoke<Task>('task_create', { issue_id: input.issue_id, title: input.title });
+
+export const issueLink = (source_id: number, target_id: number, link_type: LinkType) =>
+  invoke<IssueLink>('issue_link', { source_id, target_id, link_type });
+
+export const issueUnlink = (link_id: number) =>
+  invoke<void>('issue_unlink', { link_id });
+
+export const issueLinks = (issue_id: number) =>
+  invoke<IssueLink[]>('issue_links', { issue_id });
+
+export const epicSetStatus = (id: number, status: EpicStatus) =>
+  invoke<Epic>('epic_set_status', { id, status });
+
+export const historyList = (entity_type: string, entity_id: number) =>
+  invoke<HistoryEntry[]>('history_list', { entity_type, entity_id });

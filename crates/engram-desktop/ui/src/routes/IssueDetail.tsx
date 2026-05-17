@@ -6,6 +6,9 @@ import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { BlockingGraphView } from '../components/BlockingGraph';
+import { IssueLinkSection } from '../components/IssueLinkSection';
+import { CommentSection } from '../components/CommentSection';
+import { HistorySection } from '../components/HistorySection';
 import { useUIStore } from '../store/ui';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import type { Issue } from '../ipc/types';
@@ -103,8 +106,17 @@ export function IssueDetail() {
             {/* Tasks */}
             <TaskChecklist issueId={issue.id} />
 
-            {/* Notes */}
+            {/* Issue links */}
+            <IssueLinkSection issueId={issue.id} />
+
+            {/* Notes (non-context) */}
             <NoteList issueId={issue.id} />
+
+            {/* Comments (context notes) */}
+            <CommentSection issueId={issue.id} />
+
+            {/* History */}
+            <HistorySection entityType="issue" entityId={issue.id} />
 
             {/* Footer actions */}
             <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">

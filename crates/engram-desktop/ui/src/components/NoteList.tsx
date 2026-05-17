@@ -43,7 +43,8 @@ export function NoteList({ issueId }: Props) {
     queryFn: () => noteList(issueId),
   });
 
-  const active = notes.filter((n: Note) => !n.resolved);
+  // Exclude 'context' notes — those are rendered in CommentSection.
+  const active = notes.filter((n: Note) => !n.resolved && n.note_type !== 'context');
 
   return (
     <div className="space-y-1">
