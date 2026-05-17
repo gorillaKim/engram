@@ -1,11 +1,30 @@
 use crate::mcp_supervisor::McpSupervisor;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Manager,
 };
+
+/// 팝오버가 마지막으로 show 된 시각(ms since UNIX_EPOCH).
+///
+/// fullscreen Space 에서 set_focus 가 OS 의 거부로 즉시 Focused(false) 를 트리거하면
+/// `on_window_event` 의 auto-hide 가 팝오버를 곧바로 닫아버린다. show 직후 짧은
+/// grace period 동안 hide 를 막기 위해 main.rs 의 핸들러에서 이 값을 참조한다.
+pub static POPOVER_SHOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Focused(false) 이벤트를 무시할 grace period (ms).
+pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 400;
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(
@@ -105,18 +124,26 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
             let _ = popover.set_visible_on_all_workspaces(true);
             #[cfg(target_os = "macos")]
             macos_enable_fullscreen_popover(&popover);
+            POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
             let _ = popover.show();
             let _ = popover.set_focus();
         }
     }
 }
 
-/// macOS 에서 트레이 팝오버가 사용자가 fullscreen 상태인 앱의 Space 위에도 떠야 한다.
+/// macOS 에서 트레이 팝오버가 사용자가 fullscreen 상태인 다른 앱의 Space 위에도 떠야 한다.
+///
 /// `set_visible_on_all_workspaces(true)` 는 `NSWindowCollectionBehaviorCanJoinAllSpaces`
 /// 만 세팅하지만, fullscreen Space 침투에는 `FullScreenAuxiliary` 가 추가로 필요하다.
-/// 또한 윈도우 레벨을 popUpMenu 수준(101)으로 올려 fullscreen 컨텐츠 위에 그린다.
+/// 추가로 `Stationary | IgnoresCycle` 을 켜 Mission Control 탭 사이클에서 빼고,
+/// 윈도우 레벨을 NSScreenSaverWindowLevel(1000) 까지 올려 fullscreen 앱이 띄우는
+/// 어떤 시스템 UI 위에도 표시되게 한다.
+///
+/// **호출 시점**: 팝오버의 첫 `show()` 직전 — macOS 는 첫 orderFront 시점에 Space
+/// 멤버십을 캐시하기 때문에, 단순 setup 단계 호출만으로는 부족할 수 있어
+/// 매 show 마다 다시 세팅한다.
 #[cfg(target_os = "macos")]
-fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
+pub fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
 
     let Ok(ns_ptr) = popover.ns_window() else { return };
@@ -127,10 +154,13 @@ fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
     unsafe {
         let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
             | NSWindowCollectionBehavior::Transient
-            | NSWindowCollectionBehavior::FullScreenAuxiliary;
+            | NSWindowCollectionBehavior::FullScreenAuxiliary
+            | NSWindowCollectionBehavior::Stationary
+            | NSWindowCollectionBehavior::IgnoresCycle;
         (*ns_window).setCollectionBehavior(behavior);
-        // NSPopUpMenuWindowLevel ≈ 101 — fullscreen 컨텐츠 위에 표시되는 표준 레벨.
-        // objc2-app-kit 0.2 의 NSWindowLevel 은 type alias 이므로 정수를 그대로 전달.
-        (*ns_window).setLevel(101);
+        // NSScreenSaverWindowLevel = 1000 — fullscreen 앱이 띄우는 어떤 시스템 UI
+        // (메뉴바 자동 노출, 알림 등) 보다 위에 표시.
+        // objc2-app-kit 0.2 의 NSWindowLevel 은 type alias 이므로 정수 전달.
+        (*ns_window).setLevel(1000);
     }
 }

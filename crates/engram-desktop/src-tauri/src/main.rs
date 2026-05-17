@@ -152,10 +152,25 @@ fn main() {
             commands::show_main_window,
         ])
         .on_window_event(|window, event| {
-            // Auto-hide tray popover when it loses focus (native popover behaviour)
+            // Auto-hide tray popover when it loses focus (native popover behaviour).
+            // 단, show 직후 grace period 안에 발생한 Focused(false) 는 무시한다 —
+            // fullscreen Space 에서 OS 가 우리 팝오버에 focus 를 못 줘서 즉시
+            // Focused(false) 가 튀는 시나리오를 막기 위함.
             if window.label() == "tray_popover" {
                 if let tauri::WindowEvent::Focused(false) = event {
-                    let _ = window.hide();
+                    let elapsed = {
+                        use std::sync::atomic::Ordering;
+                        use std::time::{SystemTime, UNIX_EPOCH};
+                        let now = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map(|d| d.as_millis() as u64)
+                            .unwrap_or(0);
+                        let shown = tray::POPOVER_SHOWN_AT_MS.load(Ordering::Relaxed);
+                        now.saturating_sub(shown)
+                    };
+                    if elapsed >= tray::POPOVER_AUTO_HIDE_GRACE_MS {
+                        let _ = window.hide();
+                    }
                 }
                 return;
             }
