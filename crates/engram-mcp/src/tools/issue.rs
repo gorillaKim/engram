@@ -30,7 +30,11 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({ "name": "issue_set_sprint",
             "description": "이슈의 소속 스프린트를 변경합니다. sprint_id 를 생략하면 백로그로 이동합니다.",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" }, "sprint_id": { "type": "integer" } }
+                "properties": {
+                    "id":        { "type": "integer" },
+                    "sprint_id": { "type": "integer" },
+                    "agent_id":  { "type": "string" }
+                }
             }
         }),
         json!({ "name": "issue_get", "description": "이슈 상세를 조회합니다.",
@@ -60,9 +64,15 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
-        json!({ "name": "issue_update", "description": "이슈 상태/정보를 수정합니다. draft→approved 전환으로 작업 시작을 승인합니다.",
+        json!({ "name": "issue_update",
+            "description": "이슈 상태/정보를 수정합니다. agent_id 를 명시하면 history.changed_by 로 저장되어 멀티 에이전트 감사가 가능합니다 (생략 시 'agent').",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" }, "status": { "type": "string" }, "priority": { "type": "string" } }
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "status":   { "type": "string" },
+                    "priority": { "type": "string" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc')" }
+                }
             }
         }),
         json!({ "name": "issue_link",
@@ -78,6 +88,34 @@ pub fn tool_definitions() -> Vec<Value> {
         json!({ "name": "issue_unlink", "description": "이슈 간 관계를 제거합니다.",
             "inputSchema": { "type": "object", "required": ["link_id"],
                 "properties": { "link_id": { "type": "integer" } }
+            }
+        }),
+        json!({ "name": "issue_delete",
+            "description": "이슈를 삭제합니다. 하위 태스크/노트/링크가 함께 cascade 삭제되며 비가역입니다. agent_id 를 명시하면 history.changed_by 에 그대로 기록됩니다 (생략 시 'agent').",
+            "inputSchema": { "type": "object", "required": ["id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자. 'user' 면 사용자 액션, 그 외는 agent 식별자." }
+                }
+            }
+        }),
+        json!({ "name": "issue_claim",
+            "description": "이슈를 working 상태로 점유합니다 (CAS, 멀티 에이전트 안전). 다른 에이전트가 이미 점유 중이면 거부됩니다. 작업 시작 직전 반드시 호출하세요. agent_id 는 필수 — 자기 식별자를 지정해야 release 시 권한 확인이 됩니다.",
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "점유할 에이전트 식별자 (예: 'claude-opus@sess-abc')." }
+                }
+            }
+        }),
+        json!({ "name": "issue_release",
+            "description": "점유한 이슈를 해제하고 지정 상태로 전이합니다. 보통 ready (다른 에이전트가 픽업 가능) 또는 demo (사용자 검토 대기) 로 전이합니다. 자기가 잡은 이슈만 해제 가능합니다.",
+            "inputSchema": { "type": "object", "required": ["id", "agent_id", "transition_to"],
+                "properties": {
+                    "id":            { "type": "integer" },
+                    "agent_id":      { "type": "string" },
+                    "transition_to": { "type": "string", "enum": ["ready","demo","required"] }
+                }
             }
         }),
     ]
@@ -101,7 +139,8 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let sprint_id = args["sprint_id"].as_i64(); // None → 백로그로 이동
-    Ok(serde_json::to_value(db.issue_set_sprint(id, sprint_id, "agent").await?).unwrap())
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    Ok(serde_json::to_value(db.issue_set_sprint(id, sprint_id, agent_id).await?).unwrap())
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -146,8 +185,9 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let description: Option<String> = args["description"].as_str().map(String::from);
     let goal: Option<String> = args["goal"].as_str().map(String::from);
 
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     let input = UpdateIssueInput { status, priority, title, description, goal };
-    Ok(serde_json::to_value(db.issue_update(id, input, "agent").await?).unwrap())
+    Ok(serde_json::to_value(db.issue_update(id, input, agent_id).await?).unwrap())
 }
 
 pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -171,4 +211,31 @@ pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let link_id = args["link_id"].as_i64().unwrap_or(0);
     db.issue_unlink(link_id).await?;
     Ok(serde_json::json!({ "ok": true }))
+}
+
+pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    db.issue_delete(id, agent_id).await?;
+    Ok(serde_json::json!({ "ok": true, "deleted_id": id }))
+}
+
+pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required for claim (멀티 에이전트 식별)".to_string()))?;
+    Ok(serde_json::to_value(db.issue_claim(id, agent_id).await?).unwrap())
+}
+
+pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required for release".to_string()))?;
+    let transition_to: IssueStatus = args["transition_to"].as_str()
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
+        .ok_or_else(|| engram_core::Error::Validation("transition_to is required (ready|demo|required)".to_string()))?;
+    Ok(serde_json::to_value(db.issue_release(id, transition_to, agent_id).await?).unwrap())
 }

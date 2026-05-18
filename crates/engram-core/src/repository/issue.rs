@@ -9,7 +9,7 @@ impl Db {
         // RETURNING * 단일 쿼리 — sprint/epic_create 와 동일 패턴.
         sqlx::query_as::<_, Issue>(
             "INSERT INTO issues (epic_id, sprint_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?)
-             RETURNING id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at",
+             RETURNING id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
         )
         .bind(input.epic_id)
         .bind(input.sprint_id)
@@ -24,7 +24,7 @@ impl Db {
 
     pub async fn issue_get(&self, id: i64) -> Result<Issue> {
         sqlx::query_as::<_, Issue>(
-            "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at FROM issues WHERE id = ?",
+            "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -33,7 +33,7 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, created_at, updated_at FROM issues i WHERE 1=1".to_string();
+        let mut sql = "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues i WHERE 1=1".to_string();
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
         if filter.sprint_id.is_some()   { sql.push_str(" AND i.sprint_id = ?"); }
         if filter.backlog_only           { sql.push_str(" AND i.sprint_id IS NULL"); }
@@ -83,8 +83,16 @@ impl Db {
             }
             let old_v = serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string();
             let new_v = serde_json::to_value(new_status).unwrap().as_str().unwrap().to_string();
-            sqlx::query("UPDATE issues SET status = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(&new_v).bind(id).execute(&self.pool).await?;
+            // working 을 벗어나는 모든 전이에서 assigned_agent 를 정리한다
+            // (release 도구를 거치지 않는 사용자/agent 의 자유로운 칸반 이동에도 동작하도록).
+            let clear_assignment = current.status == IssueStatus::Working && new_status != &IssueStatus::Working;
+            if clear_assignment {
+                sqlx::query("UPDATE issues SET status = ?, assigned_agent = NULL, updated_at = datetime('now') WHERE id = ?")
+                    .bind(&new_v).bind(id).execute(&self.pool).await?;
+            } else {
+                sqlx::query("UPDATE issues SET status = ?, updated_at = datetime('now') WHERE id = ?")
+                    .bind(&new_v).bind(id).execute(&self.pool).await?;
+            }
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
                 entity_id: id,
@@ -162,6 +170,147 @@ impl Db {
     pub async fn issue_unlink(&self, link_id: i64) -> Result<()> {
         sqlx::query("DELETE FROM issue_links WHERE id = ?")
             .bind(link_id).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    /// 이슈를 CAS(Compare-And-Set) 방식으로 점유한다 (멀티 에이전트 race 방지).
+    ///
+    /// 한 SQL 안에서 `status ∈ {ready, working}` 이고 `assigned_agent` 가 NULL 이거나
+    /// 자기 자신일 때만 `working` + `assigned_agent=agent_id` 로 전이한다.
+    /// 다른 에이전트가 잡고 있으면 `rows_affected=0` 으로 빠지므로 `Validation` 에러를 던진다.
+    ///
+    /// 같은 agent_id 가 재호출하면 idempotent (이미 자기가 잡은 working 이슈를 그대로 반환).
+    pub async fn issue_claim(&self, id: i64, agent_id: &str) -> Result<Issue> {
+        let current = self.issue_get(id).await?; // 존재 확인 + 디버그용 컨텍스트
+
+        let result = sqlx::query(
+            "UPDATE issues \
+             SET status='working', assigned_agent = ?, updated_at = datetime('now') \
+             WHERE id = ? \
+               AND status IN ('ready','working') \
+               AND (assigned_agent IS NULL OR assigned_agent = ?)",
+        )
+        .bind(agent_id)
+        .bind(id)
+        .bind(agent_id)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() == 0 {
+            return Err(Error::Validation(format!(
+                "issue:{id} is already held by another agent (current: status={:?}, assigned_agent={:?})",
+                current.status, current.assigned_agent
+            )));
+        }
+
+        // history 기록 (status 변화가 있었을 때만 기록 — 동일 agent 의 idempotent 재호출은 noise)
+        if current.status != IssueStatus::Working {
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: Some(serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string()),
+                new_value: Some("working".to_string()),
+                changed_by: agent_id.to_string(),
+            }).await;
+        }
+
+        self.issue_get(id).await
+    }
+
+    /// 이슈 점유를 해제하고 지정 상태로 전이한다. 보통 `ready` (다른 agent 가 픽업 가능)
+    /// 또는 `demo` (사용자 검토 대기) 로 전이한다.
+    ///
+    /// `agent_id` 가 현재 `assigned_agent` 와 다르면 거부 — 자기 lease 만 해제할 수 있다.
+    pub async fn issue_release(&self, id: i64, transition_to: IssueStatus, agent_id: &str) -> Result<Issue> {
+        let current = self.issue_get(id).await?;
+
+        // 자기가 잡은 이슈만 해제 가능 (admin override 는 별도 도구로 분리 — 현재는 없음)
+        if let Some(holder) = current.assigned_agent.as_deref() {
+            if holder != agent_id {
+                return Err(Error::Validation(format!(
+                    "issue:{id} is held by '{holder}', cannot be released by '{agent_id}'"
+                )));
+            }
+        }
+
+        let new_v = serde_json::to_value(&transition_to).unwrap().as_str().unwrap().to_string();
+        sqlx::query(
+            "UPDATE issues SET status = ?, assigned_agent = NULL, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(&new_v)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+
+        if current.status != transition_to {
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "status".to_string(),
+                old_value: Some(serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string()),
+                new_value: Some(new_v),
+                changed_by: agent_id.to_string(),
+            }).await;
+        }
+
+        self.issue_get(id).await
+    }
+
+    /// 이슈를 삭제한다. 하위 태스크/노트/링크/태스크테스트도 함께 cascade 삭제.
+    ///
+    /// 스키마상 `tasks.issue_id ON DELETE RESTRICT` 라서 단순 DELETE 는 막힌다.
+    /// 트랜잭션 내에서 task_tests → tasks → notes/links → issues 순으로 명시 삭제한다.
+    /// (`notes`, `issue_links` 는 FK CASCADE 이지만 트랜잭션 일관성을 위해 명시적으로 처리)
+    pub async fn issue_delete(&self, id: i64, changed_by: &str) -> Result<()> {
+        let issue = self.issue_get(id).await?; // 존재 확인
+
+        let mut tx = self.pool.begin().await?;
+
+        // 1) 하위 태스크의 task_tests 먼저 제거 (task_tests.task_id CASCADE 지만 명시)
+        sqlx::query(
+            "DELETE FROM task_tests WHERE task_id IN (SELECT id FROM tasks WHERE issue_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        // 2) 태스크 제거 (RESTRICT 우회를 위해 트랜잭션 내 명시 삭제)
+        sqlx::query("DELETE FROM tasks WHERE issue_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        // 3) 노트 제거 (FK CASCADE 지만 명시)
+        sqlx::query("DELETE FROM notes WHERE issue_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        // 4) 이슈 링크 제거 (양방향)
+        sqlx::query("DELETE FROM issue_links WHERE source_id = ? OR target_id = ?")
+            .bind(id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        // 5) 이슈 자체 삭제
+        sqlx::query("DELETE FROM issues WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        // 6) history 기록 (entity 가 사라졌으므로 entity_id 만 남는 deletion marker)
+        sqlx::query(
+            "INSERT INTO history (entity_type, entity_id, field, old_value, new_value, changed_by) VALUES ('issue', ?, 'deleted', ?, NULL, ?)",
+        )
+        .bind(id)
+        .bind(issue.title)
+        .bind(changed_by)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
         Ok(())
     }
 

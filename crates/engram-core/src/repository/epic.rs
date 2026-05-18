@@ -41,26 +41,78 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    /// 에픽을 삭제한다. 이슈가 하나라도 연결되어 있으면 거부한다.
-    pub async fn epic_delete(&self, id: i64) -> Result<()> {
-        self.epic_get(id).await?; // 존재 확인
+    /// 에픽을 삭제한다. 하위 이슈/태스크/노트/링크까지 모두 cascade 삭제한다.
+    ///
+    /// 스키마상 `issues.epic_id ON DELETE RESTRICT`, `tasks.issue_id ON DELETE RESTRICT`
+    /// 라서 단순 DELETE 는 막힌다. 트랜잭션 내에서 task_tests → tasks → notes/links → issues → epic
+    /// 순으로 명시 삭제한다.
+    pub async fn epic_delete(&self, id: i64, changed_by: &str) -> Result<()> {
+        let epic = self.epic_get(id).await?; // 존재 확인
 
-        let issue_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM issues WHERE epic_id = ?",
+        let mut tx = self.pool.begin().await?;
+
+        // 1) 하위 이슈들의 task_tests
+        sqlx::query(
+            "DELETE FROM task_tests WHERE task_id IN (\
+                 SELECT t.id FROM tasks t \
+                 JOIN issues i ON i.id = t.issue_id \
+                 WHERE i.epic_id = ?\
+             )",
         )
         .bind(id)
-        .fetch_one(&self.pool)
+        .execute(&mut *tx)
         .await?;
-        if issue_count > 0 {
-            return Err(Error::Validation(format!(
-                "에픽에 이슈가 {issue_count}개 남아 있습니다. 먼저 이슈를 다른 에픽으로 옮기거나 삭제하세요."
-            )));
-        }
 
+        // 2) 하위 이슈들의 태스크
+        sqlx::query(
+            "DELETE FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        // 3) 하위 이슈들의 노트
+        sqlx::query(
+            "DELETE FROM notes WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?)",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        // 4) 하위 이슈들의 링크 (source 또는 target 어느 쪽이든)
+        sqlx::query(
+            "DELETE FROM issue_links \
+             WHERE source_id IN (SELECT id FROM issues WHERE epic_id = ?) \
+                OR target_id IN (SELECT id FROM issues WHERE epic_id = ?)",
+        )
+        .bind(id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+
+        // 5) 하위 이슈 삭제
+        sqlx::query("DELETE FROM issues WHERE epic_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+
+        // 6) 에픽 자체 삭제
         sqlx::query("DELETE FROM epics WHERE id = ?")
             .bind(id)
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await?;
+
+        // 7) history 기록 (deletion marker)
+        sqlx::query(
+            "INSERT INTO history (entity_type, entity_id, field, old_value, new_value, changed_by) VALUES ('epic', ?, 'deleted', ?, NULL, ?)",
+        )
+        .bind(id)
+        .bind(epic.title)
+        .bind(changed_by)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
         Ok(())
     }
 

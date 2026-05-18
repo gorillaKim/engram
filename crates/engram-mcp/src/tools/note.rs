@@ -84,5 +84,6 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["note_id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.note_resolve(id, "agent").await?).unwrap())
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    Ok(serde_json::to_value(db.note_resolve(id, agent_id).await?).unwrap())
 }

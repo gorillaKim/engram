@@ -474,7 +474,15 @@ pub async fn epic_delete(
     db: State<'_, Arc<Db>>,
     id: i64,
 ) -> Result<(), String> {
-    db.epic_delete(id).await.map_err(|e| e.to_string())
+    db.epic_delete(id, "user").await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn issue_delete(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), String> {
+    db.issue_delete(id, "user").await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]

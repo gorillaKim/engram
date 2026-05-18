@@ -11,6 +11,10 @@ pub struct Issue {
     pub goal: Option<String>,
     pub status: IssueStatus,
     pub priority: IssuePriority,
+    /// 현재 이슈를 잡고 있는 에이전트 식별자. working 상태일 때만 의미가 있으며,
+    /// 다른 상태로 전이하면 NULL 로 비워진다. CAS 기반 `issue_claim` 의 lock 키.
+    #[serde(default)]
+    pub assigned_agent: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

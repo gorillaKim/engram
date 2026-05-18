@@ -15,6 +15,20 @@ pub struct SessionSnapshot {
     pub warnings: Vec<String>,
     /// Issue IDs where agent_discovered tasks > 50% (structured form of scope-expansion warnings)
     pub scope_expansion_ids: Vec<i64>,
+    /// 현재 working 상태에서 점유 중인 에이전트 목록. 리더 에이전트가 spawn 결정 시 참조.
+    #[serde(default)]
+    pub active_workers: Vec<ActiveWorker>,
+}
+
+/// `assigned_agent` 가 NULL 이 아닌 working 이슈의 점유 정보.
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ActiveWorker {
+    pub issue_id: i64,
+    pub issue_title: String,
+    pub agent_id: String,
+    pub project_key: String,
+    /// working 상태 진입 시각 (issues.updated_at). lease 만료 추적용.
+    pub since: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +146,7 @@ impl Db {
                 active_epics: vec![],
                 next_action: None,
                 pending_drafts: vec![],
+                active_workers: vec![],
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
                 scope_expansion_ids: vec![],
             });
@@ -260,6 +275,25 @@ impl Db {
             })
             .collect();
 
+        // 현재 working 상태에서 점유 중인 에이전트 조회
+        let mut workers_sql = String::from(
+            "SELECT i.id AS issue_id, i.title AS issue_title, \
+                    i.assigned_agent AS agent_id, e.project_key AS project_key, \
+                    i.updated_at AS since \
+             FROM issues i \
+             JOIN epics e ON e.id = i.epic_id \
+             WHERE i.status='working' AND i.assigned_agent IS NOT NULL \
+               AND i.sprint_id = ?",
+        );
+        if project_key.is_some() {
+            workers_sql.push_str(" AND e.project_key = ?");
+        }
+        workers_sql.push_str(" ORDER BY i.updated_at ASC");
+
+        let mut wq = sqlx::query_as::<_, ActiveWorker>(&workers_sql).bind(sprint.id);
+        if let Some(pk) = project_key { wq = wq.bind(pk); }
+        let active_workers = wq.fetch_all(&self.pool).await.unwrap_or_default();
+
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
@@ -270,6 +304,7 @@ impl Db {
             pending_drafts,
             warnings,
             scope_expansion_ids,
+            active_workers,
         })
     }
 
@@ -458,7 +493,7 @@ impl Db {
 
         let mut sql = r#"
             SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal,
-                   i.status, i.priority, i.created_at, i.updated_at,
+                   i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at,
                    e.project_key as proj
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
@@ -479,6 +514,7 @@ impl Db {
             goal: Option<String>,
             status: crate::models::issue::IssueStatus,
             priority: crate::models::issue::IssuePriority,
+            assigned_agent: Option<String>,
             created_at: String,
             updated_at: String,
             proj: String,
@@ -517,6 +553,7 @@ impl Db {
                 goal: r.goal,
                 status: r.status.clone(),
                 priority: r.priority,
+                assigned_agent: r.assigned_agent,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
             };

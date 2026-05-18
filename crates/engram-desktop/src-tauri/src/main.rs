@@ -141,6 +141,7 @@ fn main() {
             commands::epic_set_status,
             commands::epic_update,
             commands::epic_delete,
+            commands::issue_delete,
             commands::history_list,
             commands::mcp_status,
             commands::mcp_start,

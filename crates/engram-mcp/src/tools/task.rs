@@ -19,9 +19,14 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": { "issue_id": { "type": "integer" }, "status": { "type": "string" } }
             }
         }),
-        json!({ "name": "task_update", "description": "태스크 상태/정보를 수정합니다.",
+        json!({ "name": "task_update", "description": "태스크 상태/정보를 수정합니다. agent_id 를 명시하면 history.changed_by 로 저장됩니다.",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" }, "status": { "type": "string" }, "title": { "type": "string" } }
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "status":   { "type": "string" },
+                    "title":    { "type": "string" },
+                    "agent_id": { "type": "string" }
+                }
             }
         }),
         json!({ "name": "task_delete", "description": "태스크를 삭제합니다. 연결된 task_tests 는 같이 삭제되고, notes.task_id 는 NULL 로 풀립니다.",
@@ -72,13 +77,14 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     let status: Option<TaskStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     let input = UpdateTaskInput {
         title:       args["title"].as_str().map(String::from),
         description: args["description"].as_str().map(String::from),
         goal:        args["goal"].as_str().map(String::from),
         status,
     };
-    Ok(serde_json::to_value(db.task_update(id, input, "agent").await?).unwrap())
+    Ok(serde_json::to_value(db.task_update(id, input, agent_id).await?).unwrap())
 }
 
 pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

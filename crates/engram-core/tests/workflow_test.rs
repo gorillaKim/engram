@@ -572,3 +572,203 @@ async fn test_stalled_issues_detects_working_issue() {
     let other_proj = db.stalled_issues(Some("other-project"), IssueStatus::Working, 0).await.unwrap();
     assert!(other_proj.is_empty(), "다른 프로젝트 필터는 빈 결과");
 }
+
+// =====================================================
+// 삭제 cascade 동작 검증 (issue_delete / epic_delete)
+// =====================================================
+
+#[tokio::test]
+async fn test_issue_delete_cascades_tasks_notes_links() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    // 두 이슈, 각각 태스크/노트/링크 보유
+    let issue_a = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "A".to_string(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    let issue_b = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "B".to_string(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let t1 = db.task_create(CreateTaskInput {
+        issue_id: issue_a.id, title: "t1".into(),
+        description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+    db.task_test_add(t1.id, "테스트1".into()).await.unwrap();
+
+    db.note_add(CreateNoteInput {
+        issue_id: issue_a.id, task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "A 의 caveat".into(), detail: None,
+        author: None,
+    }).await.unwrap();
+
+    db.issue_link(issue_a.id, issue_b.id, LinkType::Blocks).await.unwrap();
+
+    // 사전: 모든 자식 존재 확인
+    assert_eq!(db.task_list(issue_a.id, None).await.unwrap().len(), 1, "이슈 A 에 태스크 1건");
+    assert_eq!(db.note_list(Some(issue_a.id), None, None, false).await.unwrap().len(), 1, "이슈 A 에 노트 1건");
+    assert_eq!(db.issue_links_for(issue_a.id).await.unwrap().len(), 1, "이슈 A 에 링크 1건");
+
+    // 이슈 A 삭제
+    db.issue_delete(issue_a.id, "agent").await.unwrap();
+
+    // 이슈 자체가 없음
+    assert!(db.issue_get(issue_a.id).await.is_err(), "삭제된 이슈는 조회 실패");
+
+    // 자식 데이터 cascade 확인
+    assert!(db.task_list(issue_a.id, None).await.unwrap().is_empty(), "태스크가 모두 삭제됨");
+    assert!(db.note_list(Some(issue_a.id), None, None, false).await.unwrap().is_empty(), "노트가 모두 삭제됨");
+    assert!(db.issue_links_for(issue_b.id).await.unwrap().is_empty(), "이슈 B 측에서 본 링크도 cascade 됨");
+
+    // 이슈 B 는 살아 있어야 한다
+    assert!(db.issue_get(issue_b.id).await.is_ok(), "관계 없는 이슈 B 는 살아 있음");
+}
+
+#[tokio::test]
+async fn test_epic_delete_cascades_all_issues_and_descendants() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    // 같은 에픽에 이슈 2개 + 다른 에픽 1개
+    let other_epic = db.epic_create(CreateEpicInput {
+        project_key: "test-project".into(),
+        title: "Other".into(), description: None,
+    }).await.unwrap();
+
+    let i1 = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "i1".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    let i2 = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "i2".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    let other_issue = db.issue_create(CreateIssueInput {
+        epic_id: other_epic.id, sprint_id: Some(sprint_id),
+        title: "other".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // i1 에 task / note 부착
+    let t = db.task_create(CreateTaskInput {
+        issue_id: i1.id, title: "t".into(),
+        description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+    db.note_add(CreateNoteInput {
+        issue_id: i1.id, task_id: Some(t.id),
+        note_type: NoteType::Decision,
+        summary: "d".into(), detail: None, author: None,
+    }).await.unwrap();
+
+    // 에픽 삭제 — 하위 이슈/태스크/노트 모두 함께 사라져야 한다
+    db.epic_delete(epic_id, "agent").await.unwrap();
+
+    assert!(db.epic_get(epic_id).await.is_err(), "에픽이 삭제됨");
+    assert!(db.issue_get(i1.id).await.is_err(), "하위 이슈 i1 cascade");
+    assert!(db.issue_get(i2.id).await.is_err(), "하위 이슈 i2 cascade");
+    assert!(db.task_list(i1.id, None).await.unwrap().is_empty(), "i1 의 태스크 cascade");
+    assert!(db.note_list(Some(i1.id), None, None, false).await.unwrap().is_empty(), "i1 의 노트 cascade");
+
+    // 다른 에픽/이슈는 살아 있어야 한다
+    assert!(db.epic_get(other_epic.id).await.is_ok(), "다른 에픽은 살아 있음");
+    assert!(db.issue_get(other_issue.id).await.is_ok(), "다른 에픽의 이슈는 살아 있음");
+}
+
+// =====================================================
+// 멀티 에이전트 claim / release (CAS) 검증
+// =====================================================
+
+#[tokio::test]
+async fn test_issue_claim_blocks_concurrent_claim() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "claim race".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // Agent A 가 먼저 잡는다 → 성공
+    let claimed = db.issue_claim(issue.id, "agent-a").await.unwrap();
+    assert_eq!(claimed.status, IssueStatus::Working);
+    assert_eq!(claimed.assigned_agent.as_deref(), Some("agent-a"));
+
+    // Agent B 의 claim 은 실패해야 한다 (lease 가 살아있음)
+    let conflict = db.issue_claim(issue.id, "agent-b").await;
+    assert!(conflict.is_err(), "Agent B 는 이미 잡혀있어 claim 실패해야 함: {:?}", conflict);
+
+    // 동일 agent-a 의 재호출은 idempotent (이미 자기가 잡은 상태)
+    let same_a = db.issue_claim(issue.id, "agent-a").await;
+    assert!(same_a.is_ok(), "같은 에이전트의 재 claim 은 OK");
+}
+
+#[tokio::test]
+async fn test_issue_release_to_ready_clears_assigned_agent() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "release".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+
+    let claimed = db.issue_claim(issue.id, "agent-a").await.unwrap();
+    assert_eq!(claimed.assigned_agent.as_deref(), Some("agent-a"));
+
+    // ready 로 release → assigned_agent 비워지고 다른 에이전트가 claim 가능
+    let released = db.issue_release(issue.id, IssueStatus::Ready, "agent-a").await.unwrap();
+    assert_eq!(released.status, IssueStatus::Ready);
+    assert_eq!(released.assigned_agent, None);
+
+    let reclaim = db.issue_claim(issue.id, "agent-b").await.unwrap();
+    assert_eq!(reclaim.assigned_agent.as_deref(), Some("agent-b"));
+}
+
+#[tokio::test]
+async fn test_issue_status_change_clears_assignment_when_leaving_working() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "demo flow".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_claim(issue.id, "agent-a").await.unwrap();
+
+    // working → demo 로 일반 update 호출 시에도 assigned_agent 가 정리되어야 한다
+    let demoed = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo), ..Default::default()
+    }, "agent-a").await.unwrap();
+    assert_eq!(demoed.status, IssueStatus::Demo);
+    assert_eq!(demoed.assigned_agent, None, "working 벗어나면 assigned_agent 가 비워져야 함");
+}
+
+#[tokio::test]
+async fn test_issue_delete_records_history() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "to delete".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    db.issue_delete(issue.id, "user").await.unwrap();
+
+    // history 에 deletion 이벤트가 user 액터로 남아야 한다 (공개 API 로 조회)
+    let entries = db.history_list(EntityType::Issue, issue.id).await.unwrap();
+    let has_delete = entries.iter().any(|h| h.field == "deleted" && h.changed_by == "user");
+    assert!(has_delete, "issue_delete 가 changed_by='user' 로 history 에 기록되어야 함, entries={:?}", entries);
+}

@@ -40,7 +40,7 @@ impl Db {
         let sprint = self.sprint_get(sprint_id).await?;
 
         let issues = sqlx::query_as::<_, crate::models::issue::Issue>(
-            r#"SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.created_at, i.updated_at
+            r#"SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
                FROM issues i
                WHERE i.sprint_id = ?
                ORDER BY i.id ASC"#,

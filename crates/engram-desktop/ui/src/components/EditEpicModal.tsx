@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicUpdate } from '../ipc/invoke';
+import { epicUpdate, epicDelete } from '../ipc/invoke';
 import type { Epic, EpicStatus } from '../ipc/types';
 
 const STATUS_OPTIONS: { value: EpicStatus; label: string }[] = [
@@ -50,6 +50,32 @@ export function EditEpicModal({ epic, onClose }: Props) {
     },
     onError: (err) => toast.error(`에픽 수정 실패: ${err}`),
   });
+
+  const remove = useMutation({
+    mutationFn: () => {
+      if (!epic) throw new Error('no epic');
+      return epicDelete(epic.id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['epicList'] });
+      qc.invalidateQueries({ queryKey: ['epicListBacklog'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      qc.invalidateQueries({ queryKey: ['blockingGraph'] });
+      toast.success('에픽이 하위 이슈와 함께 삭제되었습니다');
+      onClose();
+    },
+    onError: (err) => toast.error(`에픽 삭제 실패: ${err}`),
+  });
+
+  const handleDelete = () => {
+    if (!epic) return;
+    const ok = window.confirm(
+      `정말 에픽 "${epic.title}" 을 삭제하시겠습니까?\n` +
+      `하위 이슈/태스크/노트/링크가 모두 함께 삭제되며 되돌릴 수 없습니다.`,
+    );
+    if (ok) remove.mutate();
+  };
 
   if (!epic) return null;
 
@@ -100,22 +126,33 @@ export function EditEpicModal({ epic, onClose }: Props) {
           <p className="text-xs text-slate-500">프로젝트 키: {epic.project_key} · #{epic.id}</p>
         </div>
 
-        <div className="flex gap-2 justify-end mt-6">
+        <div className="flex items-center justify-between mt-6">
           <button
             type="button"
-            onClick={onClose}
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg"
+            onClick={handleDelete}
+            disabled={remove.isPending}
+            className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg disabled:opacity-50"
+            title="에픽과 하위 이슈/태스크/노트를 모두 삭제합니다 (비가역)"
           >
-            취소
+            {remove.isPending ? '삭제 중…' : '에픽 삭제'}
           </button>
-          <button
-            type="button"
-            disabled={!canSubmit || update.isPending}
-            onClick={() => update.mutate()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg disabled:opacity-50"
-          >
-            {update.isPending ? '저장 중…' : '저장'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg"
+            >
+              취소
+            </button>
+            <button
+              type="button"
+              disabled={!canSubmit || update.isPending}
+              onClick={() => update.mutate()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg disabled:opacity-50"
+            >
+              {update.isPending ? '저장 중…' : '저장'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

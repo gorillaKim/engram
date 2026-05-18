@@ -60,7 +60,8 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         start_date: args["start_date"].as_str().map(String::from),
         end_date:   args["end_date"].as_str().map(String::from),
     };
-    Ok(serde_json::to_value(db.sprint_update(id, input, "agent").await?).unwrap())
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    Ok(serde_json::to_value(db.sprint_update(id, input, agent_id).await?).unwrap())
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

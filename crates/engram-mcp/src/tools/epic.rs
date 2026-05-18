@@ -32,13 +32,17 @@ pub fn tool_definitions() -> Vec<Value> {
                     "id": { "type": "integer" },
                     "title": { "type": "string" },
                     "description": { "type": "string" },
-                    "status": { "type": "string" }
+                    "status": { "type": "string" },
+                    "agent_id": { "type": "string" }
                 }
             }
         }),
-        json!({ "name": "epic_delete", "description": "에픽을 삭제합니다. 이슈가 하나라도 연결된 에픽은 삭제할 수 없습니다 — 먼저 이슈를 옮기거나 삭제하세요.",
+        json!({ "name": "epic_delete", "description": "에픽을 삭제합니다. 하위 이슈/태스크/노트/링크가 함께 cascade 삭제됩니다 — 비가역 작업이므로 신중하게 호출하세요.",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" } }
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc'). 생략 시 'agent'." }
+                }
             }
         }),
     ]
@@ -56,7 +60,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
-    db.epic_delete(id).await?;
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    db.epic_delete(id, agent_id).await?;
     Ok(json!({ "ok": true, "deleted_id": id }))
 }
 
@@ -74,12 +79,13 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     let status: Option<EpicStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     let input = UpdateEpicInput {
         title:       args["title"].as_str().map(String::from),
         description: args["description"].as_str().map(String::from),
         status,
     };
-    Ok(serde_json::to_value(db.epic_update(id, input, "agent").await?).unwrap())
+    Ok(serde_json::to_value(db.epic_update(id, input, agent_id).await?).unwrap())
 }
 
 pub async fn list_backlog(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -92,9 +98,10 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let sprint_id = args["sprint_id"].as_i64();
+    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     let issues = db.issue_list(IssueFilter { epic_id: Some(id), ..Default::default() }).await?;
     for issue in &issues {
-        db.issue_set_sprint(issue.id, sprint_id, "agent").await?;
+        db.issue_set_sprint(issue.id, sprint_id, agent_id).await?;
     }
     Ok(serde_json::to_value(db.epic_get(id).await?).unwrap())
 }

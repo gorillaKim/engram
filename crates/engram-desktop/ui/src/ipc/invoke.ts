@@ -149,5 +149,8 @@ export const epicUpdate = (
 export const epicDelete = (id: number) =>
   invoke<void>('epic_delete', { id });
 
+export const issueDelete = (id: number) =>
+  invoke<void>('issue_delete', { id });
+
 export const historyList = (entity_type: string, entity_id: number) =>
   invoke<HistoryEntry[]>('history_list', { entity_type, entity_id });

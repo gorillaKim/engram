@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { issueGet, issueSetStatus, blockedIssuesGraph } from '../ipc/invoke';
+import { issueGet, issueSetStatus, blockedIssuesGraph, issueDelete } from '../ipc/invoke';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
@@ -42,6 +42,29 @@ export function IssueDetail() {
     },
     onError: (err) => toast.error(`전이 실패: ${err}`),
   });
+
+  const remove = useMutation({
+    mutationFn: () => issueDelete(selectedIssueId!),
+    onSuccess: () => {
+      // 캐시 무효화 — 보드/세션/이슈 목록 모두 갱신
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      qc.invalidateQueries({ queryKey: ['blockingGraph'] });
+      qc.removeQueries({ queryKey: ['issue', selectedIssueId] });
+      toast.success('이슈가 삭제되었습니다');
+      selectIssue(null);
+    },
+    onError: (err) => toast.error(`삭제 실패: ${err}`),
+  });
+
+  const handleDelete = () => {
+    if (!issue) return;
+    const ok = window.confirm(
+      `정말 이슈 "#${issue.id} ${issue.title}" 를 삭제하시겠습니까?\n` +
+      `하위 태스크/노트/링크가 모두 함께 삭제되며 되돌릴 수 없습니다.`,
+    );
+    if (ok) remove.mutate();
+  };
 
   if (!selectedIssueId) return null;
 
@@ -144,6 +167,13 @@ export function IssueDetail() {
                 className="w-full py-2 text-sm rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 취소 (Cancelled)
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={remove.isPending}
+                className="w-full py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {remove.isPending ? '삭제 중…' : '영구 삭제'}
               </button>
             </div>
           </div>
