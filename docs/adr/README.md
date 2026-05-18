@@ -4,15 +4,20 @@
 
 ## 목록
 
-(아직 비어 있음. [[Engram - Implementation Plan]] §7 의 ADR-001~005 본문을 옮길 예정.)
-
 | 번호 | 제목 | 상태 |
 |------|------|------|
-| 0001 | Single Central DB vs Per-project DB | (작성 예정) |
-| 0002 | SQLite + WAL vs PostgreSQL | (작성 예정) |
-| 0003 | `blocks` 단방향 저장 | (작성 예정) |
-| 0004 | Claude Code Hook 을 MVP 에 포함 | (작성 예정) |
-| 0005 | `tasks.ord` (REAL fractional index) | (작성 예정) |
+| 0001 | Single Central DB vs Per-project DB | Accepted |
+| 0002 | SQLite + WAL vs PostgreSQL | Accepted |
+| 0003 | `blocks` 단방향 저장 | Accepted |
+| 0004 | Claude Code Hook 을 MVP 에 포함 | Accepted |
+| 0005 | `tasks.ord` (REAL fractional index) | Accepted |
+| 0006 | Desktop: Tauri v2 단일 바이너리 | Accepted |
+| 0006 | Streamable HTTP Transport | Accepted *(번호 중복, 별도 정리 예정)* |
+| 0007 | Agent Demo Gate | Accepted |
+| 0007 | `history.changed_by` actor 감사 | Accepted *(번호 중복, 별도 정리 예정)* |
+| 0008 | Embedded MCP Supervisor | Accepted |
+| 0009 | Multi-Agent Concurrency | Accepted |
+| 0010 | CLI ↔ MCP 패리티 컨벤션 | Accepted |
 
 ## 작성 규칙
 
