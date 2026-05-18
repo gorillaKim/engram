@@ -16,10 +16,10 @@ Agent Issue Management System — Sprint / Epic / Issue / Task / Note 를 SQLite
 
 ```bash
 # 원격 git 에서 직접 설치
-cargo install --git https://github.com/<owner>/engram engram-cli
+cargo install --git https://github.com/gorillaKim/engram engram-cli
 
 # 또는 로컬 클론 후 설치
-git clone https://github.com/<owner>/engram
+git clone https://github.com/gorillaKim/engram
 cd engram
 cargo install --path crates/engram-cli
 ```
@@ -44,7 +44,7 @@ engram --help
 
 ```bash
 VER=0.1.0   # 원하는 release version
-curl -L "https://github.com/<owner>/engram/releases/download/v${VER}/engram-${VER}-aarch64-apple-darwin.tar.gz" \
+curl -L "https://github.com/gorillaKim/engram/releases/download/v${VER}/engram-${VER}-aarch64-apple-darwin.tar.gz" \
   | tar xz
 mv engram /usr/local/bin/   # 또는 ~/.local/bin/ 등 PATH 에 있는 곳
 engram --version

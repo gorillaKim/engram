@@ -19,7 +19,7 @@
 ### 1.1 1차 권장 — `cargo install`
 
 ```bash
-cargo install --git https://github.com/<owner>/engram engram-cli
+cargo install --git https://github.com/gorillaKim/engram engram-cli
 # 또는 로컬 클론 후
 cargo install --path crates/engram-cli
 ```
@@ -38,11 +38,11 @@ which engram        # $PATH 에서 위치 확인
 ```bash
 VER=0.1.0   # 원하는 release version
 # macOS Apple Silicon
-curl -L "https://github.com/<owner>/engram/releases/download/v${VER}/engram-${VER}-aarch64-apple-darwin.tar.gz" | tar xz
+curl -L "https://github.com/gorillaKim/engram/releases/download/v${VER}/engram-${VER}-aarch64-apple-darwin.tar.gz" | tar xz
 # macOS Intel
-curl -L "https://github.com/<owner>/engram/releases/download/v${VER}/engram-${VER}-x86_64-apple-darwin.tar.gz"  | tar xz
+curl -L "https://github.com/gorillaKim/engram/releases/download/v${VER}/engram-${VER}-x86_64-apple-darwin.tar.gz"  | tar xz
 # linux x64
-curl -L "https://github.com/<owner>/engram/releases/download/v${VER}/engram-${VER}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
+curl -L "https://github.com/gorillaKim/engram/releases/download/v${VER}/engram-${VER}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
 
 # $PATH 안의 디렉토리에 배치
 mv engram /usr/local/bin/      # 또는 ~/.local/bin/
