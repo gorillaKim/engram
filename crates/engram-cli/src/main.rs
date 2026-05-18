@@ -11,6 +11,10 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// 호출 액터 식별자 (예: 'gemini-cli', 'user'). ADR-0010 참조.
+    #[arg(long, global = true)]
+    agent_id: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -52,7 +56,6 @@ enum Commands {
 async fn main() {
     let cli = Cli::parse();
     let fmt = OutputFormat::from_flags(cli.json);
-
     match run(cli, fmt).await {
         Ok(()) => {}
         Err(err) => {
@@ -64,13 +67,14 @@ async fn main() {
 
 async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
     let db = engram_core::Db::open_default().await?;
+    let agent_id = cli.agent_id.as_deref().unwrap_or("user");
 
     match cli.command {
-        Commands::Sprint(args)  => commands::sprint::run(db, args, fmt).await?,
-        Commands::Epic(args)    => commands::epic::run(db, args, fmt).await?,
-        Commands::Issue(args)   => commands::issue::run(db, args, fmt).await?,
-        Commands::Task(args)    => commands::task::run(db, args, fmt).await?,
-        Commands::Note(args)    => commands::note::run(db, args, fmt).await?,
+        Commands::Sprint(args)  => commands::sprint::run(db, args, fmt, agent_id).await?,
+        Commands::Epic(args)    => commands::epic::run(db, args, fmt, agent_id).await?,
+        Commands::Issue(args)   => commands::issue::run(db, args, fmt, agent_id).await?,
+        Commands::Task(args)    => commands::task::run(db, args, fmt, agent_id).await?,
+        Commands::Note(args)    => commands::note::run(db, args, fmt, agent_id).await?,
         Commands::Session(args) => commands::session::run(db, args, fmt).await?,
         Commands::Board(args)   => commands::board::run(db, args, fmt).await?,
         Commands::Blocked(args) => commands::blocked::run(db, args, fmt).await?,

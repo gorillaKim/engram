@@ -45,8 +45,8 @@
 | `issue_link`         | `engram issue link`          | -                   | `engram issue link --source S --target T [--type blocks]`       |
 | `issue_unlink`       | `engram issue unlink`        | -                   | `engram issue unlink --link-id L`                               |
 | `issue_delete`       | (없음)                       | **CLI 미노출**      | `engram issue delete <id>`                                      |
-| `issue_claim`        | (없음)                       | **CLI 미노출**      | `engram issue claim <id> --agent-id A`                          |
-| `issue_release`      | (없음)                       | **CLI 미노출**      | `engram issue release <id> --agent-id A --transition-to T [--force]` |
+| `issue_claim`        | `engram issue claim`         | -                   | `engram [--agent-id A] issue claim <id> [--agent-id A]`         |
+| `issue_release`      | `engram issue release`       | -                   | `engram [--agent-id A] issue release <id> [--agent-id A] --transition-to T [--force]` |
 | `issue_set_sprint`   | (없음)                       | **CLI 미노출**      | `engram issue set-sprint <id> --sprint S`                       |
 | `my_blocked_issues`  | (없음)                       | **CLI 미노출**      | `engram blocked list --project P`  *(신규 area, §7)*             |
 | `stalled_issues`     | (없음)                       | **CLI 미노출**      | `engram issue stalled --threshold-minutes 10 [--project P] [--status working]` |

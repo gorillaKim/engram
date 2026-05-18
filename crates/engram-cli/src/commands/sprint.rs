@@ -29,7 +29,7 @@ pub enum SprintCommand {
     },
 }
 
-pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
         SprintCommand::Create { name, goal, start, end } => {
             let sprint = db.sprint_create(CreateSprintInput {
@@ -57,7 +57,7 @@ pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat) -> anyhow::Result<
             }).transpose()?;
             let sprint = db.sprint_update(id, UpdateSprintInput {
                 name, status: parsed_status, goal, start_date: None, end_date: None,
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&sprint, fmt)?;
         }
     }

@@ -93,12 +93,14 @@ pub enum IssueCommand {
     /// 이슈 점유 (CAS). 멀티 에이전트 안전. ADR-0009 / agent-demo-gate.md 참조.
     Claim {
         id: i64,
-        #[arg(long = "agent-id")] agent_id: String,
+        /// 글로벌 --agent-id 로 대체 가능. 둘 다 없으면 에러.
+        #[arg(long = "agent-id")] agent_id: Option<String>,
     },
     /// 점유 해제 + 지정 상태로 전이. transition_to ∈ {ready, demo, required}.
     Release {
         id: i64,
-        #[arg(long = "agent-id")] agent_id: String,
+        /// 글로벌 --agent-id 로 대체 가능. 둘 다 없으면 에러.
+        #[arg(long = "agent-id")] agent_id: Option<String>,
         #[arg(long = "transition-to")] transition_to: String,
         #[arg(long)] force: bool,
     },
@@ -113,7 +115,7 @@ pub enum IssueCommand {
     },
 }
 
-pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
         IssueCommand::Create { epic, sprint, title } => {
             let issue = db.issue_create(CreateIssueInput {
@@ -138,7 +140,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<(
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {
                 status: Some(IssueStatus::Ready), ..Default::default()
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
         IssueCommand::Update { id, status, priority, title } => {
@@ -147,7 +149,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<(
                 priority: priority.as_deref().map(parse_priority).transpose()?,
                 title,
                 ..Default::default()
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
         IssueCommand::Link { source, target, r#type } => {
@@ -162,21 +164,29 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<(
                 fmt,
             )?;
         }
-        IssueCommand::Claim { id, agent_id } => {
-            let issue = db.issue_claim(id, &agent_id).await?;
+        IssueCommand::Claim { id, agent_id: cmd_agent_id } => {
+            let effective = cmd_agent_id.as_deref().unwrap_or(agent_id);
+            if effective == "user" {
+                anyhow::bail!("issue claim 은 --agent-id 가 필요합니다 (글로벌 또는 서브커맨드)");
+            }
+            let issue = db.issue_claim(id, effective).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::Release { id, agent_id, transition_to, force } => {
+        IssueCommand::Release { id, agent_id: cmd_agent_id, transition_to, force } => {
+            let effective = cmd_agent_id.as_deref().unwrap_or(agent_id);
+            if effective == "user" {
+                anyhow::bail!("issue release 은 --agent-id 가 필요합니다 (글로벌 또는 서브커맨드)");
+            }
             let st = parse_release_transition(&transition_to)?;
-            let issue = db.issue_release(id, st, &agent_id, force).await?;
+            let issue = db.issue_release(id, st, effective, force).await?;
             output::print_value(&issue, fmt)?;
         }
         IssueCommand::SetSprint { id, sprint } => {
-            let issue = db.issue_set_sprint(id, sprint, "user").await?;
+            let issue = db.issue_set_sprint(id, sprint, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
         IssueCommand::Delete { id } => {
-            db.issue_delete(id, "user").await?;
+            db.issue_delete(id, agent_id).await?;
             output::print_value(
                 &serde_json::json!({ "ok": true, "deleted_id": id }),
                 fmt,
@@ -249,7 +259,19 @@ mod tests {
         match cmd {
             IssueCommand::Claim { id, agent_id } => {
                 assert_eq!(id, 7);
-                assert_eq!(agent_id, "me@sess-1");
+                assert_eq!(agent_id.as_deref(), Some("me@sess-1"));
+            }
+            _ => panic!("Claim 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_claim_without_agent_id() {
+        let cmd = parse(&["claim", "7"]);
+        match cmd {
+            IssueCommand::Claim { id, agent_id } => {
+                assert_eq!(id, 7);
+                assert_eq!(agent_id, None);
             }
             _ => panic!("Claim 변형이 파싱되어야 함"),
         }
@@ -263,7 +285,7 @@ mod tests {
         match cmd {
             IssueCommand::Release { id, agent_id, transition_to, force } => {
                 assert_eq!(id, 7);
-                assert_eq!(agent_id, "me@s");
+                assert_eq!(agent_id.as_deref(), Some("me@s"));
                 assert_eq!(transition_to, "demo");
                 assert!(force);
             }

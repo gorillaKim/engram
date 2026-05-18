@@ -44,7 +44,7 @@ pub enum TaskCommand {
     },
 }
 
-pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
         TaskCommand::Create { issue, title, goal } => {
             let task = db.task_create(CreateTaskInput {
@@ -58,7 +58,7 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()
         TaskCommand::Finish { id } => {
             let task = db.task_update(id, UpdateTaskInput {
                 status: Some(TaskStatus::Finished), ..Default::default()
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&task, fmt)?;
         }
         TaskCommand::Next { project } => {
@@ -70,7 +70,7 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()
                 status: status.as_deref().map(parse_task_status).transpose()?,
                 title,
                 ..Default::default()
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&task, fmt)?;
         }
         TaskCommand::InsertAfter { issue, after_task_id, title } => {

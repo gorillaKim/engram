@@ -2,6 +2,8 @@
 
 이 문서는 `engram-orchestrator` 플러그인의 서브에이전트(worker / leader / analyzer / orchestrator) 가 Engram CLI/MCP 에 접근하기 위해 사용자가 1회 수행해야 할 setup 절차를 정리한다.
 
+**참고:** `engram-orchestrator` v0.5.0 이상부터는 플러그인 설치 시 `PostInstall` 훅을 통해 CLI가 자동으로 설치되므로, 수동 설치 단계가 생략될 수 있습니다.
+
 본 repo (`engram`) 는 CLI 바이너리 (`engram`) + MCP 서버 (`engram-mcp`) 만 호스팅한다. 플러그인 패키지 자체는 별도 저장소에 있다.
 
 ## 0. 호환성 매트릭스
@@ -85,11 +87,11 @@ CLI fallback 패턴 (ADR-0010 + 매트릭스):
 # 세션 시작
 engram session restore --project myproj --json
 
-# 이슈 잡기 (CAS 안전)
-engram issue claim 12 --agent-id "$AGENT_ID" --json
+# 이슈 잡기 (CAS 안전) — 글로벌 --agent-id 권장
+engram --agent-id "$AGENT_ID" issue claim 12 --json
 
 # 작업 진행 후 demo 로 해제
-engram issue release 12 --agent-id "$AGENT_ID" --transition-to demo --json
+engram --agent-id "$AGENT_ID" issue release 12 --transition-to demo --json
 
 # 정체 이슈 감시 (leader)
 engram stalled --threshold-minutes 10 --json
@@ -98,9 +100,9 @@ engram stalled --threshold-minutes 10 --json
 engram history recent --since-minutes 30 --json
 engram history by-agent --agent-id "$AGENT_ID" --limit 20 --json
 
-# 노트 (issue/task/broadcast)
-engram note add --issue 12 --type context --summary "..." --agent-id "$AGENT_ID" --json
-engram note add --scope epic --scope-target-id 4 --type decision --summary "..." --agent-id "$AGENT_ID" --json
+# 노트 (issue/task/broadcast) — 글로벌 --agent-id 권장
+engram --agent-id "$AGENT_ID" note add --issue 12 --type context --summary "..." --json
+engram --agent-id "$AGENT_ID" note add --scope epic --scope-target-id 4 --type decision --summary "..." --json
 ```
 
 전체 verb 매트릭스: [`docs/cli-mcp-parity.md`](cli-mcp-parity.md).

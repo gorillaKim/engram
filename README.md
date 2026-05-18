@@ -7,6 +7,7 @@ Agent Issue Management System — Sprint / Epic / Issue / Task / Note 를 SQLite
 - 구현 계획: `doxus://brain/Ideas/agent/Engram - Implementation Plan.md`
 - 코딩 규칙: [`.claude/rules/`](.claude/rules/)
 - 설계 결정: [`docs/adr/`](docs/adr/)
+- 에픽 회고: [`docs/retro/`](docs/retro/)
 - CLI ↔ MCP 패리티 매트릭스: [`docs/cli-mcp-parity.md`](docs/cli-mcp-parity.md)
 - 플러그인 setup 가이드: [`docs/plugin-setup.md`](docs/plugin-setup.md)
 
@@ -32,7 +33,24 @@ engram --version    # → engram <version>
 engram --help
 ```
 
-### 2차 — prebuilt binary (GitHub Releases)
+### 1차 권장 — Homebrew (macOS)
+
+macOS 사용자는 brew를 통해 가장 쉽고 안전하게 설치할 수 있습니다.
+
+```bash
+brew tap gorillaKim/engram
+brew install engram
+```
+
+### 2차 권장 — `install.sh` (curl-pipe)
+
+한 줄 명령으로 OS/Arch 감지 및 최신 바이너리 설치가 가능합니다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gorillaKim/engram/main/install.sh | sh
+```
+
+### 3차 — prebuilt binary (GitHub Releases)
 
 태그 push 시 `.github/workflows/release.yml` 가 자동 빌드. 지원 타겟:
 

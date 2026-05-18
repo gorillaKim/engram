@@ -73,7 +73,7 @@ pub enum NoteCommand {
     Get { id: i64 },
 }
 
-pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &str) -> anyhow::Result<()> {
     match args.command {
         NoteCommand::Add {
             issue, task, r#type, summary, detail,
@@ -86,7 +86,7 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat) -> anyhow::Result<()
                 summary,
                 detail,
                 author,
-                agent_id,
+                agent_id: agent_id.or_else(|| Some(global_agent_id.to_string())),
                 scope: scope.as_deref().map(parse_scope).transpose()?,
                 scope_target_id,
                 project_key,
@@ -101,7 +101,7 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat) -> anyhow::Result<()
             )?;
         }
         NoteCommand::Resolve { id } => {
-            db.note_resolve(id, "user").await?;
+            db.note_resolve(id, global_agent_id).await?;
             output::print_value(
                 &serde_json::json!({ "ok": true, "resolved_id": id }),
                 fmt,

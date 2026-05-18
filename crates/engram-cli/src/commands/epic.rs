@@ -41,7 +41,7 @@ pub enum EpicCommand {
     },
 }
 
-pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
         EpicCommand::Create { project, title } => {
             let epic = db.epic_create(CreateEpicInput {
@@ -64,11 +64,11 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat) -> anyhow::Result<()
                 status: status.as_deref().map(parse_epic_status).transpose()?,
                 title,
                 description,
-            }, "user").await?;
+            }, agent_id).await?;
             output::print_value(&epic, fmt)?;
         }
         EpicCommand::Delete { id } => {
-            db.epic_delete(id, "user").await?;
+            db.epic_delete(id, agent_id).await?;
             output::print_value(
                 &serde_json::json!({ "ok": true, "deleted_id": id }),
                 fmt,
