@@ -16,6 +16,19 @@ fn parse_status(s: &str) -> anyhow::Result<IssueStatus> {
     }
 }
 
+/// `issue release --transition-to` 가 받을 수 있는 값은 MCP `issue_release` 스키마와 동일하게
+/// ready / demo / required 만 허용 (working/finished/cancelled 거부).
+fn parse_release_transition(s: &str) -> anyhow::Result<IssueStatus> {
+    match s {
+        "ready"    => Ok(IssueStatus::Ready),
+        "demo"     => Ok(IssueStatus::Demo),
+        "required" => Ok(IssueStatus::Required),
+        other      => Err(anyhow::anyhow!(
+            "issue release --transition-to 는 ready/demo/required 만 허용 (받은 값: {other})"
+        )),
+    }
+}
+
 fn parse_priority(s: &str) -> anyhow::Result<IssuePriority> {
     match s {
         "critical" => Ok(IssuePriority::Critical),
@@ -49,7 +62,15 @@ pub enum IssueCommand {
         #[arg(long)] sprint: Option<i64>,
         #[arg(long)] title: String,
     },
-    List { #[arg(long)] project: Option<String>, #[arg(long)] epic: Option<i64> },
+    /// 이슈 목록. IssueFilter 전체 노출.
+    List {
+        #[arg(long)] project: Option<String>,
+        #[arg(long)] epic: Option<i64>,
+        #[arg(long)] sprint: Option<i64>,
+        #[arg(long = "backlog-only")] backlog_only: bool,
+        #[arg(long)] status: Option<String>,
+        #[arg(long)] priority: Option<String>,
+    },
     Get { id: i64 },
     Ready { id: i64 },
     /// 임의 상태 전이 / 우선순위 변경
@@ -69,6 +90,27 @@ pub enum IssueCommand {
     Unlink {
         #[arg(long = "link-id")] link_id: i64,
     },
+    /// 이슈 점유 (CAS). 멀티 에이전트 안전. ADR-0009 / agent-demo-gate.md 참조.
+    Claim {
+        id: i64,
+        #[arg(long = "agent-id")] agent_id: String,
+    },
+    /// 점유 해제 + 지정 상태로 전이. transition_to ∈ {ready, demo, required}.
+    Release {
+        id: i64,
+        #[arg(long = "agent-id")] agent_id: String,
+        #[arg(long = "transition-to")] transition_to: String,
+        #[arg(long)] force: bool,
+    },
+    /// 이슈의 sprint 소속 변경 (sprint=None 이면 백로그로 이동)
+    SetSprint {
+        id: i64,
+        #[arg(long)] sprint: Option<i64>,
+    },
+    /// 이슈 삭제 (하위 task/notes/links cascade)
+    Delete {
+        id: i64,
+    },
 }
 
 pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<()> {
@@ -79,9 +121,14 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<(
             }).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::List { project, epic } => {
+        IssueCommand::List { project, epic, sprint, backlog_only, status, priority } => {
             let list = db.issue_list(IssueFilter {
-                epic_id: epic, project_key: project, ..Default::default()
+                epic_id: epic,
+                sprint_id: sprint,
+                backlog_only,
+                project_key: project,
+                status: status.as_deref().map(parse_status).transpose()?,
+                priority: priority.as_deref().map(parse_priority).transpose()?,
             }).await?;
             output::print_value(&list, fmt)?;
         }
@@ -112,6 +159,26 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<(
             db.issue_unlink(link_id).await?;
             output::print_value(
                 &serde_json::json!({ "ok": true, "unlinked_id": link_id }),
+                fmt,
+            )?;
+        }
+        IssueCommand::Claim { id, agent_id } => {
+            let issue = db.issue_claim(id, &agent_id).await?;
+            output::print_value(&issue, fmt)?;
+        }
+        IssueCommand::Release { id, agent_id, transition_to, force } => {
+            let st = parse_release_transition(&transition_to)?;
+            let issue = db.issue_release(id, st, &agent_id, force).await?;
+            output::print_value(&issue, fmt)?;
+        }
+        IssueCommand::SetSprint { id, sprint } => {
+            let issue = db.issue_set_sprint(id, sprint, "user").await?;
+            output::print_value(&issue, fmt)?;
+        }
+        IssueCommand::Delete { id } => {
+            db.issue_delete(id, "user").await?;
+            output::print_value(
+                &serde_json::json!({ "ok": true, "deleted_id": id }),
                 fmt,
             )?;
         }
@@ -174,5 +241,95 @@ mod tests {
         assert!(parse_status("nonsense").is_err());
         assert_eq!(parse_priority("critical").unwrap(), IssuePriority::Critical);
         assert_eq!(parse_link_type("relates_to").unwrap(), LinkType::RelatesTo);
+    }
+
+    #[test]
+    fn test_parse_claim() {
+        let cmd = parse(&["claim", "7", "--agent-id", "me@sess-1"]);
+        match cmd {
+            IssueCommand::Claim { id, agent_id } => {
+                assert_eq!(id, 7);
+                assert_eq!(agent_id, "me@sess-1");
+            }
+            _ => panic!("Claim 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_release_with_force() {
+        let cmd = parse(&[
+            "release", "7", "--agent-id", "me@s", "--transition-to", "demo", "--force",
+        ]);
+        match cmd {
+            IssueCommand::Release { id, agent_id, transition_to, force } => {
+                assert_eq!(id, 7);
+                assert_eq!(agent_id, "me@s");
+                assert_eq!(transition_to, "demo");
+                assert!(force);
+            }
+            _ => panic!("Release 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_release_transition_helper() {
+        assert_eq!(parse_release_transition("ready").unwrap(),    IssueStatus::Ready);
+        assert_eq!(parse_release_transition("demo").unwrap(),     IssueStatus::Demo);
+        assert_eq!(parse_release_transition("required").unwrap(), IssueStatus::Required);
+        assert!(parse_release_transition("working").is_err());
+        assert!(parse_release_transition("finished").is_err());
+    }
+
+    #[test]
+    fn test_parse_set_sprint_with_value() {
+        let cmd = parse(&["set-sprint", "5", "--sprint", "3"]);
+        match cmd {
+            IssueCommand::SetSprint { id, sprint } => {
+                assert_eq!(id, 5);
+                assert_eq!(sprint, Some(3));
+            }
+            _ => panic!("SetSprint 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_set_sprint_to_backlog() {
+        let cmd = parse(&["set-sprint", "5"]);
+        match cmd {
+            IssueCommand::SetSprint { id, sprint } => {
+                assert_eq!(id, 5);
+                assert_eq!(sprint, None);
+            }
+            _ => panic!("SetSprint 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_delete() {
+        let cmd = parse(&["delete", "9"]);
+        match cmd {
+            IssueCommand::Delete { id } => assert_eq!(id, 9),
+            _ => panic!("Delete 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_full_filters() {
+        let cmd = parse(&[
+            "list", "--project", "engram", "--epic", "4",
+            "--sprint", "2", "--backlog-only",
+            "--status", "ready", "--priority", "high",
+        ]);
+        match cmd {
+            IssueCommand::List { project, epic, sprint, backlog_only, status, priority } => {
+                assert_eq!(project.as_deref(), Some("engram"));
+                assert_eq!(epic, Some(4));
+                assert_eq!(sprint, Some(2));
+                assert!(backlog_only);
+                assert_eq!(status.as_deref(), Some("ready"));
+                assert_eq!(priority.as_deref(), Some("high"));
+            }
+            _ => panic!("List 변형이 파싱되어야 함"),
+        }
     }
 }

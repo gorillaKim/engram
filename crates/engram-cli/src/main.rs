@@ -29,6 +29,14 @@ enum Commands {
     Note(commands::note::NoteArgs),
     /// 세션 관리
     Session(commands::session::SessionArgs),
+    /// 칸반 보드 현황
+    Board(commands::board::BoardArgs),
+    /// 블로킹 의존성 그래프
+    Blocked(commands::blocked::BlockedArgs),
+    /// 정체된 이슈 — threshold-minutes 이상 머문 이슈
+    Stalled(commands::stalled::StalledArgs),
+    /// 변경 이력 — recent / for / by-agent
+    History(commands::history::HistoryArgs),
     /// 스프린트 회고 리포트 생성
     Retro(commands::retro::RetroArgs),
     /// Claude Code Hook 설치/제거
@@ -64,6 +72,10 @@ async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
         Commands::Task(args)    => commands::task::run(db, args, fmt).await?,
         Commands::Note(args)    => commands::note::run(db, args, fmt).await?,
         Commands::Session(args) => commands::session::run(db, args, fmt).await?,
+        Commands::Board(args)   => commands::board::run(db, args, fmt).await?,
+        Commands::Blocked(args) => commands::blocked::run(db, args, fmt).await?,
+        Commands::Stalled(args) => commands::stalled::run(db, args, fmt).await?,
+        Commands::History(args) => commands::history::run(db, args, fmt).await?,
         Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,
         Commands::Hook(args)    => commands::hook::run(args, fmt).await?,
         Commands::SnapshotText { project } => {

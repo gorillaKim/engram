@@ -25,6 +25,7 @@ pub enum EpicCommand {
     },
     List {
         #[arg(long)] project: Option<String>,
+        #[arg(long)] status: Option<String>,
     },
     Get { id: i64 },
     /// 에픽 상태/제목/설명 수정
@@ -33,6 +34,10 @@ pub enum EpicCommand {
         #[arg(long)] status: Option<String>,
         #[arg(long)] title: Option<String>,
         #[arg(long)] description: Option<String>,
+    },
+    /// 에픽 삭제 (하위 이슈/태스크/노트/링크 cascade — 비가역)
+    Delete {
+        id: i64,
     },
 }
 
@@ -44,9 +49,10 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat) -> anyhow::Result<()
             }).await?;
             output::print_value(&epic, fmt)?;
         }
-        EpicCommand::List { project } => {
+        EpicCommand::List { project, status } => {
+            let st = status.as_deref().map(parse_epic_status).transpose()?;
             output::print_value(
-                &db.epic_list(project.as_deref(), None).await?,
+                &db.epic_list(project.as_deref(), st).await?,
                 fmt,
             )?;
         }
@@ -60,6 +66,13 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat) -> anyhow::Result<()
                 description,
             }, "user").await?;
             output::print_value(&epic, fmt)?;
+        }
+        EpicCommand::Delete { id } => {
+            db.epic_delete(id, "user").await?;
+            output::print_value(
+                &serde_json::json!({ "ok": true, "deleted_id": id }),
+                fmt,
+            )?;
         }
     }
     Ok(())
@@ -89,5 +102,26 @@ mod tests {
     fn test_parse_epic_status_helper() {
         assert_eq!(parse_epic_status("active").unwrap(), EpicStatus::Active);
         assert!(parse_epic_status("garbage").is_err());
+    }
+
+    #[test]
+    fn test_parse_delete() {
+        let w = Wrap::try_parse_from(["x", "delete", "12"]).unwrap();
+        match w.cmd {
+            EpicCommand::Delete { id } => assert_eq!(id, 12),
+            _ => panic!("Delete 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_with_status() {
+        let w = Wrap::try_parse_from(["x", "list", "--project", "engram", "--status", "active"]).unwrap();
+        match w.cmd {
+            EpicCommand::List { project, status } => {
+                assert_eq!(project.as_deref(), Some("engram"));
+                assert_eq!(status.as_deref(), Some("active"));
+            }
+            _ => panic!("List 변형이 파싱되어야 함"),
+        }
     }
 }

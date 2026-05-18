@@ -38,6 +38,10 @@ pub enum TaskCommand {
         #[arg(long = "after")] after_task_id: i64,
         #[arg(long)] title: String,
     },
+    /// 태스크 삭제 (연결된 task_tests cascade, notes.task_id 는 NULL)
+    Delete {
+        id: i64,
+    },
 }
 
 pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()> {
@@ -59,7 +63,6 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()
         }
         TaskCommand::Next { project } => {
             let next = db.task_next(project.as_deref(), None).await?;
-            // null vs object 둘 다 valid JSON.
             output::print_value(&next, fmt)?;
         }
         TaskCommand::Update { id, status, title } => {
@@ -80,6 +83,13 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()
                 source: Some(TaskSource::AgentDiscovered),
             }).await?;
             output::print_value(&task, fmt)?;
+        }
+        TaskCommand::Delete { id } => {
+            db.task_delete(id).await?;
+            output::print_value(
+                &serde_json::json!({ "ok": true, "deleted_id": id }),
+                fmt,
+            )?;
         }
     }
     Ok(())
@@ -124,5 +134,14 @@ mod tests {
     fn test_parse_task_status_helper() {
         assert_eq!(parse_task_status("ready").unwrap(), TaskStatus::Ready);
         assert!(parse_task_status("xx").is_err());
+    }
+
+    #[test]
+    fn test_parse_delete() {
+        let w = Wrap::try_parse_from(["x", "delete", "11"]).unwrap();
+        match w.cmd {
+            TaskCommand::Delete { id } => assert_eq!(id, 11),
+            _ => panic!("Delete 변형이 파싱되어야 함"),
+        }
     }
 }
