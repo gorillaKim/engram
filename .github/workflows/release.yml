@@ -20,9 +20,9 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
-            os: macos-14            # Apple Silicon runner
+            os: macos-latest        # macOS ARM runner
           - target: x86_64-apple-darwin
-            os: macos-13            # Intel runner
+            os: macos-latest        # macOS ARM runner (cross-compile to Intel Mac)
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
     steps:
