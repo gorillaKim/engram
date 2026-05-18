@@ -18,6 +18,7 @@
 | 0008 | Embedded MCP Supervisor | Accepted |
 | 0009 | Multi-Agent Concurrency | Accepted |
 | 0010 | CLI ↔ MCP 패리티 컨벤션 | Accepted |
+| 0011 | CLI 배포 경로 (cargo install + GitHub Releases) | Accepted |
 
 ## 작성 규칙
 
