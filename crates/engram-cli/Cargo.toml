@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[lib]
+name = "engram_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "engram"
 path = "src/main.rs"
@@ -19,3 +23,6 @@ tracing.workspace    = true
 tracing-subscriber   = { version = "0.3", features = ["env-filter"] }
 clap                 = { version = "4", features = ["derive", "color"] }
 anyhow.workspace     = true
+
+[dev-dependencies]
+engram-mcp           = { path = "../engram-mcp" }

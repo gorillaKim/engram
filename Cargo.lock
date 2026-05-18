@@ -1183,6 +1183,7 @@ dependencies = [
  "anyhow",
  "clap",
  "engram-core",
+ "engram-mcp",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
