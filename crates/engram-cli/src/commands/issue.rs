@@ -2,6 +2,7 @@ use clap::{Args, Subcommand};
 use engram_core::{Db, models::issue::{
     CreateIssueInput, IssueFilter, IssuePriority, IssueStatus, LinkType, UpdateIssueInput,
 }};
+use crate::output::{self, OutputFormat};
 
 fn parse_status(s: &str) -> anyhow::Result<IssueStatus> {
     match s {
@@ -70,28 +71,28 @@ pub enum IssueCommand {
     },
 }
 
-pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         IssueCommand::Create { epic, sprint, title } => {
             let issue = db.issue_create(CreateIssueInput {
                 epic_id: epic, sprint_id: sprint, title, description: None, goal: None, priority: None,
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&issue)?);
+            output::print_value(&issue, fmt)?;
         }
         IssueCommand::List { project, epic } => {
             let list = db.issue_list(IssueFilter {
                 epic_id: epic, project_key: project, ..Default::default()
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&list)?);
+            output::print_value(&list, fmt)?;
         }
         IssueCommand::Get { id } => {
-            println!("{}", serde_json::to_string_pretty(&db.issue_get(id).await?)?);
+            output::print_value(&db.issue_get(id).await?, fmt)?;
         }
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {
                 status: Some(IssueStatus::Ready), ..Default::default()
             }, "user").await?;
-            println!("✅ 이슈 준비됨: {}", issue.title);
+            output::print_value(&issue, fmt)?;
         }
         IssueCommand::Update { id, status, priority, title } => {
             let issue = db.issue_update(id, UpdateIssueInput {
@@ -100,16 +101,19 @@ pub async fn run(db: Db, args: IssueArgs) -> anyhow::Result<()> {
                 title,
                 ..Default::default()
             }, "user").await?;
-            println!("{}", serde_json::to_string_pretty(&issue)?);
+            output::print_value(&issue, fmt)?;
         }
         IssueCommand::Link { source, target, r#type } => {
             let lt = parse_link_type(&r#type)?;
             let link = db.issue_link(source, target, lt).await?;
-            println!("{}", serde_json::to_string_pretty(&link)?);
+            output::print_value(&link, fmt)?;
         }
         IssueCommand::Unlink { link_id } => {
             db.issue_unlink(link_id).await?;
-            println!("✅ 링크 제거됨: #{link_id}");
+            output::print_value(
+                &serde_json::json!({ "ok": true, "unlinked_id": link_id }),
+                fmt,
+            )?;
         }
     }
     Ok(())

@@ -1,5 +1,6 @@
 use clap::Args;
 use engram_core::Db;
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct RetroArgs {
@@ -8,7 +9,7 @@ pub struct RetroArgs {
     pub sprint: Option<i64>,
 }
 
-pub async fn run(db: Db, args: RetroArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: RetroArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     let sprint_id = match args.sprint {
         Some(id) => id,
         None => {
@@ -18,6 +19,11 @@ pub async fn run(db: Db, args: RetroArgs) -> anyhow::Result<()> {
     };
 
     let report = db.retro_report(sprint_id).await?;
+
+    if matches!(fmt, OutputFormat::Json) {
+        output::print_value(&report, fmt)?;
+        return Ok(());
+    }
 
     println!("# Sprint {} — 회고 리포트", report.sprint_name);
     println!();

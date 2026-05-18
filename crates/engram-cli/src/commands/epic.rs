@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::{Db, models::epic::{CreateEpicInput, EpicStatus, UpdateEpicInput}};
+use crate::output::{self, OutputFormat};
 
 fn parse_epic_status(s: &str) -> anyhow::Result<EpicStatus> {
     match s {
@@ -35,21 +36,22 @@ pub enum EpicCommand {
     },
 }
 
-pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         EpicCommand::Create { project, title } => {
             let epic = db.epic_create(CreateEpicInput {
                 project_key: project, title, description: None,
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&epic)?);
+            output::print_value(&epic, fmt)?;
         }
         EpicCommand::List { project } => {
-            println!("{}", serde_json::to_string_pretty(
-                &db.epic_list(project.as_deref(), None).await?
-            )?);
+            output::print_value(
+                &db.epic_list(project.as_deref(), None).await?,
+                fmt,
+            )?;
         }
         EpicCommand::Get { id } => {
-            println!("{}", serde_json::to_string_pretty(&db.epic_get(id).await?)?);
+            output::print_value(&db.epic_get(id).await?, fmt)?;
         }
         EpicCommand::Update { id, status, title, description } => {
             let epic = db.epic_update(id, UpdateEpicInput {
@@ -57,7 +59,7 @@ pub async fn run(db: Db, args: EpicArgs) -> anyhow::Result<()> {
                 title,
                 description,
             }, "user").await?;
-            println!("{}", serde_json::to_string_pretty(&epic)?);
+            output::print_value(&epic, fmt)?;
         }
     }
     Ok(())

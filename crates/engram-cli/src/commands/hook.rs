@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::Db;
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct HookArgs {
@@ -20,15 +21,15 @@ pub enum HookCommand {
     },
 }
 
-pub async fn run(args: HookArgs) -> anyhow::Result<()> {
+pub async fn run(args: HookArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
-        HookCommand::Install                     => install().await,
-        HookCommand::Uninstall                   => uninstall().await,
-        HookCommand::PostSessionCheck { project } => post_session_check(project).await,
+        HookCommand::Install                     => install(fmt).await,
+        HookCommand::Uninstall                   => uninstall(fmt).await,
+        HookCommand::PostSessionCheck { project } => post_session_check(project, fmt).await,
     }
 }
 
-async fn install() -> anyhow::Result<()> {
+async fn install(fmt: OutputFormat) -> anyhow::Result<()> {
     let home = std::env::var("HOME")?;
     let settings_path = format!("{home}/.claude/settings.json");
 
@@ -59,15 +60,23 @@ async fn install() -> anyhow::Result<()> {
     settings["hooks"] = hooks;
 
     tokio::fs::write(&settings_path, serde_json::to_string_pretty(&settings)?).await?;
-    println!("✅ Engram Hook이 {settings_path}에 등록되었습니다.");
-    println!("   각 프로젝트 CLAUDE.md에 아래 내용을 추가하세요:");
-    println!();
-    println!("   ## Engram");
-    println!("   project_key: your-project-name");
+
+    if matches!(fmt, OutputFormat::Json) {
+        output::print_value(
+            &serde_json::json!({ "ok": true, "installed_to": settings_path }),
+            fmt,
+        )?;
+    } else {
+        println!("✅ Engram Hook이 {settings_path}에 등록되었습니다.");
+        println!("   각 프로젝트 CLAUDE.md에 아래 내용을 추가하세요:");
+        println!();
+        println!("   ## Engram");
+        println!("   project_key: your-project-name");
+    }
     Ok(())
 }
 
-async fn uninstall() -> anyhow::Result<()> {
+async fn uninstall(fmt: OutputFormat) -> anyhow::Result<()> {
     let home = std::env::var("HOME")?;
     let settings_path = format!("{home}/.claude/settings.json");
 
@@ -79,7 +88,15 @@ async fn uninstall() -> anyhow::Result<()> {
     }
 
     tokio::fs::write(&settings_path, serde_json::to_string_pretty(&settings)?).await?;
-    println!("✅ Engram Hook이 제거되었습니다.");
+
+    if matches!(fmt, OutputFormat::Json) {
+        output::print_value(
+            &serde_json::json!({ "ok": true, "uninstalled_from": settings_path }),
+            fmt,
+        )?;
+    } else {
+        println!("✅ Engram Hook이 제거되었습니다.");
+    }
     Ok(())
 }
 
@@ -115,9 +132,15 @@ mod tests {
     }
 }
 
-async fn post_session_check(project: Option<String>) -> anyhow::Result<()> {
+async fn post_session_check(project: Option<String>, fmt: OutputFormat) -> anyhow::Result<()> {
     let db = Db::open_default().await?;
     let result = db.session_end(project.as_deref()).await?;
+
+    if matches!(fmt, OutputFormat::Json) {
+        output::print_value(&result, fmt)?;
+        return Ok(());
+    }
+
     if result.warnings.is_empty() && result.in_progress_tasks.is_empty() {
         println!("✅ 세션 종료: 미완료 항목 없음");
     } else {

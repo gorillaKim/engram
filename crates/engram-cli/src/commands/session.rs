@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::Db;
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct SessionArgs {
@@ -19,23 +20,63 @@ pub enum SessionCommand {
     },
 }
 
-pub async fn run(db: Db, args: SessionArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         SessionCommand::Restore { project } => {
             let snapshot = db.session_restore(project.as_deref()).await?;
-            println!("{}", serde_json::to_string_pretty(&snapshot)?);
+            output::print_value(&snapshot, fmt)?;
         }
         SessionCommand::End { project } => {
             let result = db.session_end(project.as_deref()).await?;
-            if result.ok {
-                println!("✅ 세션 종료 체크리스트 통과");
-            } else {
-                println!("⚠️  세션 종료 전 처리 필요:");
-                for w in &result.warnings {
-                    println!("   - {w}");
+            // ADR-0010: --json 모드는 raw payload, --pretty 모드는 부가 안내 텍스트도 stdout 으로.
+            output::print_value(&result, fmt)?;
+            if matches!(fmt, OutputFormat::Pretty) {
+                if result.ok {
+                    output::print_human("✅ 세션 종료 체크리스트 통과", fmt);
+                } else {
+                    output::print_human("⚠️  세션 종료 전 처리 필요:", fmt);
+                    for w in &result.warnings {
+                        output::print_human(&format!("   - {w}"), fmt);
+                    }
                 }
             }
         }
     }
+    Ok(())
+}
+
+/// `engram snapshot-text` — Hook 에서 호출되는 인간용 텍스트 출력.
+/// `--json` 모드에서는 session_restore 의 raw JSON 을 그대로 emit.
+pub async fn snapshot_text(
+    db: Db,
+    project: Option<String>,
+    fmt: OutputFormat,
+) -> anyhow::Result<()> {
+    let snapshot = db.session_restore(project.as_deref()).await?;
+
+    if matches!(fmt, OutputFormat::Json) {
+        output::print_value(&snapshot, fmt)?;
+        return Ok(());
+    }
+
+    println!("=== ENGRAM SESSION CONTEXT ===");
+    if let Some(next) = &snapshot.next_action {
+        println!("📋 다음 태스크: {} ({})", next.task_title, next.project_key);
+        println!("   이슈: {}", next.issue_title);
+        println!("   에픽: {}", next.epic_title);
+    }
+    for epic in &snapshot.active_epics {
+        for issue in &epic.active_issues {
+            for note in &issue.active_notes {
+                if note.note_type == engram_core::models::NoteType::Caveat {
+                    println!("⚠️  [caveat] {}", note.summary);
+                }
+            }
+        }
+    }
+    for w in &snapshot.warnings {
+        println!("⏳ {w}");
+    }
+    println!("==============================");
     Ok(())
 }

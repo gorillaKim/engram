@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::{Db, models::sprint::{CreateSprintInput, UpdateSprintInput, SprintStatus}};
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct SprintArgs {
@@ -28,23 +29,23 @@ pub enum SprintCommand {
     },
 }
 
-pub async fn run(db: Db, args: SprintArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         SprintCommand::Create { name, goal, start, end } => {
             let sprint = db.sprint_create(CreateSprintInput {
                 name, goal, start_date: start, end_date: end,
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&sprint)?);
+            output::print_value(&sprint, fmt)?;
         }
         SprintCommand::List => {
-            println!("{}", serde_json::to_string_pretty(&db.sprint_list(None).await?)?);
+            output::print_value(&db.sprint_list(None).await?, fmt)?;
         }
         SprintCommand::Current => {
-            println!("{}", serde_json::to_string_pretty(&db.sprint_current().await?)?);
+            output::print_value(&db.sprint_current().await?, fmt)?;
         }
         SprintCommand::Delete { id } => {
             db.sprint_delete(id).await?;
-            println!("{}", serde_json::json!({ "ok": true, "deleted_id": id }));
+            output::print_value(&serde_json::json!({ "ok": true, "deleted_id": id }), fmt)?;
         }
         SprintCommand::Update { id, name, status, goal } => {
             let parsed_status = status.as_deref().map(|s| match s {
@@ -57,7 +58,7 @@ pub async fn run(db: Db, args: SprintArgs) -> anyhow::Result<()> {
             let sprint = db.sprint_update(id, UpdateSprintInput {
                 name, status: parsed_status, goal, start_date: None, end_date: None,
             }, "user").await?;
-            println!("{}", serde_json::to_string_pretty(&sprint)?);
+            output::print_value(&sprint, fmt)?;
         }
     }
     Ok(())

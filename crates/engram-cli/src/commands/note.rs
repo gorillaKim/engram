@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::{Db, models::note::{CreateNoteInput, NoteType}};
+use crate::output::{self, OutputFormat};
 
 #[derive(Args)]
 pub struct NoteArgs {
@@ -21,7 +22,7 @@ pub enum NoteCommand {
     Get { id: i64 },
 }
 
-pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         NoteCommand::Add { issue, r#type, summary, detail } => {
             let note_type = match r#type.as_str() {
@@ -36,19 +37,23 @@ pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
                 issue_id: issue, task_id: None, note_type, summary, detail, author: None, agent_id: None,
                 scope: None, scope_target_id: None, project_key: None,
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&note)?);
+            output::print_value(&note, fmt)?;
         }
         NoteCommand::List { issue } => {
-            println!("{}", serde_json::to_string_pretty(
-                &db.note_list(Some(issue), None, None, false).await?
-            )?);
+            output::print_value(
+                &db.note_list(Some(issue), None, None, false).await?,
+                fmt,
+            )?;
         }
         NoteCommand::Resolve { id } => {
             db.note_resolve(id, "user").await?;
-            println!("✅ 노트 해결됨: #{id}");
+            output::print_value(
+                &serde_json::json!({ "ok": true, "resolved_id": id }),
+                fmt,
+            )?;
         }
         NoteCommand::Get { id } => {
-            println!("{}", serde_json::to_string_pretty(&db.note_get(id).await?)?);
+            output::print_value(&db.note_get(id).await?, fmt)?;
         }
     }
     Ok(())

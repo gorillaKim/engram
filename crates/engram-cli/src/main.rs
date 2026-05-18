@@ -1,10 +1,16 @@
 mod commands;
+mod output;
 
 use clap::{Parser, Subcommand};
+use output::OutputFormat;
 
 #[derive(Parser)]
 #[command(name = "engram", version, about = "Agent Issue Management System")]
 struct Cli {
+    /// 머신 파싱용 JSON 출력 (이모지/배너 없는 단일 JSON object/array). ADR-0010 참조.
+    #[arg(long, global = true)]
+    json: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -35,40 +41,33 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     let cli = Cli::parse();
+    let fmt = OutputFormat::from_flags(cli.json);
+
+    match run(cli, fmt).await {
+        Ok(()) => {}
+        Err(err) => {
+            output::print_error(&err, fmt);
+            std::process::exit(output::error_exit_code(&err));
+        }
+    }
+}
+
+async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
     let db = engram_core::Db::open_default().await?;
 
     match cli.command {
-        Commands::Sprint(args)  => commands::sprint::run(db, args).await?,
-        Commands::Epic(args)    => commands::epic::run(db, args).await?,
-        Commands::Issue(args)   => commands::issue::run(db, args).await?,
-        Commands::Task(args)    => commands::task::run(db, args).await?,
-        Commands::Note(args)    => commands::note::run(db, args).await?,
-        Commands::Session(args) => commands::session::run(db, args).await?,
-        Commands::Retro(args)   => commands::retro::run(db, args).await?,
-        Commands::Hook(args)    => commands::hook::run(args).await?,
+        Commands::Sprint(args)  => commands::sprint::run(db, args, fmt).await?,
+        Commands::Epic(args)    => commands::epic::run(db, args, fmt).await?,
+        Commands::Issue(args)   => commands::issue::run(db, args, fmt).await?,
+        Commands::Task(args)    => commands::task::run(db, args, fmt).await?,
+        Commands::Note(args)    => commands::note::run(db, args, fmt).await?,
+        Commands::Session(args) => commands::session::run(db, args, fmt).await?,
+        Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,
+        Commands::Hook(args)    => commands::hook::run(args, fmt).await?,
         Commands::SnapshotText { project } => {
-            let snapshot = db.session_restore(project.as_deref()).await?;
-            println!("=== ENGRAM SESSION CONTEXT ===");
-            if let Some(next) = &snapshot.next_action {
-                println!("📋 다음 태스크: {} ({})", next.task_title, next.project_key);
-                println!("   이슈: {}", next.issue_title);
-                println!("   에픽: {}", next.epic_title);
-            }
-            for epic in &snapshot.active_epics {
-                for issue in &epic.active_issues {
-                    for note in &issue.active_notes {
-                        if note.note_type == engram_core::models::NoteType::Caveat {
-                            println!("⚠️  [caveat] {}", note.summary);
-                        }
-                    }
-                }
-            }
-            for w in &snapshot.warnings {
-                println!("⏳ {w}");
-            }
-            println!("==============================");
+            commands::session::snapshot_text(db, project, fmt).await?;
         }
     }
 

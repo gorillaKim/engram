@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand};
 use engram_core::{Db, models::task::{CreateTaskInput, TaskSource, TaskStatus, UpdateTaskInput}};
+use crate::output::{self, OutputFormat};
 
 fn parse_task_status(s: &str) -> anyhow::Result<TaskStatus> {
     match s {
@@ -39,29 +40,27 @@ pub enum TaskCommand {
     },
 }
 
-pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         TaskCommand::Create { issue, title, goal } => {
             let task = db.task_create(CreateTaskInput {
                 issue_id: issue, title, description: None, goal, after_task_id: None, source: None,
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&task)?);
+            output::print_value(&task, fmt)?;
         }
         TaskCommand::List { issue } => {
-            println!("{}", serde_json::to_string_pretty(&db.task_list(issue, None).await?)?);
+            output::print_value(&db.task_list(issue, None).await?, fmt)?;
         }
         TaskCommand::Finish { id } => {
             let task = db.task_update(id, UpdateTaskInput {
                 status: Some(TaskStatus::Finished), ..Default::default()
             }, "user").await?;
-            println!("✅ 태스크 완료: {}", task.title);
+            output::print_value(&task, fmt)?;
         }
         TaskCommand::Next { project } => {
             let next = db.task_next(project.as_deref(), None).await?;
-            match next {
-                Some(t) => println!("{}", serde_json::to_string_pretty(&t)?),
-                None    => println!("처리할 태스크가 없습니다."),
-            }
+            // null vs object 둘 다 valid JSON.
+            output::print_value(&next, fmt)?;
         }
         TaskCommand::Update { id, status, title } => {
             let task = db.task_update(id, UpdateTaskInput {
@@ -69,7 +68,7 @@ pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
                 title,
                 ..Default::default()
             }, "user").await?;
-            println!("{}", serde_json::to_string_pretty(&task)?);
+            output::print_value(&task, fmt)?;
         }
         TaskCommand::InsertAfter { issue, after_task_id, title } => {
             let task = db.task_create(CreateTaskInput {
@@ -80,7 +79,7 @@ pub async fn run(db: Db, args: TaskArgs) -> anyhow::Result<()> {
                 after_task_id: Some(after_task_id),
                 source: Some(TaskSource::AgentDiscovered),
             }).await?;
-            println!("{}", serde_json::to_string_pretty(&task)?);
+            output::print_value(&task, fmt)?;
         }
     }
     Ok(())
