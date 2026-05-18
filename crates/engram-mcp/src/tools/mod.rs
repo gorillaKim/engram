@@ -1,4 +1,5 @@
 pub mod epic;
+pub mod history;
 pub mod issue;
 pub mod note;
 pub mod session;
@@ -22,6 +23,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
         task_test::tool_definitions(),
         note::tool_definitions(),
         session::tool_definitions(),
+        history::tool_definitions(),
     ]
     .concat()
 }
@@ -85,6 +87,10 @@ pub async fn dispatch(
         "session_restore" => session::restore(db, args).await,
         "session_end"     => session::end(db, args).await,
         "board_status"    => session::board_status(db, args).await,
+        // History (audit log read API — ADR-0009 changed_by 의 시각화)
+        "history_for"       => history::for_entity(db, args).await,
+        "history_by_agent"  => history::by_agent(db, args).await,
+        "history_recent"    => history::recent(db, args).await,
         _ => Err(engram_core::Error::NotFound(format!("tool:{name}"))),
     }
 }

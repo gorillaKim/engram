@@ -221,16 +221,20 @@ impl Db {
     /// 이슈 점유를 해제하고 지정 상태로 전이한다. 보통 `ready` (다른 agent 가 픽업 가능)
     /// 또는 `demo` (사용자 검토 대기) 로 전이한다.
     ///
-    /// `agent_id` 가 현재 `assigned_agent` 와 다르면 거부 — 자기 lease 만 해제할 수 있다.
-    pub async fn issue_release(&self, id: i64, transition_to: IssueStatus, agent_id: &str) -> Result<Issue> {
+    /// `force=false` 면 ownership 검증 — `agent_id` 가 현재 `assigned_agent` 와 다르면 거부.
+    /// `force=true` 면 검증 우회 — 좀비 lease 회수, 사용자 또는 리더가 강제 ready 환원할 때 사용.
+    /// history.changed_by 에는 항상 호출자의 `agent_id` 가 기록되므로 force 회수도 감사 가능.
+    pub async fn issue_release(&self, id: i64, transition_to: IssueStatus, agent_id: &str, force: bool) -> Result<Issue> {
         let current = self.issue_get(id).await?;
 
-        // 자기가 잡은 이슈만 해제 가능 (admin override 는 별도 도구로 분리 — 현재는 없음)
-        if let Some(holder) = current.assigned_agent.as_deref() {
-            if holder != agent_id {
-                return Err(Error::Validation(format!(
-                    "issue:{id} is held by '{holder}', cannot be released by '{agent_id}'"
-                )));
+        // ownership 검증 (force=false 일 때만)
+        if !force {
+            if let Some(holder) = current.assigned_agent.as_deref() {
+                if holder != agent_id {
+                    return Err(Error::Validation(format!(
+                        "issue:{id} is held by '{holder}', cannot be released by '{agent_id}' (use force=true to override)"
+                    )));
+                }
             }
         }
 

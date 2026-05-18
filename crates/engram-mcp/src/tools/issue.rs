@@ -109,12 +109,13 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "issue_release",
-            "description": "점유한 이슈를 해제하고 지정 상태로 전이합니다. 보통 ready (다른 에이전트가 픽업 가능) 또는 demo (사용자 검토 대기) 로 전이합니다. 자기가 잡은 이슈만 해제 가능합니다.",
+            "description": "점유한 이슈를 해제하고 지정 상태로 전이합니다. 보통 ready (다른 에이전트가 픽업 가능) 또는 demo (사용자 검토 대기) 로 전이합니다. 기본은 자기가 잡은 이슈만 해제 가능. force=true 면 ownership 검증 우회 — 좀비 lease 회수용 (사용자 또는 리더가 stalled 에이전트의 점유를 강제 해제할 때만 사용). force 회수도 history 에 호출자 agent_id 로 감사 기록됩니다.",
             "inputSchema": { "type": "object", "required": ["id", "agent_id", "transition_to"],
                 "properties": {
                     "id":            { "type": "integer" },
                     "agent_id":      { "type": "string" },
-                    "transition_to": { "type": "string", "enum": ["ready","demo","required"] }
+                    "transition_to": { "type": "string", "enum": ["ready","demo","required"] },
+                    "force":         { "type": "boolean", "description": "기본 false. true 면 ownership 검증 우회. 좀비 lease 회수 시만 사용." }
                 }
             }
         }),
@@ -237,5 +238,6 @@ pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let transition_to: IssueStatus = args["transition_to"].as_str()
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
         .ok_or_else(|| engram_core::Error::Validation("transition_to is required (ready|demo|required)".to_string()))?;
-    Ok(serde_json::to_value(db.issue_release(id, transition_to, agent_id).await?).unwrap())
+    let force = args["force"].as_bool().unwrap_or(false);
+    Ok(serde_json::to_value(db.issue_release(id, transition_to, agent_id, force).await?).unwrap())
 }

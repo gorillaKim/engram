@@ -84,6 +84,8 @@ async fn test_full_sprint_workflow() {
         summary: "조심할 점".to_string(),
         detail: None,
         author: None,
+        agent_id: None,
+        scope: None, scope_target_id: None, project_key: None,
     }).await.unwrap();
 
     // session_restore — active_epics에 이슈가 포함되어야 함
@@ -603,6 +605,8 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
         note_type: NoteType::Caveat,
         summary: "A 의 caveat".into(), detail: None,
         author: None,
+        agent_id: None,
+        scope: None, scope_target_id: None, project_key: None,
     }).await.unwrap();
 
     db.issue_link(issue_a.id, issue_b.id, LinkType::Blocks).await.unwrap();
@@ -659,7 +663,8 @@ async fn test_epic_delete_cascades_all_issues_and_descendants() {
     db.note_add(CreateNoteInput {
         issue_id: i1.id, task_id: Some(t.id),
         note_type: NoteType::Decision,
-        summary: "d".into(), detail: None, author: None,
+        summary: "d".into(), detail: None, author: None, agent_id: None,
+        scope: None, scope_target_id: None, project_key: None,
     }).await.unwrap();
 
     // 에픽 삭제 — 하위 이슈/태스크/노트 모두 함께 사라져야 한다
@@ -725,7 +730,7 @@ async fn test_issue_release_to_ready_clears_assigned_agent() {
     assert_eq!(claimed.assigned_agent.as_deref(), Some("agent-a"));
 
     // ready 로 release → assigned_agent 비워지고 다른 에이전트가 claim 가능
-    let released = db.issue_release(issue.id, IssueStatus::Ready, "agent-a").await.unwrap();
+    let released = db.issue_release(issue.id, IssueStatus::Ready, "agent-a", false).await.unwrap();
     assert_eq!(released.status, IssueStatus::Ready);
     assert_eq!(released.assigned_agent, None);
 
@@ -771,4 +776,202 @@ async fn test_issue_delete_records_history() {
     let entries = db.history_list(EntityType::Issue, issue.id).await.unwrap();
     let has_delete = entries.iter().any(|h| h.field == "deleted" && h.changed_by == "user");
     assert!(has_delete, "issue_delete 가 changed_by='user' 로 history 에 기록되어야 함, entries={:?}", entries);
+}
+
+// =====================================================
+// 2차 라운드 — note.agent_id 인스턴스 식별
+// =====================================================
+
+#[tokio::test]
+async fn test_note_add_persists_agent_id() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "agent_id note".into(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // agent_id 를 명시한 노트
+    let n1 = db.note_add(CreateNoteInput {
+        issue_id: issue.id, task_id: None,
+        note_type: NoteType::Decision,
+        summary: "결정 1".into(), detail: None,
+        author: Some("agent".into()),
+        agent_id: Some("claude-opus@sess-A".into()),
+        scope: None, scope_target_id: None, project_key: None,
+    }).await.unwrap();
+    assert_eq!(n1.agent_id.as_deref(), Some("claude-opus@sess-A"));
+
+    // agent_id 생략한 노트 (호환성 — 기존 동작 유지)
+    let n2 = db.note_add(CreateNoteInput {
+        issue_id: issue.id, task_id: None,
+        note_type: NoteType::Comment,
+        summary: "코멘트".into(), detail: None,
+        author: Some("user".into()),
+        agent_id: None,
+        scope: None, scope_target_id: None, project_key: None,
+    }).await.unwrap();
+    assert_eq!(n2.agent_id, None, "agent_id 미지정은 NULL 유지");
+
+    // note_list 응답에도 agent_id 가 노출되어야 한다
+    let notes = db.note_list(Some(issue.id), None, None, false).await.unwrap();
+    let opus_notes: Vec<_> = notes.iter()
+        .filter(|n| n.agent_id.as_deref() == Some("claude-opus@sess-A"))
+        .collect();
+    assert_eq!(opus_notes.len(), 1, "claude-opus 가 남긴 노트 1건 조회 가능");
+}
+
+#[tokio::test]
+async fn test_issue_release_force_overrides_ownership() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "zombie lease".into(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_claim(issue.id, "agent-zombie").await.unwrap();
+
+    // 다른 호출자가 force=false 로 release 시도 → 거부
+    let denied = db.issue_release(issue.id, IssueStatus::Ready, "user", false).await;
+    assert!(denied.is_err(), "force=false 면 ownership 검증 — user 는 agent-zombie 의 lease 해제 불가");
+
+    // force=true 면 회수 성공
+    let recovered = db.issue_release(issue.id, IssueStatus::Ready, "user", true).await.unwrap();
+    assert_eq!(recovered.status, IssueStatus::Ready);
+    assert_eq!(recovered.assigned_agent, None, "강제 회수 후 assigned_agent 정리");
+
+    // history 에 user 가 force 회수한 기록이 남는지
+    let entries = db.history_list(EntityType::Issue, issue.id).await.unwrap();
+    let user_release = entries.iter().any(|h| h.field == "status" && h.new_value.as_deref() == Some("ready") && h.changed_by == "user");
+    assert!(user_release, "force release 가 changed_by='user' 로 history 에 남아야 함, entries={:?}", entries);
+}
+
+// =====================================================
+// 2차 라운드 — broadcast scope notes
+// =====================================================
+
+#[tokio::test]
+async fn test_broadcast_caveat_appears_in_session_restore() {
+    use engram_core::models::NoteScope;
+    let db = setup().await;
+    let (_sprint_id, _epic_id) = seed_sprint_epic(&db).await;
+
+    // project scope caveat 등록 (issue_id 무관)
+    db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "lint 통과 필수".into(),
+        detail: None,
+        author: Some("user".into()),
+        agent_id: None,
+        scope: Some(NoteScope::Project),
+        scope_target_id: None,
+        project_key: Some("test-project".into()),
+    }).await.unwrap();
+
+    // session_restore 호출 → active_caveats 에 노출
+    let snap = db.session_restore(Some("test-project")).await.unwrap();
+    assert_eq!(snap.active_caveats.len(), 1, "project caveat 1건 노출");
+    assert_eq!(snap.active_caveats[0].summary, "lint 통과 필수");
+    assert_eq!(snap.active_caveats[0].project_key.as_deref(), Some("test-project"));
+
+    // 다른 project 필터 → 빈 결과
+    let other = db.session_restore(Some("other-project")).await.unwrap();
+    assert!(other.active_caveats.is_empty(), "다른 프로젝트 필터는 broadcast caveat 미노출");
+}
+
+#[tokio::test]
+async fn test_sprint_scope_note_filters_by_active_sprint() {
+    use engram_core::models::NoteScope;
+    let db = setup().await;
+    let (sprint_id, _epic_id) = seed_sprint_epic(&db).await;
+
+    // 활성 sprint 에 broadcast caveat
+    db.note_add(CreateNoteInput {
+        issue_id: 0, task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "sprint freeze: deploy 후 non-critical merge 금지".into(),
+        detail: None, author: Some("user".into()),
+        agent_id: None,
+        scope: Some(NoteScope::Sprint),
+        scope_target_id: Some(sprint_id),
+        project_key: None,
+    }).await.unwrap();
+
+    // session_restore → sprint scope caveat 노출
+    let snap = db.session_restore(Some("test-project")).await.unwrap();
+    let has_sprint_caveat = snap.active_caveats.iter().any(|n|
+        n.summary.contains("sprint freeze") && n.scope_target_id == Some(sprint_id)
+    );
+    assert!(has_sprint_caveat, "활성 sprint 의 broadcast caveat 노출, active_caveats={:?}", snap.active_caveats);
+}
+
+#[tokio::test]
+async fn test_history_by_agent_returns_recent_changes() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "audit subject".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // 두 에이전트가 각자 변경
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent-a").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        priority: Some(IssuePriority::High), ..Default::default()
+    }, "agent-b").await.unwrap();
+
+    // history_by_agent("agent-a") → A 의 기록만
+    let a_changes = db.history_by_agent("agent-a", 50).await.unwrap();
+    assert!(a_changes.iter().all(|h| h.changed_by == "agent-a"), "A 로만 필터링되어야 함");
+    assert!(a_changes.iter().any(|h| h.field == "status"), "A 가 status 변경 기록 보유");
+
+    // history_by_agent("agent-b") → B 의 기록만
+    let b_changes = db.history_by_agent("agent-b", 50).await.unwrap();
+    assert!(b_changes.iter().all(|h| h.changed_by == "agent-b"));
+    assert!(b_changes.iter().any(|h| h.field == "priority"), "B 가 priority 변경 기록 보유");
+
+    // history_recent — 두 변경 모두 잡힘
+    let recent = db.history_recent(50, Some(60)).await.unwrap();
+    let agents: std::collections::HashSet<_> = recent.iter().map(|h| h.changed_by.clone()).collect();
+    assert!(agents.contains("agent-a"));
+    assert!(agents.contains("agent-b"));
+}
+
+#[tokio::test]
+async fn test_broadcast_note_input_validation() {
+    use engram_core::models::NoteScope;
+    let db = setup().await;
+
+    // project scope 인데 project_key 누락 → Validation error
+    let missing_pk = db.note_add(CreateNoteInput {
+        issue_id: 0, task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "x".into(), detail: None,
+        author: None, agent_id: None,
+        scope: Some(NoteScope::Project),
+        scope_target_id: None,
+        project_key: None,
+    }).await;
+    assert!(missing_pk.is_err(), "project scope + project_key 누락은 거부되어야 함");
+
+    // sprint scope 인데 scope_target_id 누락 → Validation error
+    let missing_target = db.note_add(CreateNoteInput {
+        issue_id: 0, task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "x".into(), detail: None,
+        author: None, agent_id: None,
+        scope: Some(NoteScope::Sprint),
+        scope_target_id: None,
+        project_key: None,
+    }).await;
+    assert!(missing_target.is_err(), "sprint scope + scope_target_id 누락은 거부되어야 함");
 }

@@ -700,6 +700,8 @@ mod tests {
             summary: "context note".to_string(),
             detail: Some("detail text".to_string()),
             author: None,
+            agent_id: None,
+            scope: None, scope_target_id: None, project_key: None,
         }).await.unwrap();
         assert_eq!(note.summary, "context note");
 

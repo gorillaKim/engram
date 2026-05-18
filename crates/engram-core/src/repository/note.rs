@@ -6,17 +6,59 @@ impl Db {
     pub async fn note_add(&self, input: CreateNoteInput) -> Result<Note> {
         let author = input.author.unwrap_or_else(|| "agent".to_string());
         let nt = serde_json::to_value(&input.note_type).unwrap().as_str().unwrap().to_string();
+
+        // scope 자동 판정: 명시되지 않으면 task_id 가 있으면 task, 아니면 issue
+        let scope = input.scope.unwrap_or_else(|| {
+            if input.task_id.is_some() { NoteScope::Task } else { NoteScope::Issue }
+        });
+        let scope_str = serde_json::to_value(scope).unwrap().as_str().unwrap().to_string();
+
+        // scope 별 검증 + 컬럼 채우기 결정
+        let (issue_id_db, scope_target_id_db, project_key_db) = match scope {
+            NoteScope::Issue => {
+                if input.issue_id <= 0 {
+                    return Err(Error::Validation("issue scope 는 issue_id (>0) 가 필수입니다".to_string()));
+                }
+                (Some(input.issue_id), input.scope_target_id.or(Some(input.issue_id)), None)
+            }
+            NoteScope::Task => {
+                if input.issue_id <= 0 || input.task_id.is_none() {
+                    return Err(Error::Validation("task scope 는 issue_id (>0) 와 task_id 둘 다 필수입니다".to_string()));
+                }
+                (Some(input.issue_id), input.scope_target_id.or(input.task_id), None)
+            }
+            NoteScope::Project => {
+                let pk = input.project_key.clone()
+                    .ok_or_else(|| Error::Validation("project scope 는 project_key 가 필수입니다".to_string()))?;
+                (None, None, Some(pk))
+            }
+            NoteScope::Sprint => {
+                let target = input.scope_target_id
+                    .ok_or_else(|| Error::Validation("sprint scope 는 scope_target_id (sprint id) 가 필수입니다".to_string()))?;
+                (None, Some(target), None)
+            }
+            NoteScope::Epic => {
+                let target = input.scope_target_id
+                    .ok_or_else(|| Error::Validation("epic scope 는 scope_target_id (epic id) 가 필수입니다".to_string()))?;
+                (None, Some(target), None)
+            }
+        };
+
         // RETURNING * — WAL 가시성 회피.
         sqlx::query_as::<_, Note>(
-            "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author) VALUES (?, ?, ?, ?, ?, ?)
-             RETURNING id, issue_id, task_id, note_type, summary, detail, author, resolved, created_at, resolved_at",
+            "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author, agent_id, scope, scope_target_id, project_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at",
         )
-        .bind(input.issue_id)
+        .bind(issue_id_db)
         .bind(input.task_id)
         .bind(&nt)
         .bind(&input.summary)
         .bind(&input.detail)
         .bind(&author)
+        .bind(&input.agent_id)
+        .bind(&scope_str)
+        .bind(scope_target_id_db)
+        .bind(&project_key_db)
         .fetch_one(&self.pool)
         .await
         .map_err(Into::into)
@@ -24,7 +66,7 @@ impl Db {
 
     pub async fn note_get(&self, id: i64) -> Result<Note> {
         sqlx::query_as::<_, Note>(
-            "SELECT id, issue_id, task_id, note_type, summary, detail, author, resolved, created_at, resolved_at FROM notes WHERE id = ?",
+            "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at FROM notes WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -74,7 +116,7 @@ impl Db {
         note_type: Option<NoteType>,
         include_resolved: bool,
     ) -> Result<Vec<Note>> {
-        let mut sql = "SELECT id, issue_id, task_id, note_type, summary, detail, author, resolved, created_at, resolved_at FROM notes WHERE 1=1".to_string();
+        let mut sql = "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at FROM notes WHERE 1=1".to_string();
         if issue_id.is_some()  { sql.push_str(" AND issue_id = ?"); }
         if task_id.is_some()   { sql.push_str(" AND task_id = ?"); }
         if note_type.is_some() { sql.push_str(" AND note_type = ?"); }

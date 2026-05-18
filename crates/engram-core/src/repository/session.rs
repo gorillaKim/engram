@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::models::{Epic, Issue, NoteSummary, Task};
+use crate::models::{Epic, Issue, Note, NoteSummary, Task};
 use crate::{Db, Result};
 
 /// session_restore 전체 응답 구조
@@ -18,6 +18,10 @@ pub struct SessionSnapshot {
     /// 현재 working 상태에서 점유 중인 에이전트 목록. 리더 에이전트가 spawn 결정 시 참조.
     #[serde(default)]
     pub active_workers: Vec<ActiveWorker>,
+    /// Broadcast scope 의 unresolved caveat/decision 노트 (project / 활성 sprint / 활성 epic).
+    /// 어느 이슈로 session_restore 를 호출해도 같은 광역 공지가 모든 에이전트에 전파된다.
+    #[serde(default)]
+    pub active_caveats: Vec<Note>,
 }
 
 /// `assigned_agent` 가 NULL 이 아닌 working 이슈의 점유 정보.
@@ -147,6 +151,7 @@ impl Db {
                 next_action: None,
                 pending_drafts: vec![],
                 active_workers: vec![],
+                active_caveats: vec![],
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
                 scope_expansion_ids: vec![],
             });
@@ -294,6 +299,32 @@ impl Db {
         if let Some(pk) = project_key { wq = wq.bind(pk); }
         let active_workers = wq.fetch_all(&self.pool).await.unwrap_or_default();
 
+        // Broadcast scope caveat 조회 — project / 활성 sprint / 활성 epic 의 unresolved 노트.
+        // 어떤 이슈로 session_restore 를 호출해도 같은 광역 공지가 노출된다.
+        let active_epic_ids: Vec<i64> = active_epics.iter().map(|e| e.epic.id).collect();
+        let active_caveats: Vec<Note> = {
+            let placeholders = if active_epic_ids.is_empty() {
+                "NULL".to_string()
+            } else {
+                active_epic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+            };
+            let mut sql = String::from(
+                "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at \
+                 FROM notes WHERE resolved = 0 AND ("
+            );
+            sql.push_str("(scope = 'sprint' AND scope_target_id = ?)");
+            sql.push_str(&format!(" OR (scope = 'epic' AND scope_target_id IN ({}))", placeholders));
+            if project_key.is_some() {
+                sql.push_str(" OR (scope = 'project' AND project_key = ?)");
+            }
+            sql.push_str(") ORDER BY created_at DESC");
+
+            let mut cq = sqlx::query_as::<_, Note>(&sql).bind(sprint.id);
+            for eid in &active_epic_ids { cq = cq.bind(eid); }
+            if let Some(pk) = project_key { cq = cq.bind(pk); }
+            cq.fetch_all(&self.pool).await.unwrap_or_default()
+        };
+
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
@@ -305,6 +336,7 @@ impl Db {
             warnings,
             scope_expansion_ids,
             active_workers,
+            active_caveats,
         })
     }
 

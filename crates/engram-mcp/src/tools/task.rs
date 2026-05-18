@@ -45,7 +45,7 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "task_next",
-            "description": "다음에 처리할 태스크를 우선순위 알고리즘으로 반환합니다 (블로킹 해소 → priority → in_progress 이슈 우선 → created_at). project_key로 특정 프로젝트만 필터링 가능합니다.",
+            "description": "다음에 처리할 태스크를 우선순위 알고리즘으로 반환합니다 (블로킹 해소 → priority → in_progress 이슈 우선 → created_at). project_key로 특정 프로젝트만 필터링 가능합니다.\n\n⚠️ **이 도구는 read-only 입니다.** 반환된 task 의 부모 이슈를 working 으로 전이하려면 반드시 `issue_claim(parent_issue_id, agent_id)` 으로 atomic CAS 점유 후 진행하세요. 멀티 에이전트가 동시에 task_next 를 호출하면 같은 task 를 받을 수 있으므로 race 방지의 유일한 경로는 `issue_claim` 입니다.",
             "inputSchema": { "type": "object",
                 "properties": {
                     "project_key": { "type": "string" },

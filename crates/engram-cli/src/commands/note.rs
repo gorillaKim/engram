@@ -33,7 +33,8 @@ pub async fn run(db: Db, args: NoteArgs) -> anyhow::Result<()> {
                 _                => NoteType::Context,
             };
             let note = db.note_add(CreateNoteInput {
-                issue_id: issue, task_id: None, note_type, summary, detail, author: None,
+                issue_id: issue, task_id: None, note_type, summary, detail, author: None, agent_id: None,
+                scope: None, scope_target_id: None, project_key: None,
             }).await?;
             println!("{}", serde_json::to_string_pretty(&note)?);
         }
