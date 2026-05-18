@@ -3,7 +3,10 @@
     "allow": [
       "Bash(/usr/bin/find /Users/madup/gorillaProject/engram -type f \\\\\\( -name \"*.rs\" -o -name \"*.toml\" -o -name \"*.sql\" \\\\\\))",
       "mcp__plugin_oh-my-claudecode_t__ast_grep_search",
-      "mcp__doxus__doxus_search"
+      "mcp__doxus__doxus_search",
+      "Bash(sed -n '70,85p' /Users/madup/gorillaProject/engram/crates/engram-desktop/src-tauri/src/commands.rs)",
+      "Bash(sed -n '255,275p' /Users/madup/gorillaProject/engram/crates/engram-desktop/src-tauri/src/commands.rs)",
+      "mcp__engram__issue_update"
     ]
   }
 }
