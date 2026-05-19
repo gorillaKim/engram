@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { issueGet, issueSetStatus, blockedIssuesGraph, issueDelete } from '../ipc/invoke';
@@ -27,6 +27,7 @@ export function IssueDetail() {
 
   const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
+  const [epicOpen, setEpicOpen] = useState(false);
 
   const { data: graphData } = useQuery({
     queryKey: ['blockingGraph', selectedProjectKey],
@@ -105,22 +106,33 @@ export function IssueDetail() {
               </span>
             </div>
 
-            {/* Epic */}
+            {/* Epic (collapsible, default closed) */}
             {epic && (
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
-                <div className="flex items-center gap-2 mb-1">
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setEpicOpen((v) => !v)}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-100/50 transition-colors text-left"
+                >
                   <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
                   <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">에픽</span>
-                  <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                  <span className="flex-1 text-xs text-indigo-800 font-medium truncate">{epic.title}</span>
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${
                     epic.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
                     epic.status === 'completed' ? 'bg-slate-100 text-slate-500' :
                     'bg-red-100 text-red-600'
                   }`}>{epic.status}</span>
-                </div>
-                <p className="text-sm font-semibold text-indigo-800 mb-1">{epic.title}</p>
-                {epic.description && (
-                  <div className="text-xs text-indigo-700/80">
-                    <Markdown>{epic.description}</Markdown>
+                  <span className="text-indigo-400 text-xs ml-1">{epicOpen ? '▲' : '▼'}</span>
+                </button>
+                {epicOpen && (
+                  <div className="px-3 pb-3 border-t border-indigo-100 pt-2">
+                    {epic.description ? (
+                      <div className="text-xs text-indigo-700/80">
+                        <Markdown>{epic.description}</Markdown>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-indigo-400 italic">설명 없음</p>
+                    )}
                   </div>
                 )}
               </div>
