@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { noteList, noteAdd } from '../ipc/invoke';
+import { Markdown } from './Markdown';
 import type { Note } from '../ipc/types';
 
 interface Props {
@@ -56,7 +57,7 @@ export function CommentSection({ issueId }: Props) {
               <span className="text-xs font-medium text-slate-600">{c.author}</span>
               <span className="text-xs text-slate-400">{c.created_at.slice(0, 16).replace('T', ' ')}</span>
             </div>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap">{c.summary}</p>
+            <Markdown>{c.summary}</Markdown>
           </div>
         ))}
       </div>

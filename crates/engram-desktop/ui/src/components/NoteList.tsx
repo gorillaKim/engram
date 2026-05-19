@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { noteList, noteGet, noteAdd, noteResolve } from '../ipc/invoke';
+import { Markdown } from './Markdown';
 import type { Note, NoteType } from '../ipc/types';
 
 const NOTE_ICON: Record<NoteType, string> = {
@@ -44,7 +45,9 @@ function NoteDetail({ id }: { id: number }) {
   });
   if (!data?.detail) return null;
   return (
-    <p className="mt-1 text-xs text-slate-600 whitespace-pre-wrap pl-5">{data.detail}</p>
+    <div className="mt-1.5 pl-5 text-xs border-l-2 border-slate-200 ml-2">
+      <Markdown>{data.detail}</Markdown>
+    </div>
   );
 }
 

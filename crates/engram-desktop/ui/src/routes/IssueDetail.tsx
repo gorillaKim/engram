@@ -9,8 +9,10 @@ import { BlockingGraphView } from '../components/BlockingGraph';
 import { IssueLinkSection } from '../components/IssueLinkSection';
 import { CommentSection } from '../components/CommentSection';
 import { HistorySection } from '../components/HistorySection';
+import { Markdown } from '../components/Markdown';
 import { useUIStore } from '../store/ui';
 import { useBoardStatus } from '../hooks/useBoardStatus';
+import { useEpics } from '../hooks/useEpics';
 import type { Issue } from '../ipc/types';
 
 export function IssueDetail() {
@@ -22,6 +24,9 @@ export function IssueDetail() {
     queryFn: () => issueGet(selectedIssueId!),
     enabled: selectedIssueId != null,
   });
+
+  const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
+  const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
 
   const { data: graphData } = useQuery({
     queryKey: ['blockingGraph', selectedProjectKey],
@@ -100,16 +105,41 @@ export function IssueDetail() {
               </span>
             </div>
 
+            {/* Epic */}
+            {epic && (
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
+                  <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">에픽</span>
+                  <span className={`ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full ${
+                    epic.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
+                    epic.status === 'completed' ? 'bg-slate-100 text-slate-500' :
+                    'bg-red-100 text-red-600'
+                  }`}>{epic.status}</span>
+                </div>
+                <p className="text-sm font-semibold text-indigo-800 mb-1">{epic.title}</p>
+                {epic.description && (
+                  <div className="text-xs text-indigo-700/80">
+                    <Markdown>{epic.description}</Markdown>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Goal */}
             {issue.goal && (
-              <div className="bg-indigo-50 rounded-md p-3 text-sm text-indigo-800">
-                <span className="font-semibold">목표: </span>{issue.goal}
+              <div className="bg-amber-50 rounded-md p-3 border border-amber-100">
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">목표</p>
+                <Markdown>{issue.goal}</Markdown>
               </div>
             )}
 
             {/* Description */}
             {issue.description && (
-              <p className="text-sm text-slate-600 whitespace-pre-wrap">{issue.description}</p>
+              <div className="bg-slate-50 rounded-md p-3 border border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">설명</p>
+                <Markdown>{issue.description}</Markdown>
+              </div>
             )}
 
             {/* Blocking Graph */}
