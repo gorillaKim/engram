@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -11,6 +12,7 @@ import { CreateSprintModal } from '../components/CreateSprintModal';
 import { CreateEpicModal } from '../components/CreateEpicModal';
 import { CreateIssueModal } from '../components/CreateIssueModal';
 import { EditEpicModal } from '../components/EditEpicModal';
+import { EditSprintModal } from '../components/EditSprintModal';
 import { PriorityBadge } from '../components/PriorityBadge';
 import type { Sprint, Epic, Issue, SprintStatus } from '../ipc/types';
 
@@ -56,7 +58,7 @@ function BacklogItem({
 }
 
 function SprintItem({
-  sprint, selected, onClick, onActivate, onComplete, onDelete,
+  sprint, selected, onClick, onActivate, onComplete, onDelete, onEdit,
 }: {
   sprint: Sprint;
   selected: boolean;
@@ -64,6 +66,7 @@ function SprintItem({
   onActivate: () => void;
   onComplete: () => void;
   onDelete: () => void;
+  onEdit: () => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -101,6 +104,14 @@ function SprintItem({
               완료
             </button>
           )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(); }}
+            title="스프린트 수정"
+            className="text-xs px-1.5 py-0.5 text-slate-400 hover:text-slate-700"
+          >
+            ✎
+          </button>
           {confirmDelete ? (
             <button
               type="button"
@@ -320,6 +331,9 @@ export function IssueManager() {
   const [epicModalOpen, setEpicModalOpen] = useState(false);
   const [issueModalEpicId, setIssueModalEpicId] = useState<number | null>(null);
   const [editEpic, setEditEpic] = useState<Epic | null>(null);
+  const [editSprint, setEditSprint] = useState<Sprint | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounce(searchQuery);
 
   const { data: sprints = [] } = useQuery<Sprint[]>({
     queryKey: ['sprintList'],
@@ -375,6 +389,24 @@ export function IssueManager() {
     }
     return result;
   }, [issuesInView, allEpics]);
+
+  // 스프린트 전환 시 검색어 초기화
+  useEffect(() => { setSearchQuery(''); }, [selectedSprintId]);
+
+  const filteredGrouped = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return grouped;
+    const isIdSearch = q.startsWith('#');
+    const targetId = isIdSearch ? parseInt(q.slice(1)) : NaN;
+    return grouped
+      .map(({ epic, issues }) => ({
+        epic,
+        issues: issues.filter((i) =>
+          isIdSearch ? i.id === targetId : i.title.toLowerCase().includes(q)
+        ),
+      }))
+      .filter(({ issues }) => issues.length > 0);
+  }, [grouped, debouncedQuery]);
 
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
@@ -449,6 +481,7 @@ export function IssueManager() {
               onActivate={() => activateSprint.mutate(sprint.id)}
               onComplete={() => completeSprint.mutate(sprint.id)}
               onDelete={() => deleteSprint.mutate(sprint.id)}
+              onEdit={() => setEditSprint(sprint)}
             />
           ))}
         </div>
@@ -469,7 +502,14 @@ export function IssueManager() {
               <p className="text-xs text-slate-400 mt-0.5">{selectedSprint.goal}</p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="#ID 또는 이슈 검색…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 min-w-[180px]"
+            />
             <button
               type="button"
               onClick={() => setEpicModalOpen(true)}
@@ -494,14 +534,16 @@ export function IssueManager() {
           {selectedSprintId == null && (
             <p className="text-slate-400 text-center mt-20">왼쪽에서 스프린트나 백로그를 선택하세요</p>
           )}
-          {selectedSprintId != null && grouped.length === 0 && (
+          {selectedSprintId != null && filteredGrouped.length === 0 && (
             <p className="text-slate-400 text-center mt-20">
-              {isBacklog
-                ? '백로그가 비어 있습니다. 새 이슈를 백로그로 추가하세요.'
-                : '이슈가 없습니다. "+ 새 이슈" 로 이 스프린트에 이슈를 추가하세요.'}
+              {debouncedQuery.trim()
+                ? `"${debouncedQuery.trim()}" 에 일치하는 이슈가 없습니다.`
+                : isBacklog
+                  ? '백로그가 비어 있습니다. 새 이슈를 백로그로 추가하세요.'
+                  : '이슈가 없습니다. "+ 새 이슈" 로 이 스프린트에 이슈를 추가하세요.'}
             </p>
           )}
-          {grouped.map(({ epic, issues }) => (
+          {filteredGrouped.map(({ epic, issues }) => (
             <EpicRow
               key={epic.id}
               epic={epic}
@@ -533,6 +575,10 @@ export function IssueManager() {
       <EditEpicModal
         epic={editEpic}
         onClose={() => setEditEpic(null)}
+      />
+      <EditSprintModal
+        sprint={editSprint}
+        onClose={() => setEditSprint(null)}
       />
     </div>
   );

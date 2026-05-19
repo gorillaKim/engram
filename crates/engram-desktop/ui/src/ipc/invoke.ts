@@ -25,6 +25,17 @@ export const issueSetStatus = (id: number, status: string) =>
 export const issueSetPriority = (id: number, priority: string) =>
   invoke<Issue>('issue_set_priority', { id, priority });
 
+export const issueUpdate = (
+  id: number,
+  input: { title?: string; description?: string | null; goal?: string | null },
+) =>
+  invoke<Issue>('issue_update', {
+    id,
+    title: input.title ?? null,
+    description: input.description ?? null,
+    goal: input.goal ?? null,
+  });
+
 export const epicList = (project_key?: string) =>
   invoke<Epic[]>('epic_list', { project_key: project_key ?? null });
 

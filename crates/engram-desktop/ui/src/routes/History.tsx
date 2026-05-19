@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useIssues } from '../hooks/useIssues';
 import { useSprints } from '../hooks/useSprints';
 import { useEpics } from '../hooks/useEpics';
+import { useDebounce } from '../hooks/useDebounce';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { useUIStore } from '../store/ui';
 
@@ -40,7 +41,20 @@ export function History() {
     setSelectedId(null);
   };
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounce(searchQuery);
+
   const finishedIssues = issues ?? [];
+
+  const filteredIssues = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return finishedIssues;
+    if (q.startsWith('#')) {
+      const id = parseInt(q.slice(1));
+      return isNaN(id) ? [] : finishedIssues.filter((i) => i.id === id);
+    }
+    return finishedIssues.filter((i) => i.title.toLowerCase().includes(q));
+  }, [finishedIssues, debouncedQuery]);
 
   return (
     <div className="flex flex-col h-full bg-slate-50/30">
@@ -91,8 +105,16 @@ export function History() {
             )}
           </select>
 
+          <input
+            type="text"
+            placeholder="#ID 또는 제목 검색…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 min-w-[180px]"
+          />
+
           <span className="text-sm text-slate-500 font-medium whitespace-nowrap">
-            총 {finishedIssues.length}건
+            총 {filteredIssues.length}건
           </span>
         </div>
       </div>
@@ -103,10 +125,14 @@ export function History() {
           <div className="flex items-center justify-center h-40 text-slate-400">
             히스토리 로딩 중…
           </div>
-        ) : finishedIssues.length === 0 ? (
+        ) : filteredIssues.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 bg-white rounded-xl border-2 border-dashed border-slate-200 p-12 text-slate-400">
             <span className="text-4xl mb-3">📦</span>
-            <p>해당 {viewMode === 'sprint' ? '스프린트' : '에픽'}에 완료된 이슈가 없습니다.</p>
+            <p>
+              {searchQuery.trim()
+                ? `"${searchQuery.trim()}" 에 일치하는 이슈가 없습니다.`
+                : `해당 ${viewMode === 'sprint' ? '스프린트' : '에픽'}에 완료된 이슈가 없습니다.`}
+            </p>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
@@ -115,29 +141,36 @@ export function History() {
                 <tr>
                   <th className="px-6 py-3 w-16">ID</th>
                   <th className="px-6 py-3">제목</th>
+                  <th className="px-6 py-3 w-40">에픽</th>
                   <th className="px-6 py-3 w-24">우선순위</th>
                   <th className="px-6 py-3 w-40">완료일</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {finishedIssues.map((issue) => (
-                  <tr
-                    key={issue.id}
-                    className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                    onClick={() => selectIssue(issue.id)}
-                  >
-                    <td className="px-6 py-4 text-slate-400 font-mono">#{issue.id}</td>
-                    <td className="px-6 py-4">
-                      <span className="font-medium text-slate-800">{issue.title}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <PriorityBadge priority={issue.priority} />
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">
-                      {new Date(issue.updated_at).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
+                {filteredIssues.map((issue) => {
+                  const epicTitle = epics?.find((e) => e.id === issue.epic_id)?.title ?? '-';
+                  return (
+                    <tr
+                      key={issue.id}
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                      onClick={() => selectIssue(issue.id)}
+                    >
+                      <td className="px-6 py-4 text-slate-400 font-mono">#{issue.id}</td>
+                      <td className="px-6 py-4">
+                        <span className="font-medium text-slate-800">{issue.title}</span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 text-xs truncate max-w-[160px]">
+                        {epicTitle}
+                      </td>
+                      <td className="px-6 py-4">
+                        <PriorityBadge priority={issue.priority} />
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">
+                        {new Date(issue.updated_at).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

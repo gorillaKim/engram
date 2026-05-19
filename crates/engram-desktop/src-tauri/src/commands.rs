@@ -72,6 +72,16 @@ pub async fn do_issue_set_priority(
     db.issue_update(id, UpdateIssueInput { priority: Some(parsed), ..Default::default() }, "user").await
 }
 
+pub async fn do_issue_update(
+    db: &Db,
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    goal: Option<String>,
+) -> engram_core::Result<Issue> {
+    db.issue_update(id, UpdateIssueInput { title, description, goal, ..Default::default() }, "user").await
+}
+
 pub async fn do_epic_list(
     db: &Db,
     project_key: Option<&str>,
@@ -262,6 +272,17 @@ pub async fn issue_set_priority(
     priority: String,
 ) -> Result<Issue, String> {
     do_issue_set_priority(&db, id, &priority).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn issue_update(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    goal: Option<String>,
+) -> Result<Issue, String> {
+    do_issue_update(&db, id, title, description, goal).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -721,5 +742,46 @@ mod tests {
         let graph = do_blocked_issues_graph(&db, "proj").await.unwrap();
         assert!(graph.chains.is_empty());
         assert!(!graph.has_cycle);
+    }
+
+    #[tokio::test]
+    async fn test_issue_update_title_description_goal() {
+        let db = setup().await;
+        let (_, issue_id) = seed_issue(&db).await;
+
+        let updated = do_issue_update(
+            &db, issue_id,
+            Some("Updated Title".to_string()),
+            Some("Updated desc".to_string()),
+            Some("New goal".to_string()),
+        ).await.unwrap();
+
+        assert_eq!(updated.title, "Updated Title");
+        assert_eq!(updated.description, Some("Updated desc".to_string()));
+        assert_eq!(updated.goal, Some("New goal".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_issue_update_partial_only_description() {
+        let db = setup().await;
+        let (_, issue_id) = seed_issue(&db).await;
+
+        // None 필드는 기존 값 유지
+        let updated = do_issue_update(&db, issue_id, None, Some("desc only".to_string()), None).await.unwrap();
+        assert_eq!(updated.title, "I1", "title unchanged");
+        assert_eq!(updated.description, Some("desc only".to_string()));
+        assert_eq!(updated.goal, None, "goal unchanged");
+    }
+
+    #[tokio::test]
+    async fn test_issue_update_clear_description_with_empty_string() {
+        let db = setup().await;
+        let (_, issue_id) = seed_issue(&db).await;
+
+        // 설명 설정 후 빈 문자열로 지우기
+        do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None).await.unwrap();
+        let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None).await.unwrap();
+        // 빈 문자열은 None 으로 저장
+        assert!(cleared.description.as_deref().unwrap_or("").is_empty());
     }
 }

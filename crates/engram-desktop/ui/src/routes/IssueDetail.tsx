@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { issueGet, issueSetStatus, blockedIssuesGraph, issueDelete } from '../ipc/invoke';
+import { issueGet, issueSetStatus, issueSetPriority, issueUpdate, blockedIssuesGraph, issueDelete } from '../ipc/invoke';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
@@ -28,6 +28,8 @@ export function IssueDetail() {
   const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
   const [epicOpen, setEpicOpen] = useState(false);
+  const [editingField, setEditingField] = useState<'title' | 'description' | 'goal' | null>(null);
+  const [draftValue, setDraftValue] = useState('');
 
   const { data: graphData } = useQuery({
     queryKey: ['blockingGraph', selectedProjectKey],
@@ -48,6 +50,39 @@ export function IssueDetail() {
     },
     onError: (err) => toast.error(`전이 실패: ${err}`),
   });
+
+  const updateField = useMutation({
+    mutationFn: (input: { title?: string; description?: string | null; goal?: string | null }) =>
+      issueUpdate(selectedIssueId!, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issue', selectedIssueId] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      setEditingField(null);
+    },
+    onError: (err) => toast.error(`수정 실패: ${err}`),
+  });
+
+  const updatePriority = useMutation({
+    mutationFn: (priority: string) => issueSetPriority(selectedIssueId!, priority),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issue', selectedIssueId] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+    },
+    onError: (err) => toast.error(`우선순위 변경 실패: ${err}`),
+  });
+
+  const startEdit = (field: 'title' | 'description' | 'goal', current: string) => {
+    setEditingField(field);
+    setDraftValue(current);
+  };
+
+  const saveEdit = () => {
+    if (!editingField || !issue) return;
+    updateField.mutate({ [editingField]: draftValue });
+  };
+
+  const cancelEdit = () => setEditingField(null);
 
   const remove = useMutation({
     mutationFn: () => issueDelete(selectedIssueId!),
@@ -82,11 +117,38 @@ export function IssueDetail() {
       <div className="relative w-full max-w-lg bg-white shadow-2xl flex flex-col h-full overflow-y-auto">
         {/* Header */}
         <div className="flex items-start justify-between p-5 border-b border-slate-200 sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
             {issue && <PriorityBadge priority={issue.priority} />}
-            <h2 className="text-base font-semibold text-slate-800 truncate">
-              {issue ? `#${issue.id} ${issue.title}` : '…'}
-            </h2>
+            <div className="flex-1 min-w-0">
+              {editingField === 'title' ? (
+                <input
+                  autoFocus
+                  value={draftValue}
+                  onChange={(e) => setDraftValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit();
+                    if (e.key === 'Escape') cancelEdit();
+                  }}
+                  onBlur={saveEdit}
+                  className="w-full text-base font-semibold text-slate-800 border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              ) : (
+                <div className="flex items-center gap-1 group">
+                  <h2 className="text-base font-semibold text-slate-800 truncate">
+                    {issue ? `#${issue.id} ${issue.title}` : '…'}
+                  </h2>
+                  {issue && (
+                    <button
+                      onClick={() => startEdit('title', issue.title)}
+                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 text-xs shrink-0"
+                      title="제목 편집"
+                    >
+                      ✎
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <button
             onClick={() => selectIssue(null)}
@@ -98,12 +160,28 @@ export function IssueDetail() {
 
         {issue && (
           <div className="p-5 flex flex-col gap-6">
-            {/* Status badge */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">상태</span>
-              <span className="text-xs font-medium bg-slate-100 rounded px-2 py-0.5 capitalize">
-                {issue.status}
-              </span>
+            {/* Status + Priority */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">상태</span>
+                <span className="text-xs font-medium bg-slate-100 rounded px-2 py-0.5 capitalize">
+                  {issue.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">우선순위</span>
+                <select
+                  value={issue.priority}
+                  disabled={updatePriority.isPending}
+                  onChange={(e) => updatePriority.mutate(e.target.value)}
+                  className="text-xs border border-slate-200 rounded px-2 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+                >
+                  <option value="critical">긴급</option>
+                  <option value="high">높음</option>
+                  <option value="medium">보통</option>
+                  <option value="low">낮음</option>
+                </select>
+              </div>
             </div>
 
             {/* Epic (collapsible, default closed) */}
@@ -139,20 +217,100 @@ export function IssueDetail() {
             )}
 
             {/* Goal */}
-            {issue.goal && (
-              <div className="bg-amber-50 rounded-md p-3 border border-amber-100">
-                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">목표</p>
-                <Markdown>{issue.goal}</Markdown>
+            <div className="bg-amber-50 rounded-md p-3 border border-amber-100">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">목표</p>
+                {editingField !== 'goal' && (
+                  <button
+                    onClick={() => startEdit('goal', issue.goal ?? '')}
+                    className="text-xs text-amber-500 hover:text-amber-700"
+                    title="목표 편집"
+                  >
+                    ✎
+                  </button>
+                )}
               </div>
-            )}
+              {editingField === 'goal' ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    autoFocus
+                    value={draftValue}
+                    onChange={(e) => setDraftValue(e.target.value)}
+                    rows={3}
+                    className="w-full text-sm border border-amber-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-y bg-white"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      disabled={updateField.isPending}
+                      className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded disabled:opacity-50"
+                    >
+                      {updateField.isPending ? '저장 중…' : '저장'}
+                    </button>
+                    <button onClick={cancelEdit} className="text-xs px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded">
+                      취소
+                    </button>
+                  </div>
+                </div>
+              ) : issue.goal ? (
+                <Markdown>{issue.goal}</Markdown>
+              ) : (
+                <button
+                  onClick={() => startEdit('goal', '')}
+                  className="text-xs text-amber-500/70 hover:text-amber-600 italic"
+                >
+                  + 목표 추가
+                </button>
+              )}
+            </div>
 
             {/* Description */}
-            {issue.description && (
-              <div className="bg-slate-50 rounded-md p-3 border border-slate-100">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">설명</p>
-                <Markdown>{issue.description}</Markdown>
+            <div className="bg-slate-50 rounded-md p-3 border border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">설명</p>
+                {editingField !== 'description' && (
+                  <button
+                    onClick={() => startEdit('description', issue.description ?? '')}
+                    className="text-xs text-slate-400 hover:text-slate-600"
+                    title="설명 편집"
+                  >
+                    ✎
+                  </button>
+                )}
               </div>
-            )}
+              {editingField === 'description' ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    autoFocus
+                    value={draftValue}
+                    onChange={(e) => setDraftValue(e.target.value)}
+                    rows={5}
+                    className="w-full text-sm border border-indigo-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-y bg-white"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveEdit}
+                      disabled={updateField.isPending}
+                      className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
+                    >
+                      {updateField.isPending ? '저장 중…' : '저장'}
+                    </button>
+                    <button onClick={cancelEdit} className="text-xs px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded">
+                      취소
+                    </button>
+                  </div>
+                </div>
+              ) : issue.description ? (
+                <Markdown>{issue.description}</Markdown>
+              ) : (
+                <button
+                  onClick={() => startEdit('description', '')}
+                  className="text-xs text-slate-400 hover:text-indigo-500 italic"
+                >
+                  + 설명 추가
+                </button>
+              )}
+            </div>
 
             {/* Blocking Graph */}
             {graphData && (

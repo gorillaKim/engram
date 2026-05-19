@@ -139,6 +139,7 @@ fn main() {
             commands::issue_unlink,
             commands::issue_links,
             commands::epic_set_status,
+            commands::issue_update,
             commands::epic_update,
             commands::epic_delete,
             commands::issue_delete,
