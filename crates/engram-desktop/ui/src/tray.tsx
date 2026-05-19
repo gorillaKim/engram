@@ -43,50 +43,55 @@ function TrayApp() {
   const totalAlerts = (summary?.inbox ?? 0) + (summary?.demo_review ?? 0) + (summary?.blockers ?? 0);
 
   return (
-    <div className="select-none">
-      <div className="bg-[#2c2c2e]/90 backdrop-blur-[30px] rounded-[12px] overflow-hidden">
+    <div className="select-none h-screen flex flex-col p-1">
+      <div className="bg-[#2c2c2e]/85 backdrop-blur-[24px] rounded-[12px] overflow-hidden flex flex-col h-full border border-white/[0.05] shadow-2xl">
 
-        {/* 헤더 */}
-        <div className="px-4 pt-4 pb-3 flex items-baseline justify-between">
-          <h1 className="text-[15px] font-semibold text-white/90">Engram</h1>
-          <span className={`text-[12px] ${totalAlerts > 0 ? 'text-amber-400' : 'text-white/30'}`}>
-            {totalAlerts > 0 ? `${totalAlerts}건 주의` : '이상 없음'}
-          </span>
+        {/* 헤더 - 고정 */}
+        <div className="flex-none">
+          <div className="px-4 pt-4 pb-3 flex items-baseline justify-between">
+            <h1 className="text-[15px] font-semibold text-white/90">Engram</h1>
+            <span className={`text-[12px] ${totalAlerts > 0 ? 'text-amber-400' : 'text-white/30'}`}>
+              {totalAlerts > 0 ? `${totalAlerts}건 주의` : '이상 없음'}
+            </span>
+          </div>
+          <div className="h-px bg-white/[0.08]" />
         </div>
 
-        <div className="h-px bg-white/[0.08]" />
+        {/* 중앙 콘텐츠 - 스크롤 */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {/* 요약 통계 */}
+          <div className="px-4 py-3 hover:bg-white/[0.02] transition-colors">
+            <TraySummary summary={summary} />
+          </div>
 
-        {/* 요약 통계 */}
-        <div className="px-4 py-3">
-          <TraySummary summary={summary} />
+          <div className="h-px bg-white/[0.08]" />
+
+          {/* 최근 알림 */}
+          <div className="px-4 py-3">
+            <p className="text-[11px] font-medium text-white/40 uppercase tracking-wider mb-2">최근 알림</p>
+            <TrayNotificationList entries={log} />
+          </div>
+
+          <div className="h-px bg-white/[0.08]" />
+
+          {/* MCP 서버 */}
+          <div className="px-4 py-3">
+            <p className="text-[11px] font-medium text-white/40 uppercase tracking-wider mb-2">MCP 서버</p>
+            <TrayMcpStatus />
+          </div>
         </div>
 
-        <div className="h-px bg-white/[0.08]" />
-
-        {/* 최근 알림 */}
-        <div className="px-4 py-3">
-          <p className="text-[11px] font-medium text-white/40 uppercase tracking-wider mb-2">최근 알림</p>
-          <TrayNotificationList entries={log} />
-        </div>
-
-        <div className="h-px bg-white/[0.08]" />
-
-        {/* MCP 서버 */}
-        <div className="px-4 py-3">
-          <p className="text-[11px] font-medium text-white/40 uppercase tracking-wider mb-2">MCP 서버</p>
-          <TrayMcpStatus />
-        </div>
-
-        <div className="h-px bg-white/[0.08]" />
-
-        {/* 푸터 */}
-        <div className="px-4 py-3">
-          <button
-            onClick={() => void invoke('show_main_window')}
-            className="text-[13px] text-[#4c9ff8] hover:text-[#6db3ff] active:text-[#3a8ee6] transition-colors cursor-default"
-          >
-            보드 열기...
-          </button>
+        {/* 푸터 - 고정 */}
+        <div className="flex-none bg-[#2c2c2e]/50">
+          <div className="h-px bg-white/[0.12]" />
+          <div className="px-4 py-3">
+            <button
+              onClick={() => void invoke('show_main_window')}
+              className="text-[13px] font-medium text-[#4c9ff8] hover:text-[#6db3ff] active:text-[#3a8ee6] transition-colors cursor-default"
+            >
+              보드 열기...
+            </button>
+          </div>
         </div>
 
       </div>

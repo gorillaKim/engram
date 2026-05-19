@@ -41,7 +41,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     let icon = Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
 
-    TrayIconBuilder::with_id("default")
+    let tray = TrayIconBuilder::with_id("default")
         .icon(icon)
         .icon_as_template(true)
         .tooltip("Engram")
@@ -70,6 +70,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             }
         })
         .build(app)?;
+
+    // macOS: 흰 사각형 아이콘 제거 — title 텍스트만 메뉴바에 표시
+    // watcher가 첫 tick(5s 후) set_title 을 호출하기 전에도 아이콘이 보이지 않도록 즉시 제거
+    #[cfg(target_os = "macos")]
+    let _ = tray.set_icon(None);
+    drop(tray);
 
     Ok(())
 }

@@ -8,5 +8,5 @@ const colors: Record<IssuePriority, string> = {
 };
 
 export function PriorityBadge({ priority }: { priority: IssuePriority }) {
-  return <span className={`inline-block w-2 h-2 rounded-full ${colors[priority]}`} title={priority} />;
+  return <span className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${colors[priority]}`} title={priority} />;
 }

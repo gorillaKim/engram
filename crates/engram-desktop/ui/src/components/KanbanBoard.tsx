@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCorners, useSensor, useSensors } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueCard } from './IssueCard';
 import { FilterBar } from './FilterBar';
@@ -76,6 +76,8 @@ export function KanbanBoard() {
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={closestCorners}
+      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={(e) => setActiveIssue((e.active.data.current as { issue: Issue })?.issue ?? null)}
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveIssue(null)}

@@ -171,6 +171,8 @@ export interface IssueBoardStatus {
 
 export interface IssueFilter {
   epic_id?: number;
+  sprint_id?: number | null;
+  backlog_only?: boolean;
   project_key?: string;
   status?: IssueStatus;
   priority?: IssuePriority;

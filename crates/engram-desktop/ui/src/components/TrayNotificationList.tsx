@@ -14,15 +14,22 @@ function timeAgo(ts: number): string {
 
 export function TrayNotificationList({ entries }: Props) {
   if (entries.length === 0) {
-    return <p className="text-xs text-white/30">최근 알림 없음</p>;
+    return (
+      <div className="py-2 px-1">
+        <p className="text-xs text-white/20 italic">최근 알림 없음</p>
+      </div>
+    );
   }
   return (
-    <ul className="flex flex-col gap-1.5">
-      {entries.slice(0, 5).map((e) => (
-        <li key={e.id} className="flex gap-2 text-xs">
-          <span className="shrink-0 text-white/30 w-14">{timeAgo(e.ts)}</span>
-          <span className="text-white/70">
-            <span className="font-medium text-white/85">{e.title}</span>{' '}{e.body}
+    <ul className="flex flex-col -mx-2">
+      {entries.slice(0, 8).map((e) => (
+        <li 
+          key={e.id} 
+          className="flex gap-2 text-xs py-1.5 px-2 rounded-md hover:bg-white/[0.05] transition-colors group cursor-default"
+        >
+          <span className="shrink-0 text-white/25 w-12 font-medium">{timeAgo(e.ts)}</span>
+          <span className="text-white/65 group-hover:text-white/85 transition-colors leading-relaxed">
+            <span className="font-semibold text-white/80 group-hover:text-white/95">{e.title}</span>{' '}{e.body}
           </span>
         </li>
       ))}
