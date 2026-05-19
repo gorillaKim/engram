@@ -81,6 +81,17 @@ impl Db {
                     format!("{:?} → {:?}", current.status, new_status)
                 ));
             }
+            // blocked 이슈 전환 검증 — working/demo/finished 로 진입 시 활성 블로커 확인
+            if matches!(new_status, IssueStatus::Working | IssueStatus::Demo | IssueStatus::Finished) {
+                let blockers = self.active_blockers_for(id).await?;
+                if !blockers.is_empty() {
+                    let list = blockers.iter().map(|b| format!("#{}", b)).collect::<Vec<_>>().join(", ");
+                    return Err(crate::Error::InvalidTransition(format!(
+                        "이슈 #{}은(는) 블로킹 이슈 [{}]이(가) demo 또는 finished 상태가 될 때까지 작업이 불가합니다.",
+                        id, list
+                    )));
+                }
+            }
             let old_v = serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string();
             let new_v = serde_json::to_value(new_status).unwrap().as_str().unwrap().to_string();
             // working 을 벗어나는 모든 전이에서 assigned_agent 를 정리한다
@@ -182,6 +193,16 @@ impl Db {
     /// 같은 agent_id 가 재호출하면 idempotent (이미 자기가 잡은 working 이슈를 그대로 반환).
     pub async fn issue_claim(&self, id: i64, agent_id: &str) -> Result<Issue> {
         let current = self.issue_get(id).await?; // 존재 확인 + 디버그용 컨텍스트
+
+        // claim = working 전환과 동치이므로 활성 블로커 확인
+        let blockers = self.active_blockers_for(id).await?;
+        if !blockers.is_empty() {
+            let list = blockers.iter().map(|b| format!("#{}", b)).collect::<Vec<_>>().join(", ");
+            return Err(crate::Error::InvalidTransition(format!(
+                "이슈 #{}은(는) 블로킹 이슈 [{}]이(가) demo 또는 finished 상태가 될 때까지 작업이 불가합니다.",
+                id, list
+            )));
+        }
 
         let result = sqlx::query(
             "UPDATE issues \
@@ -385,5 +406,20 @@ impl Db {
         .fetch_all(&self.pool)
         .await
         .map_err(Into::into)
+    }
+
+    /// 아직 해소되지 않은 블로커 이슈 ID 목록을 반환한다.
+    ///
+    ///  에서  이고  인 source 를 조회하되,
+    /// source 이슈의 status 가  또는  가 아닌 것만 반환한다.
+    /// (demo/finished 에 도달한 블로커는 "해소된 것"으로 간주)
+    async fn active_blockers_for(&self, issue_id: i64) -> Result<Vec<i64>> {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT il.source_id              FROM issue_links il              JOIN issues i ON il.source_id = i.id              WHERE il.target_id = ?                AND il.link_type = 'blocks'                AND i.status NOT IN ('demo', 'finished', 'cancelled')",
+        )
+        .bind(issue_id)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Error::Db)
     }
 }

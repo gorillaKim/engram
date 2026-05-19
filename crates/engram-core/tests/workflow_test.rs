@@ -975,3 +975,115 @@ async fn test_broadcast_note_input_validation() {
     }).await;
     assert!(missing_target.is_err(), "sprint scope + scope_target_id 누락은 거부되어야 함");
 }
+
+// ─── Issue #34: blocked 이슈 상태 전이 제한 통합 테스트 ───────────────────────
+
+/// A blocks B 설정 후 B→working 시도 시 InvalidTransition, A→finished 후 B→working 성공
+#[tokio::test]
+async fn test_blocked_issue_cannot_transition_to_working() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    // 이슈 A (blocker) — ready 상태
+    let a = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocker A".into(), description: None, goal: None,
+        priority: Some(IssuePriority::High),
+    }).await.unwrap();
+    db.issue_update(a.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+
+    // 이슈 B (blocked) — ready 상태
+    let b = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocked B".into(), description: None, goal: None,
+        priority: Some(IssuePriority::Medium),
+    }).await.unwrap();
+    db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+
+    // A blocks B 링크 설정
+    db.issue_link(a.id, b.id, LinkType::Blocks).await.unwrap();
+
+    // B→working 시도: A가 아직 active(ready)이므로 InvalidTransition 에러
+    let err = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "agent").await;
+    assert!(err.is_err(), "블로커가 있는 이슈는 working 으로 전환 불가해야 함");
+    match err.unwrap_err() {
+        engram_core::Error::InvalidTransition(msg) => {
+            assert!(msg.contains(format!("#{}", a.id).as_str()), "에러 메시지에 블로커 ID 가 포함되어야 함");
+        }
+        other => panic!("InvalidTransition 에러여야 하는데 {:?} 발생", other),
+    }
+
+    // issue_claim 도 동일하게 차단
+    let claim_err = db.issue_claim(b.id, "test-agent").await;
+    assert!(claim_err.is_err(), "블로커가 있는 이슈는 claim 도 불가해야 함");
+
+    // A→finished (사용자 전용이지만 테스트에서는 직접 DB 수준 검증을 위해 우회)
+    // finished 는 agent-demo-gate 규칙상 사용자 전용이나, 도메인 레이어에 직접 강제는 없음.
+    // 여기서는 demo 상태로 전환 후 finished 로 전환 (can_transition_to 통과).
+    db.issue_claim(a.id, "agent-a").await.unwrap(); // A→working
+    db.issue_release(a.id, IssueStatus::Demo, "agent-a", false).await.unwrap(); // A→demo
+    // A가 demo 상태가 되면 B 의 블로커가 해소됨
+    let ok = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "agent").await;
+    assert!(ok.is_ok(), "블로커가 demo 상태가 되면 B→working 이 가능해야 함");
+}
+
+/// blocked 이슈는 cancelled 로는 언제든 전환 가능
+#[tokio::test]
+async fn test_blocked_issue_can_cancel() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let a = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocker A".into(), description: None, goal: None,
+        priority: Some(IssuePriority::High),
+    }).await.unwrap();
+    db.issue_update(a.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+
+    let b = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocked B".into(), description: None, goal: None,
+        priority: Some(IssuePriority::Medium),
+    }).await.unwrap();
+    db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+
+    db.issue_link(a.id, b.id, LinkType::Blocks).await.unwrap();
+
+    // B→cancelled 는 블로커와 무관하게 허용
+    let result = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Cancelled), ..Default::default() }, "agent").await;
+    assert!(result.is_ok(), "blocked 이슈도 cancelled 로는 전환 가능해야 함");
+    assert_eq!(result.unwrap().status, IssueStatus::Cancelled);
+}
+
+/// blocked 이슈는 required ↔ ready 전환이 블로커와 무관하게 가능
+#[tokio::test]
+async fn test_blocked_issue_can_move_required_ready() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let a = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocker A".into(), description: None, goal: None,
+        priority: Some(IssuePriority::High),
+    }).await.unwrap();
+    db.issue_update(a.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+
+    // B는 required(기본값) 상태로 생성
+    let b = db.issue_create(CreateIssueInput {
+        epic_id, sprint_id: Some(sprint_id),
+        title: "Blocked B".into(), description: None, goal: None,
+        priority: Some(IssuePriority::Medium),
+    }).await.unwrap();
+    assert_eq!(b.status, IssueStatus::Required);
+
+    db.issue_link(a.id, b.id, LinkType::Blocks).await.unwrap();
+
+    // required → ready: 허용
+    let to_ready = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await;
+    assert!(to_ready.is_ok(), "blocked 이슈도 required→ready 는 가능해야 함");
+
+    // ready → required: 허용
+    let to_required = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Required), ..Default::default() }, "agent").await;
+    assert!(to_required.is_ok(), "blocked 이슈도 ready→required 는 가능해야 함");
+    assert_eq!(to_required.unwrap().status, IssueStatus::Required);
+}
