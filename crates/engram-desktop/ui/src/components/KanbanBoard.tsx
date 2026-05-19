@@ -10,6 +10,7 @@ import { CreateSprintModal } from './CreateSprintModal';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import { useIssueDnd } from '../hooks/useIssueDnd';
 import { useSessionRestore } from '../hooks/useSessionRestore';
+import { useEpics } from '../hooks/useEpics';
 import { useUIStore } from '../store/ui';
 import type { Issue, IssueStatus, IssueProjectBoard } from '../ipc/types';
 
@@ -26,7 +27,10 @@ export function KanbanBoard() {
 
   const { data, isLoading, error } = useBoardStatus(selectedProjectKey ?? undefined);
   const { data: session } = useSessionRestore(selectedProjectKey ?? undefined);
+  const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
   const dnd = useIssueDnd(selectedProjectKey ?? undefined);
+
+  const epicMap = new Map(epics.map((e) => [e.id, e.title]));
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -141,6 +145,7 @@ export function KanbanBoard() {
                   issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
                   onIssueClick={(id) => selectIssue(id)}
                   expansionIds={expansionIds}
+                  epicMap={epicMap}
                   onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
                 />
               ))}
