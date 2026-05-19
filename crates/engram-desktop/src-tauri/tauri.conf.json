@@ -37,6 +37,7 @@
         "height": 360,
         "visible": false,
         "decorations": false,
+        "shadow": false,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "transparent": true,

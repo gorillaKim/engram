@@ -57,7 +57,13 @@ export function KanbanBoard() {
     const { active, over } = event;
     if (!over) return;
     const issueId = active.id as number;
-    const toStatus = over.id as IssueStatus;
+
+    // over.id 가 문자열이면 컬럼(status), 숫자면 카드 위에 드롭된 것 → 카드의 status 사용
+    const toStatus: IssueStatus = typeof over.id === 'string'
+      ? (over.id as IssueStatus)
+      : ((over.data.current as { issue: Issue })?.issue.status as IssueStatus);
+
+    if (!toStatus) return;
     const fromStatus = (active.data.current as { issue: Issue })?.issue.status;
     if (fromStatus === toStatus) return;
     dnd.mutate({ id: issueId, status: toStatus });
