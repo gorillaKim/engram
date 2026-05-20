@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   sprintList, sprintUpdate, sprintDelete,
   epicList, epicDelete,
-  issueList, issueSetSprint,
+  issueList, issueSetSprint, issueCreate,
 } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { CreateSprintModal } from '../components/CreateSprintModal';
@@ -13,8 +13,14 @@ import { CreateEpicModal } from '../components/CreateEpicModal';
 import { CreateIssueModal } from '../components/CreateIssueModal';
 import { EditEpicModal } from '../components/EditEpicModal';
 import { EditSprintModal } from '../components/EditSprintModal';
+import { ConfirmCompleteSprintModal } from '../components/ConfirmCompleteSprintModal';
 import { PriorityBadge } from '../components/PriorityBadge';
 import type { Sprint, Epic, Issue, SprintStatus } from '../ipc/types';
+import { clampSidebarWidth } from '../utils/sidebarHelper';
+import { toggleAllEpics } from '../utils/epicHelper';
+import { filterFinishedIssues } from '../utils/issueFilterHelper';
+import { BulkActionBar } from '../components/BulkActionBar';
+import { toggleIssueSelection, toggleAllIssuesInEpic } from '../utils/bulkHelper';
 
 // ── Sprint sidebar ──────────────────────────────────────────────────────────
 
@@ -166,7 +172,18 @@ const ISSUE_STATUS_LABEL: Record<string, string> = {
 // ── Epic row (groups issues belonging to one epic, in current sprint or backlog) ─
 
 function EpicRow({
-  epic, issues, sprints, onIssueClick, onAddIssue, onEdit,
+  epic,
+  issues,
+  sprints,
+  onIssueClick,
+  onAddIssue,
+  onEdit,
+  selectedSprintId,
+  expanded,
+  onToggle,
+  selectedIssueIds,
+  onToggleIssueSelection,
+  onToggleAllIssuesInEpic,
 }: {
   epic: Epic;
   issues: Issue[];
@@ -174,10 +191,19 @@ function EpicRow({
   onIssueClick: (id: number) => void;
   onAddIssue: () => void;
   onEdit: (epic: Epic) => void;
+  selectedSprintId: number | null;
+  expanded: boolean;
+  onToggle: () => void;
+  selectedIssueIds: number[];
+  onToggleIssueSelection: (id: number) => void;
+  onToggleAllIssuesInEpic: (epicIssueIds: number[], selectAll: boolean) => void;
 }) {
   const qc = useQueryClient();
-  const [expanded, setExpanded] = useState(true);
   const [confirmDeleteEpic, setConfirmDeleteEpic] = useState(false);
+
+  // 빠른 이슈 추가 상태
+  const [quickTitle, setQuickTitle] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     if (!confirmDeleteEpic) return;
@@ -209,11 +235,39 @@ function EpicRow({
     onError: (e) => toast.error(`에픽 삭제 실패: ${e}`),
   });
 
+  const addIssueMutation = useMutation({
+    mutationFn: (title: string) => issueCreate({
+      epic_id: epic.id,
+      sprint_id: selectedSprintId,
+      title,
+      priority: 'medium',
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('이슈가 추가되었습니다');
+      setQuickTitle('');
+      setIsAdding(false);
+    },
+    onError: (e) => toast.error(`이슈 추가 실패: ${e}`),
+  });
+
+  const handleQuickAddSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickTitle.trim()) return;
+    addIssueMutation.mutate(quickTitle.trim());
+  };
+
   const epicStatusCls: Record<string, string> = {
     active: 'bg-blue-100 text-blue-600',
     completed: 'bg-green-100 text-green-700',
     cancelled: 'bg-red-50 text-red-400',
   };
+
+  const epicIssueIds = issues.map((i) => i.id);
+  const isAllEpicIssuesSelected = epicIssueIds.length > 0 && epicIssueIds.every((id) => selectedIssueIds.includes(id));
+  const isSomeEpicIssuesSelected = epicIssueIds.some((id) => selectedIssueIds.includes(id)) && !isAllEpicIssuesSelected;
 
   return (
     <div className="mb-3 border border-slate-200 rounded-lg overflow-hidden">
@@ -221,11 +275,23 @@ function EpicRow({
       <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={onToggle}
           className="text-slate-400 hover:text-slate-600 text-xs w-4"
         >
           {expanded ? '▼' : '▶'}
         </button>
+
+        <input
+          type="checkbox"
+          checked={isAllEpicIssuesSelected}
+          ref={(el) => {
+            if (el) {
+              el.indeterminate = isSomeEpicIssuesSelected;
+            }
+          }}
+          onChange={(e) => onToggleAllIssuesInEpic(epicIssueIds, e.target.checked)}
+          className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3.5 h-3.5 mr-1"
+        />
 
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${epicStatusCls[epic.status] ?? ''}`}>
           {epic.status}
@@ -277,43 +343,75 @@ function EpicRow({
       {/* Issue list */}
       {expanded && (
         <div>
-          {issues.length === 0 ? (
-            <p className="text-xs text-slate-400 py-3 px-4">이슈가 없습니다</p>
-          ) : (
-            issues.map((issue) => (
-              <div
-                key={issue.id}
-                onClick={() => onIssueClick(issue.id)}
-                className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0"
+          {issues.map((issue) => (
+            <div
+              key={issue.id}
+              onClick={() => onIssueClick(issue.id)}
+              className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0"
+            >
+              <input
+                type="checkbox"
+                checked={selectedIssueIds.includes(issue.id)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => onToggleIssueSelection(issue.id)}
+                className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3.5 h-3.5"
+              />
+              <span className={`text-xs px-2 py-0.5 rounded-full ${ISSUE_STATUS_CLS[issue.status] ?? ''}`}>
+                {ISSUE_STATUS_LABEL[issue.status] ?? issue.status}
+              </span>
+              <PriorityBadge priority={issue.priority} />
+              <span className="text-sm text-slate-700 flex-1 truncate">{issue.title}</span>
+
+              {/* Sprint move dropdown (per-issue) */}
+              <select
+                value={issue.sprint_id ?? ''}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const newId = v === '' ? null : Number(v);
+                  if (newId !== issue.sprint_id) {
+                    moveIssueSprint.mutate({ issueId: issue.id, sprintId: newId });
+                  }
+                }}
+                className="text-xs px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-600"
               >
-                <span className={`text-xs px-2 py-0.5 rounded-full ${ISSUE_STATUS_CLS[issue.status] ?? ''}`}>
-                  {ISSUE_STATUS_LABEL[issue.status] ?? issue.status}
-                </span>
-                <PriorityBadge priority={issue.priority} />
-                <span className="text-sm text-slate-700 flex-1 truncate">{issue.title}</span>
+                <option value="">백로그</option>
+                {sprints.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
 
-                {/* Sprint move dropdown (per-issue) */}
-                <select
-                  value={issue.sprint_id ?? ''}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    const newId = v === '' ? null : Number(v);
-                    if (newId !== issue.sprint_id) {
-                      moveIssueSprint.mutate({ issueId: issue.id, sprintId: newId });
-                    }
-                  }}
-                  className="text-xs px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-600"
-                >
-                  <option value="">백로그</option>
-                  {sprints.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+              <span className="text-xs text-slate-400">#{issue.id}</span>
+            </div>
+          ))}
 
-                <span className="text-xs text-slate-400">#{issue.id}</span>
-              </div>
-            ))
+          {/* Quick Add Issue Input Form */}
+          {isAdding ? (
+            <form onSubmit={handleQuickAddSubmit} className="px-4 py-2 bg-slate-50/50 border-t border-slate-100 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="이슈 제목을 입력하고 Enter…"
+                value={quickTitle}
+                onChange={(e) => setQuickTitle(e.target.value)}
+                className="flex-1 text-xs border border-indigo-200 rounded px-2.5 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setIsAdding(false);
+                    setQuickTitle('');
+                  }
+                }}
+              />
+              <button type="submit" className="text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium">추가</button>
+              <button type="button" onClick={() => { setIsAdding(false); setQuickTitle(''); }} className="text-xs px-2 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-500 rounded">취소</button>
+            </form>
+          ) : (
+            <div 
+              onClick={() => setIsAdding(true)}
+              className="px-4 py-2 hover:bg-slate-50/50 cursor-pointer border-t border-slate-100 text-xs text-slate-400 font-medium flex items-center gap-1.5 transition-colors"
+            >
+              <span className="text-sm">+</span> 빠른 이슈 추가...
+            </div>
           )}
         </div>
       )}
@@ -324,14 +422,56 @@ function EpicRow({
 // ── Main ────────────────────────────────────────────────────────────────────
 
 export function IssueManager() {
-  const { selectedSprintId, selectSprint, selectIssue } = useUIStore();
+  const { selectedSprintId, selectSprint, selectIssue, setView } = useUIStore();
   const qc = useQueryClient();
+
+  // 사이드바 가로 조절 상태
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('engram_sidebar_width');
+    return saved ? parseInt(saved, 10) : 224;
+  });
+
+  // 에픽 접기/펼치기 맵 상태
+  const [epicExpandedMap, setEpicExpandedMap] = useState<Record<number, boolean>>({});
+
+  // 완료된 이슈 숨기기 토글 상태 (기본값 true)
+  const [hideFinished, setHideFinished] = useState(true);
+
+  // 완료된 스프린트 아코디언 상태
+  const [showPastSprints, setShowPastSprints] = useState(false);
+
+  // 다중 선택된 이슈 ID 리스트
+  const [selectedIssueIds, setSelectedIssueIds] = useState<number[]>([]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      setSidebarWidth(clampSidebarWidth(startWidth + deltaX));
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  useEffect(() => {
+    localStorage.setItem('engram_sidebar_width', sidebarWidth.toString());
+  }, [sidebarWidth]);
 
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
   const [epicModalOpen, setEpicModalOpen] = useState(false);
   const [issueModalEpicId, setIssueModalEpicId] = useState<number | null>(null);
   const [editEpic, setEditEpic] = useState<Epic | null>(null);
   const [editSprint, setEditSprint] = useState<Sprint | null>(null);
+  const [completeSprintTarget, setCompleteSprintTarget] = useState<Sprint | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedQuery = useDebounce(searchQuery);
 
@@ -377,7 +517,8 @@ export function IssueManager() {
   // 이슈를 epic_id 별로 그룹핑.
   const grouped = useMemo(() => {
     const byEpic = new Map<number, Issue[]>();
-    for (const issue of issuesInView) {
+    const filtered = filterFinishedIssues(issuesInView, hideFinished);
+    for (const issue of filtered) {
       const arr = byEpic.get(issue.epic_id) ?? [];
       arr.push(issue);
       byEpic.set(issue.epic_id, arr);
@@ -388,10 +529,13 @@ export function IssueManager() {
       if (epic) result.push({ epic, issues });
     }
     return result;
-  }, [issuesInView, allEpics]);
+  }, [issuesInView, allEpics, hideFinished]);
 
-  // 스프린트 전환 시 검색어 초기화
-  useEffect(() => { setSearchQuery(''); }, [selectedSprintId]);
+  // 스프린트 전환 시 검색어 및 선택 이슈 초기화
+  useEffect(() => {
+    setSearchQuery('');
+    setSelectedIssueIds([]);
+  }, [selectedSprintId]);
 
   const filteredGrouped = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
@@ -420,17 +564,7 @@ export function IssueManager() {
     onError: (e) => toast.error(`활성화 실패: ${e}`),
   });
 
-  const completeSprint = useMutation({
-    mutationFn: (id: number) => sprintUpdate(id, 'completed'),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['sprintList'] });
-      qc.invalidateQueries({ queryKey: ['sprintCurrent'] });
-      qc.invalidateQueries({ queryKey: ['boardStatus'] });
-      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
-      toast.success('스프린트가 완료되었습니다');
-    },
-    onError: (e) => toast.error(`완료 처리 실패: ${e}`),
-  });
+
 
   const deleteSprint = useMutation({
     mutationFn: (id: number) => sprintDelete(id),
@@ -448,10 +582,16 @@ export function IssueManager() {
 
   const selectedSprint = isBacklog ? null : sprints.find((s) => s.id === selectedSprintId);
 
+  const activeSprints = useMemo(() => sprints.filter(s => s.status !== 'completed' && s.status !== 'cancelled'), [sprints]);
+  const pastSprints = useMemo(() => sprints.filter(s => s.status === 'completed' || s.status === 'cancelled'), [sprints]);
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── Sprint sidebar ── */}
-      <div className="w-56 flex-shrink-0 border-r border-slate-200 flex flex-col bg-slate-50">
+      <div 
+        className="flex-shrink-0 border-r border-slate-200 flex flex-col bg-slate-50"
+        style={{ width: sidebarWidth }}
+      >
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">스프린트</span>
           <button
@@ -469,23 +609,61 @@ export function IssueManager() {
             onClick={() => selectSprint(BACKLOG_ID)}
             count={backlogIssues.length}
           />
-          {sprints.length === 0 && (
-            <p className="text-xs text-slate-400 text-center mt-4">스프린트가 없습니다</p>
+          {activeSprints.length === 0 && (
+            <p className="text-xs text-slate-400 text-center mt-4">활성 스프린트가 없습니다</p>
           )}
-          {sprints.map((sprint) => (
+          {activeSprints.map((sprint) => (
             <SprintItem
               key={sprint.id}
               sprint={sprint}
               selected={sprint.id === selectedSprintId}
               onClick={() => selectSprint(sprint.id)}
               onActivate={() => activateSprint.mutate(sprint.id)}
-              onComplete={() => completeSprint.mutate(sprint.id)}
+              onComplete={() => setCompleteSprintTarget(sprint)}
               onDelete={() => deleteSprint.mutate(sprint.id)}
               onEdit={() => setEditSprint(sprint)}
             />
           ))}
+
+          {/* 완료된 스프린트 아코디언 */}
+          {pastSprints.length > 0 && (
+            <div className="mt-4 border-t border-slate-200/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowPastSprints(!showPastSprints)}
+                className="w-full px-3 py-1.5 flex items-center justify-between text-xs font-semibold text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+              >
+                <span>완료된 스프린트 ({pastSprints.length})</span>
+                <span>{showPastSprints ? '▼' : '▶'}</span>
+              </button>
+              
+              {showPastSprints && (
+                <div className="mt-1 px-1">
+                  {pastSprints.map((sprint) => (
+                    <SprintItem
+                      key={sprint.id}
+                      sprint={sprint}
+                      selected={sprint.id === selectedSprintId}
+                      onClick={() => selectSprint(sprint.id)}
+                      onActivate={() => activateSprint.mutate(sprint.id)}
+                      onComplete={() => setCompleteSprintTarget(sprint)}
+                      onDelete={() => deleteSprint.mutate(sprint.id)}
+                      onEdit={() => setEditSprint(sprint)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={handleMouseDown}
+        className="w-[3px] hover:w-[6px] hover:bg-indigo-300 active:bg-indigo-500 cursor-col-resize flex-shrink-0 transition-all duration-150 z-30"
+        style={{ cursor: 'col-resize' }}
+      />
 
       {/* ── Main content ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -503,6 +681,42 @@ export function IssueManager() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs text-slate-500 font-semibold cursor-pointer bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-200/50 transition-all select-none">
+              <input
+                type="checkbox"
+                checked={hideFinished}
+                onChange={(e) => setHideFinished(e.target.checked)}
+                className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3.5 h-3.5"
+              />
+              완료된 이슈 숨기기
+            </label>
+
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  const epicIds = allEpics.map(e => e.id);
+                  setEpicExpandedMap(toggleAllEpics(epicIds, true));
+                }}
+                className="text-xs px-2.5 py-1.5 text-slate-600 hover:text-slate-900 font-semibold"
+                title="모든 에픽 펼치기"
+              >
+                ▼ 모두 펼치기
+              </button>
+              <span className="w-px h-3 bg-slate-200" />
+              <button
+                type="button"
+                onClick={() => {
+                  const epicIds = allEpics.map(e => e.id);
+                  setEpicExpandedMap(toggleAllEpics(epicIds, false));
+                }}
+                className="text-xs px-2.5 py-1.5 text-slate-600 hover:text-slate-900 font-semibold"
+                title="모든 에픽 접기"
+              >
+                ▶ 모두 접기
+              </button>
+            </div>
+
             <input
               type="text"
               placeholder="#ID 또는 이슈 검색…"
@@ -531,6 +745,22 @@ export function IssueManager() {
 
         {/* Epic + Issue tree */}
         <div className="flex-1 overflow-y-auto p-6">
+          {selectedSprint && (selectedSprint.status === 'completed' || selectedSprint.status === 'cancelled') && (
+            <div className="mb-6 px-4 py-3 bg-indigo-50/80 border border-indigo-100 rounded-xl flex items-center justify-between text-xs text-indigo-700">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">ℹ️</span>
+                <span>이 스프린트는 이미 <strong>완료</strong> 또는 <strong>취소</strong>된 스프린트입니다. 상세 리포트는 완료 히스토리에서 보실 수 있습니다.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setView('history')}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-bold underline cursor-pointer"
+              >
+                히스토리 보기 →
+              </button>
+            </div>
+          )}
+
           {selectedSprintId == null && (
             <p className="text-slate-400 text-center mt-20">왼쪽에서 스프린트나 백로그를 선택하세요</p>
           )}
@@ -552,6 +782,17 @@ export function IssueManager() {
               onIssueClick={selectIssue}
               onAddIssue={() => setIssueModalEpicId(epic.id)}
               onEdit={setEditEpic}
+              selectedSprintId={isBacklog ? null : selectedSprintId}
+              expanded={epicExpandedMap[epic.id] !== false}
+              onToggle={() => {
+                setEpicExpandedMap(prev => ({
+                  ...prev,
+                  [epic.id]: !(prev[epic.id] !== false)
+                }));
+              }}
+              selectedIssueIds={selectedIssueIds}
+              onToggleIssueSelection={(id) => setSelectedIssueIds(prev => toggleIssueSelection(prev, id))}
+              onToggleAllIssuesInEpic={(ids, selectAll) => setSelectedIssueIds(prev => toggleAllIssuesInEpic(prev, ids, selectAll))}
             />
           ))}
         </div>
@@ -579,6 +820,19 @@ export function IssueManager() {
       <EditSprintModal
         sprint={editSprint}
         onClose={() => setEditSprint(null)}
+      />
+      {completeSprintTarget && (
+        <ConfirmCompleteSprintModal
+          isOpen={!!completeSprintTarget}
+          onClose={() => setCompleteSprintTarget(null)}
+          sprint={completeSprintTarget}
+          sprints={sprints}
+        />
+      )}
+      <BulkActionBar
+        selectedIds={selectedIssueIds}
+        onClearSelection={() => setSelectedIssueIds([])}
+        sprints={sprints}
       />
     </div>
   );

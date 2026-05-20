@@ -1,11 +1,15 @@
 # Rule: Agent Demo Gate
 
+> [!WARNING]
+> **에이전트는 이슈 상태를 절대 `finished`나 `cancelled`로 직접 변경할 수 없습니다!**
+> 모든 태스크와 목표를 달성하더라도 상태를 반드시 **`demo` (검토)**까지만 변경하고 사용자의 승인을 기다려야 합니다.
+
 ## 원칙
 
 Engram 이슈 상태 흐름에서 `demo → finished` 와 `* → cancelled` 는 **사용자 전용** 이다.
 Agent (직접 호출 또는 engram-worker 서브에이전트) 는 다음을 준수한다:
 
-1. **`issue_update(status=finished)` 호출 금지**
+1. **`issue_update(status=finished)` 호출 금지** (작업 완료 시 `status=demo`로 설정 후 확인 대기)
 2. **`issue_update(status=cancelled)` 호출 금지**
 3. demo 진입 직전 반드시 `note_add(type=context, summary, detail)` 으로 검토 가이드 작성
 4. demo 진입 후에는 사용자의 칸반 조작을 기다린다 (`task_next` 가 다른 이슈를 반환할 수 있음)

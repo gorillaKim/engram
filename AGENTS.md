@@ -16,7 +16,7 @@ engram/
 │   └── engram-cli/    ← clap 기반 CLI + Codex Hook 통합
 ├── migrations/        ← engram-core/migrations/NNNN_*.sql (sqlx-migrate 내장)
 ├── docs/adr/          ← 설계 결정 기록 (Architecture Decision Records)
-└── .Codex/rules/     ← 작업 시 참조할 코딩 규칙
+└── .claude/rules/     ← 작업 시 참조할 코딩 규칙
 ```
 
 **의존성 방향은 한방향**: `engram-cli`, `engram-mcp` → `engram-core`.
@@ -57,22 +57,25 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 
 | 작업 | 참조할 규칙 |
 |------|------------|
-| DB 쿼리 / Repository 추가 | `.Codex/rules/sqlx-pattern.md` |
-| 새 마이그레이션 추가 | `.Codex/rules/schema-evolution.md` |
-| 새 MCP 도구 추가 | `.Codex/rules/mcp-tool-shape.md` |
-| 테스트 작성 | `.Codex/rules/testing-strategy.md` |
-| 설계 결정 추가 / 변경 | `.Codex/rules/adr-format.md` |
-| `tasks.ord` 조작 | `.Codex/rules/fractional-index.md` |
-| Demo→Finished 전이 / Agent 상태 전이 제한 | `.Codex/rules/agent-demo-gate.md` |
+| DB 쿼리 / Repository 추가 | `.claude/rules/sqlx-pattern.md` |
+| 새 마이그레이션 추가 | `.claude/rules/schema-evolution.md` |
+| 새 MCP 도구 추가 | `.claude/rules/mcp-tool-shape.md` |
+| 테스트 작성 | `.claude/rules/testing-strategy.md` |
+| 설계 결정 추가 / 변경 | `.claude/rules/adr-format.md` |
+| `tasks.ord` 조작 | `.claude/rules/fractional-index.md` |
+| Demo→Finished 전이 / Agent 상태 전이 제한 | `.claude/rules/agent-demo-gate.md` |
 
-새 규칙이 필요하다고 판단되면 `.Codex/rules/<slug>.md` 로 추가하고 이 표에 등록한다.
+새 규칙이 필요하다고 판단되면 `.claude/rules/<slug>.md` 로 추가하고 이 표에 등록한다.
+
+> ⚠️ **중요 (에이전트 제약 사항)**:
+> 에이전트는 이슈 상태를 절대 `finished` 또는 `cancelled`로 직접 변경할 수 없습니다! 모든 작업이 정상 완료된 경우, 에이전트는 오직 `demo` (검토) 상태까지만 업데이트해야 하며, 변경하기 전에 반드시 `note_add(type=context, ...)`를 통해 검토 가이드를 제공해야 합니다. 이는 사용자의 최종 확인을 보장하기 위한 원칙입니다.
 
 ## 현재 진행 상황 요약
 
 - ✅ Phase 1 코어: models / repository / migrations / **MCP tools 45개 ↔ CLI 13 서브커맨드 (1:1 패리티, ADR-0010)**
 - ✅ CLI ↔ MCP 동치 통합 테스트 `crates/engram-cli/tests/parity_test.rs` 15건 — read-only 9 + 변경 도구 6. 회귀 방지 자동화.
 - ✅ 통합 테스트 `crates/engram-core/tests/workflow_test.rs` 7건 (full_sprint / blocked_by / fractional_ord / session_filter / task_next_priority / cross_project_blocking / scope_expansion)
-- ✅ MCP dispatch round-trip 테스트 `crates/engram-mcp/src/tools/dispatch_test.rs` 8건 — `.Codex/rules/mcp-tool-shape.md` 준수
+- ✅ MCP dispatch round-trip 테스트 `crates/engram-mcp/src/tools/dispatch_test.rs` 8건 — `.claude/rules/mcp-tool-shape.md` 준수
 - ✅ CLI clap 파싱 테스트 (sprint / epic / issue / task / note / hook / board / blocked / stalled / history) 40+건
 - ✅ CLI 글로벌 `--json` flag + `OutputFormat` 인프라 (`crates/engram-cli/src/output.rs`) + exit code 매핑 (0/1/2/3/4)
 - ✅ CLI 패리티 매트릭스 문서 `docs/cli-mcp-parity.md` (45 도구 ↔ verb 매핑 SSOT)
