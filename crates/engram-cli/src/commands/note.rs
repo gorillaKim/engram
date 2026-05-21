@@ -67,10 +67,14 @@ pub enum NoteCommand {
         #[arg(long)] task: Option<i64>,
         #[arg(long, value_name = "TYPE")] r#type: Option<String>,
         #[arg(long = "include-resolved")] include_resolved: bool,
+        #[arg(long = "include-detail")] include_detail: bool,
     },
     Resolve { id: i64 },
     /// 노트 상세 조회 (detail 포함)
-    Get { id: i64 },
+    Get {
+        id: i64,
+        #[arg(long)] compact: bool,
+    },
 }
 
 pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &str) -> anyhow::Result<()> {
@@ -93,10 +97,10 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
             }).await?;
             output::print_value(&note, fmt)?;
         }
-        NoteCommand::List { issue, task, r#type, include_resolved } => {
+        NoteCommand::List { issue, task, r#type, include_resolved, include_detail } => {
             let nt = r#type.as_deref().map(parse_note_type_filter).transpose()?;
             output::print_value(
-                &db.note_list(issue, task, nt, include_resolved).await?,
+                &db.note_list(issue, task, nt, include_resolved, include_detail).await?,
                 fmt,
             )?;
         }
@@ -107,8 +111,8 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
                 fmt,
             )?;
         }
-        NoteCommand::Get { id } => {
-            output::print_value(&db.note_get(id).await?, fmt)?;
+        NoteCommand::Get { id, compact } => {
+            output::print_value(&db.note_get(id, compact).await?, fmt)?;
         }
     }
     Ok(())
@@ -126,7 +130,7 @@ mod tests {
     fn test_parse_get() {
         let w = Wrap::try_parse_from(["x", "get", "42"]).unwrap();
         match w.cmd {
-            NoteCommand::Get { id } => assert_eq!(id, 42),
+            NoteCommand::Get { id, .. } => assert_eq!(id, 42),
             _ => panic!("Get 변형이 파싱되어야 함"),
         }
     }

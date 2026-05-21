@@ -131,3 +131,23 @@ pub struct StalledIssue {
     /// 현재까지 그 상태에서 머문 시간(분).
     pub minutes_in_status: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuePlanningSnapshot {
+    pub sprint_id: Option<i64>,
+    pub sprint_name: Option<String>,
+    pub issues: Vec<IssuePlanningItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssuePlanningItem {
+    pub id: i64,
+    pub title: String,
+    pub status: IssueStatus,
+    pub priority: IssuePriority,
+    pub description_excerpt: Option<String>,
+    pub blockers: Vec<i64>,
+    pub existing_context_note_count: i64,
+    pub updated_at: String,
+}
+

@@ -23,6 +23,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "sprint_id":   { "type": "integer", "description": "소속 스프린트 ID (생략 시 백로그)" },
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
+                    "goal":        { "type": "string", "description": "이슈의 성공 목표" },
                     "priority":    { "type": "string", "enum": ["critical","high","medium","low"] }
                 }
             }
@@ -39,7 +40,12 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "issue_get", "description": "이슈 상세를 조회합니다.",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" }, "include_tasks": { "type": "boolean" }, "include_notes": { "type": "boolean" } }
+                "properties": {
+                    "id": { "type": "integer" },
+                    "include_tasks": { "type": "boolean" },
+                    "include_notes": { "type": "boolean" },
+                    "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 NULL로 채워서 반환 (기본값 false)" }
+                }
             }
         }),
         json!({ "name": "issue_list",
@@ -68,10 +74,13 @@ pub fn tool_definitions() -> Vec<Value> {
             "description": "이슈 상태/정보를 수정합니다. agent_id 를 명시하면 history.changed_by 로 저장되어 멀티 에이전트 감사가 가능합니다 (생략 시 'agent').",
             "inputSchema": { "type": "object", "required": ["id"],
                 "properties": {
-                    "id":       { "type": "integer" },
-                    "status":   { "type": "string" },
-                    "priority": { "type": "string" },
-                    "agent_id": { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc')" }
+                    "id":          { "type": "integer" },
+                    "status":      { "type": "string", "enum": ["required","ready","working","demo","finished","cancelled"] },
+                    "priority":    { "type": "string", "enum": ["critical","high","medium","low"] },
+                    "title":       { "type": "string" },
+                    "description": { "type": "string" },
+                    "goal":        { "type": "string" },
+                    "agent_id":    { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc')" }
                 }
             }
         }),
@@ -119,6 +128,22 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "name": "planning_review_queue",
+            "description": "지정 프로젝트의 기획 검토 대상 이슈 목록을 반환합니다. sprint_id 미지정 시 현재 활성 스프린트의 이슈들을 가져옵니다. statuses 필터로 특정 상태의 이슈만 필터링할 수 있습니다.",
+            "inputSchema": {
+                "type": "object",
+                "required": ["project_key"],
+                "properties": {
+                    "project_key": { "type": "string" },
+                    "sprint_id":   { "type": "integer" },
+                    "statuses":    {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["required","ready","working","demo","finished","cancelled"] }
+                    }
+                }
+            }
+        }),
     ]
 }
 
@@ -146,7 +171,8 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.issue_get(id).await?).unwrap())
+    let compact = args["compact"].as_bool().unwrap_or(false);
+    Ok(serde_json::to_value(db.issue_get(id, compact).await?).unwrap())
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -240,4 +266,18 @@ pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("transition_to is required (ready|demo|required)".to_string()))?;
     let force = args["force"].as_bool().unwrap_or(false);
     Ok(serde_json::to_value(db.issue_release(id, transition_to, agent_id, force).await?).unwrap())
+}
+
+pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let project_key = args["project_key"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("project_key is required".to_string()))?;
+    let sprint_id = args["sprint_id"].as_i64();
+    let statuses: Option<Vec<IssueStatus>> = args["statuses"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
+            .collect()
+    });
+    let snapshot = db.planning_review_queue(project_key, sprint_id, statuses).await?;
+    Ok(serde_json::to_value(&snapshot).unwrap())
 }

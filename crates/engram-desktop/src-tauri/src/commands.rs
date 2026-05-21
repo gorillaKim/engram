@@ -51,7 +51,7 @@ pub async fn do_issue_list(
 }
 
 pub async fn do_issue_get(db: &Db, id: i64) -> engram_core::Result<Issue> {
-    db.issue_get(id).await
+    db.issue_get(id, false).await
 }
 
 pub async fn do_issue_set_status(
@@ -125,11 +125,11 @@ pub async fn do_task_set_status(
 }
 
 pub async fn do_note_list(db: &Db, issue_id: i64) -> engram_core::Result<Vec<Note>> {
-    db.note_list(Some(issue_id), None, None, false).await
+    db.note_list(Some(issue_id), None, None, false, true).await
 }
 
 pub async fn do_note_get(db: &Db, id: i64) -> engram_core::Result<Note> {
-    db.note_get(id).await
+    db.note_get(id, false).await
 }
 
 pub async fn do_note_add(db: &Db, input: CreateNoteInput) -> engram_core::Result<Note> {

@@ -61,6 +61,8 @@ pub enum IssueCommand {
         /// 소속 스프린트 ID (생략 시 백로그)
         #[arg(long)] sprint: Option<i64>,
         #[arg(long)] title: String,
+        #[arg(long)] goal: Option<String>,
+        #[arg(long)] description: Option<String>,
     },
     /// 이슈 목록. IssueFilter 전체 노출.
     List {
@@ -71,7 +73,10 @@ pub enum IssueCommand {
         #[arg(long)] status: Option<String>,
         #[arg(long)] priority: Option<String>,
     },
-    Get { id: i64 },
+    Get {
+        id: i64,
+        #[arg(long)] compact: bool,
+    },
     Ready { id: i64 },
     /// 임의 상태 전이 / 우선순위 변경
     Update {
@@ -79,6 +84,8 @@ pub enum IssueCommand {
         #[arg(long)] status: Option<String>,
         #[arg(long)] priority: Option<String>,
         #[arg(long)] title: Option<String>,
+        #[arg(long)] goal: Option<String>,
+        #[arg(long)] description: Option<String>,
     },
     /// 두 이슈 간 관계 생성
     Link {
@@ -117,9 +124,9 @@ pub enum IssueCommand {
 
 pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        IssueCommand::Create { epic, sprint, title } => {
+        IssueCommand::Create { epic, sprint, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, sprint_id: sprint, title, description: None, goal: None, priority: None,
+                epic_id: epic, sprint_id: sprint, title, description, goal, priority: None,
             }).await?;
             output::print_value(&issue, fmt)?;
         }
@@ -134,8 +141,8 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             }).await?;
             output::print_value(&list, fmt)?;
         }
-        IssueCommand::Get { id } => {
-            output::print_value(&db.issue_get(id).await?, fmt)?;
+        IssueCommand::Get { id, compact } => {
+            output::print_value(&db.issue_get(id, compact).await?, fmt)?;
         }
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {
@@ -143,12 +150,13 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::Update { id, status, priority, title } => {
+        IssueCommand::Update { id, status, priority, title, goal, description } => {
             let issue = db.issue_update(id, UpdateIssueInput {
                 status: status.as_deref().map(parse_status).transpose()?,
                 priority: priority.as_deref().map(parse_priority).transpose()?,
                 title,
-                ..Default::default()
+                description,
+                goal,
             }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
@@ -218,6 +226,33 @@ mod tests {
             IssueCommand::Update { id, status, .. } => {
                 assert_eq!(id, 1);
                 assert_eq!(status.as_deref(), Some("working"));
+            }
+            _ => panic!("Update 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_create_full() {
+        let cmd = parse(&["create", "--epic", "2", "--title", "Hello", "--goal", "MyGoal", "--description", "Desc"]);
+        match cmd {
+            IssueCommand::Create { epic, title, goal, description, .. } => {
+                assert_eq!(epic, 2);
+                assert_eq!(title, "Hello");
+                assert_eq!(goal.as_deref(), Some("MyGoal"));
+                assert_eq!(description.as_deref(), Some("Desc"));
+            }
+            _ => panic!("Create 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_update_full() {
+        let cmd = parse(&["update", "5", "--goal", "NewGoal", "--description", "NewDesc"]);
+        match cmd {
+            IssueCommand::Update { id, goal, description, .. } => {
+                assert_eq!(id, 5);
+                assert_eq!(goal.as_deref(), Some("NewGoal"));
+                assert_eq!(description.as_deref(), Some("NewDesc"));
             }
             _ => panic!("Update 변형이 파싱되어야 함"),
         }

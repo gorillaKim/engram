@@ -63,6 +63,7 @@ pub async fn dispatch(
         "my_blocked_issues"   => issue::my_blocked_issues(db, args).await,
         "issue_set_sprint"    => issue::set_sprint(db, args).await,
         "stalled_issues"      => issue::stalled(db, args).await,
+        "planning_review_queue" => issue::planning_review_queue(db, args).await,
         // Task
         "task_create"       => task::create(db, args).await,
         "task_list"         => task::list(db, args).await,
@@ -83,6 +84,7 @@ pub async fn dispatch(
         "note_list"    => note::list(db, args).await,
         "note_get"     => note::get(db, args).await,
         "note_resolve" => note::resolve(db, args).await,
+        "note_add_bulk" => note::add_bulk(db, args).await,
         // Session
         "session_restore" => session::restore(db, args).await,
         "session_end"     => session::end(db, args).await,

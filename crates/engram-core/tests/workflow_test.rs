@@ -613,22 +613,22 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
 
     // 사전: 모든 자식 존재 확인
     assert_eq!(db.task_list(issue_a.id, None).await.unwrap().len(), 1, "이슈 A 에 태스크 1건");
-    assert_eq!(db.note_list(Some(issue_a.id), None, None, false).await.unwrap().len(), 1, "이슈 A 에 노트 1건");
+    assert_eq!(db.note_list(Some(issue_a.id), None, None, false, true).await.unwrap().len(), 1, "이슈 A 에 노트 1건");
     assert_eq!(db.issue_links_for(issue_a.id).await.unwrap().len(), 1, "이슈 A 에 링크 1건");
 
     // 이슈 A 삭제
     db.issue_delete(issue_a.id, "agent").await.unwrap();
 
     // 이슈 자체가 없음
-    assert!(db.issue_get(issue_a.id).await.is_err(), "삭제된 이슈는 조회 실패");
+    assert!(db.issue_get(issue_a.id, false).await.is_err(), "삭제된 이슈는 조회 실패");
 
     // 자식 데이터 cascade 확인
     assert!(db.task_list(issue_a.id, None).await.unwrap().is_empty(), "태스크가 모두 삭제됨");
-    assert!(db.note_list(Some(issue_a.id), None, None, false).await.unwrap().is_empty(), "노트가 모두 삭제됨");
+    assert!(db.note_list(Some(issue_a.id), None, None, false, true).await.unwrap().is_empty(), "노트가 모두 삭제됨");
     assert!(db.issue_links_for(issue_b.id).await.unwrap().is_empty(), "이슈 B 측에서 본 링크도 cascade 됨");
 
     // 이슈 B 는 살아 있어야 한다
-    assert!(db.issue_get(issue_b.id).await.is_ok(), "관계 없는 이슈 B 는 살아 있음");
+    assert!(db.issue_get(issue_b.id, false).await.is_ok(), "관계 없는 이슈 B 는 살아 있음");
 }
 
 #[tokio::test]
@@ -671,14 +671,14 @@ async fn test_epic_delete_cascades_all_issues_and_descendants() {
     db.epic_delete(epic_id, "agent").await.unwrap();
 
     assert!(db.epic_get(epic_id).await.is_err(), "에픽이 삭제됨");
-    assert!(db.issue_get(i1.id).await.is_err(), "하위 이슈 i1 cascade");
-    assert!(db.issue_get(i2.id).await.is_err(), "하위 이슈 i2 cascade");
+    assert!(db.issue_get(i1.id, false).await.is_err(), "하위 이슈 i1 cascade");
+    assert!(db.issue_get(i2.id, false).await.is_err(), "하위 이슈 i2 cascade");
     assert!(db.task_list(i1.id, None).await.unwrap().is_empty(), "i1 의 태스크 cascade");
-    assert!(db.note_list(Some(i1.id), None, None, false).await.unwrap().is_empty(), "i1 의 노트 cascade");
+    assert!(db.note_list(Some(i1.id), None, None, false, true).await.unwrap().is_empty(), "i1 의 노트 cascade");
 
     // 다른 에픽/이슈는 살아 있어야 한다
     assert!(db.epic_get(other_epic.id).await.is_ok(), "다른 에픽은 살아 있음");
-    assert!(db.issue_get(other_issue.id).await.is_ok(), "다른 에픽의 이슈는 살아 있음");
+    assert!(db.issue_get(other_issue.id, false).await.is_ok(), "다른 에픽의 이슈는 살아 있음");
 }
 
 // =====================================================
@@ -815,7 +815,7 @@ async fn test_note_add_persists_agent_id() {
     assert_eq!(n2.agent_id, None, "agent_id 미지정은 NULL 유지");
 
     // note_list 응답에도 agent_id 가 노출되어야 한다
-    let notes = db.note_list(Some(issue.id), None, None, false).await.unwrap();
+    let notes = db.note_list(Some(issue.id), None, None, false, true).await.unwrap();
     let opus_notes: Vec<_> = notes.iter()
         .filter(|n| n.agent_id.as_deref() == Some("claude-opus@sess-A"))
         .collect();

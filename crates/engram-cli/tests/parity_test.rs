@@ -143,7 +143,7 @@ async fn test_parity_issue_list_and_get() {
         &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli_list, mcp_list, "issue_list 동치 실패");
 
-    let cli_get = normalize(serde_json::to_value(db_a.issue_get(iid).await.unwrap()).unwrap());
+    let cli_get = normalize(serde_json::to_value(db_a.issue_get(iid, false).await.unwrap()).unwrap());
     let mcp_get = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid})).await.unwrap());
     assert_eq!(cli_get, mcp_get, "issue_get 동치 실패");
 }
@@ -179,7 +179,7 @@ async fn test_parity_note_list_and_get() {
     })).await.unwrap();
 
     let cli = normalize(serde_json::to_value(
-        db_a.note_list(Some(iid), None, None, false).await.unwrap()
+        db_a.note_list(Some(iid), None, None, false, false).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_list",
         &json!({"issue_id": iid_b})).await.unwrap());
@@ -284,7 +284,7 @@ async fn test_parity_full_lifecycle_issue_state_machine() {
     dispatch(Arc::clone(&db_b), "issue_release",
         &json!({"id": iid_b, "agent_id": "agent_a", "transition_to": "demo"})).await.unwrap();
 
-    let cli = normalize(serde_json::to_value(db_a.issue_get(iid_a).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.issue_get(iid_a, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "issue_get",
         &json!({"id": iid_b})).await.unwrap());
     assert_eq!(cli, mcp, "issue 상태 머신 동치 실패 (ready→working→demo)");
@@ -388,7 +388,7 @@ async fn test_parity_note_add_broadcast_and_resolve() {
     dispatch(Arc::clone(&db_b), "note_resolve",
         &json!({"note_id": n_b["id"].as_i64().unwrap()})).await.unwrap();
 
-    let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_get",
         &json!({"note_id": n_b["id"].as_i64().unwrap()})).await.unwrap());
     assert_eq!(cli["resolved"], mcp["resolved"], "resolved 플래그 동치");

@@ -22,24 +22,53 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "note_list",
-            "description": "노트 목록을 조회합니다 (summary 포함). note_type 으로 필터 가능. 코멘트만 볼 때 note_type='comment'.",
+            "description": "노트 목록을 조회합니다 (기본적으로 detail은 제외하는 compact 모드). note_type 으로 필터 가능. 코멘트만 볼 때 note_type='comment'.",
             "inputSchema": { "type": "object",
                 "properties": {
                     "issue_id": { "type": "integer" },
                     "task_id":  { "type": "integer" },
                     "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
-                    "include_resolved": { "type": "boolean" }
+                    "include_resolved": { "type": "boolean" },
+                    "include_detail": { "type": "boolean", "description": "detail 필드를 포함하여 조회할지 여부 (기본값 false)" }
                 }
             }
         }),
-        json!({ "name": "note_get", "description": "노트 상세를 조회합니다 (detail 포함).",
+        json!({ "name": "note_get", "description": "노트 상세를 조회합니다.",
             "inputSchema": { "type": "object", "required": ["note_id"],
-                "properties": { "note_id": { "type": "integer" } }
+                "properties": {
+                    "note_id": { "type": "integer" },
+                    "compact": { "type": "boolean", "description": "true인 경우 detail 필드를 NULL로 반환하여 대역폭 절약" }
+                }
             }
         }),
         json!({ "name": "note_resolve", "description": "노트를 해결됨으로 표시합니다. 질문성 코멘트에 답변 후 원본 질문 노트를 종결할 때 사용하세요.",
             "inputSchema": { "type": "object", "required": ["note_id"],
                 "properties": { "note_id": { "type": "integer" } }
+            }
+        }),
+        json!({ "name": "note_add_bulk",
+            "description": "구조화된 노트를 여러 개 한 번에 추가합니다. 트랜잭션 단위로 실행됩니다. 각 노트 입력 형식은 note_add 와 동일합니다.",
+            "inputSchema": { "type": "object", "required": ["notes"],
+                "properties": {
+                    "notes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object", "required": ["note_type", "summary"],
+                            "properties": {
+                                "issue_id":  { "type": "integer" },
+                                "task_id":   { "type": "integer" },
+                                "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
+                                "summary":   { "type": "string" },
+                                "detail":    { "type": "string" },
+                                "author":    { "type": "string" },
+                                "agent_id":  { "type": "string" },
+                                "scope":     { "type": "string", "enum": ["project","sprint","epic","issue","task"] },
+                                "scope_target_id": { "type": "integer" },
+                                "project_key": { "type": "string" }
+                            }
+                        }
+                    }
+                }
             }
         }),
     ]
@@ -90,16 +119,50 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let task_id  = args["task_id"].as_i64();
     let note_type = args["note_type"].as_str().and_then(parse_note_type);
     let include_resolved = args["include_resolved"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.note_list(issue_id, task_id, note_type, include_resolved).await?).unwrap())
+    let include_detail = args["include_detail"].as_bool().unwrap_or(false);
+    Ok(serde_json::to_value(db.note_list(issue_id, task_id, note_type, include_resolved, include_detail).await?).unwrap())
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["note_id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.note_get(id).await?).unwrap())
+    let compact = args["compact"].as_bool().unwrap_or(false);
+    Ok(serde_json::to_value(db.note_get(id, compact).await?).unwrap())
 }
 
 pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["note_id"].as_i64().unwrap_or(0);
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     Ok(serde_json::to_value(db.note_resolve(id, agent_id).await?).unwrap())
+}
+
+pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let list = args["notes"].as_array()
+        .ok_or_else(|| engram_core::Error::Validation("notes array is required".to_string()))?;
+    let mut inputs = Vec::new();
+    for v in list {
+        let note_type = v["note_type"].as_str()
+            .and_then(parse_note_type)
+            .unwrap_or(NoteType::Context);
+        let scope = v["scope"].as_str().and_then(|s| match s {
+            "project" => Some(engram_core::models::note::NoteScope::Project),
+            "sprint"  => Some(engram_core::models::note::NoteScope::Sprint),
+            "epic"    => Some(engram_core::models::note::NoteScope::Epic),
+            "issue"   => Some(engram_core::models::note::NoteScope::Issue),
+            "task"    => Some(engram_core::models::note::NoteScope::Task),
+            _ => None,
+        });
+        inputs.push(CreateNoteInput {
+            issue_id:  v["issue_id"].as_i64().unwrap_or(0),
+            task_id:   v["task_id"].as_i64(),
+            note_type,
+            summary:   v["summary"].as_str().unwrap_or("").to_string(),
+            detail:    v["detail"].as_str().map(String::from),
+            author:    v["author"].as_str().map(String::from),
+            agent_id:  v["agent_id"].as_str().map(String::from),
+            scope,
+            scope_target_id: v["scope_target_id"].as_i64(),
+            project_key:     v["project_key"].as_str().map(String::from),
+        });
+    }
+    Ok(serde_json::to_value(db.note_add_bulk(inputs).await?).unwrap())
 }

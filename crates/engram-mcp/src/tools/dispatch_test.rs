@@ -72,10 +72,12 @@ async fn test_all_tool_definitions_serializable_and_named() {
         "task_next",
         "note_add",
         "note_get",
+        "note_add_bulk",
         "session_restore",
         "session_end",
         "board_status",
         "my_blocked_issues",
+        "planning_review_queue",
     ] {
         assert!(names.contains(&required), "도구 누락: {required}");
     }
@@ -217,4 +219,81 @@ async fn test_note_get_returns_detail() {
         .unwrap();
     assert_eq!(got["summary"], "주의");
     assert_eq!(got["detail"], "긴 본문");
+}
+
+#[tokio::test]
+async fn test_planning_review_queue_via_dispatch() {
+    let db = setup().await;
+    let (sprint_id, _, issue_id) = seed(&db).await;
+
+    dispatch(
+        Arc::clone(&db),
+        "issue_set_sprint",
+        &json!({
+            "id": issue_id,
+            "sprint_id": sprint_id
+        })
+    ).await.unwrap();
+
+    dispatch(
+        Arc::clone(&db),
+        "issue_update",
+        &json!({
+            "id": issue_id,
+            "status": "ready",
+            "goal": "Test Goal",
+            "description": "Very long description that should be excerpted. ".repeat(5)
+        })
+    ).await.unwrap();
+
+    let queue: Value = dispatch(
+        Arc::clone(&db),
+        "planning_review_queue",
+        &json!({
+            "project_key": "p",
+            "sprint_id": sprint_id,
+            "statuses": ["ready"]
+        })
+    ).await.unwrap();
+
+    assert_eq!(queue["sprint_id"].as_i64().unwrap(), sprint_id);
+    let issues = queue["issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0]["id"].as_i64().unwrap(), issue_id);
+    assert_eq!(issues[0]["title"], "I");
+    assert_eq!(issues[0]["status"], "ready");
+    assert!(issues[0]["description_excerpt"].as_str().unwrap().contains("excerpted"));
+}
+
+#[tokio::test]
+async fn test_note_add_bulk_via_dispatch() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    let res = dispatch(
+        Arc::clone(&db),
+        "note_add_bulk",
+        &json!({
+            "notes": [
+                {
+                    "issue_id": issue_id,
+                    "note_type": "decision",
+                    "summary": "D1",
+                    "detail": "Decision Detail"
+                },
+                {
+                    "issue_id": issue_id,
+                    "note_type": "caveat",
+                    "summary": "C1"
+                }
+            ]
+        })
+    ).await.unwrap();
+
+    let arr = res.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["summary"], "D1");
+    assert_eq!(arr[0]["note_type"], "decision");
+    assert_eq!(arr[0]["detail"], "Decision Detail");
+    assert_eq!(arr[1]["summary"], "C1");
+    assert_eq!(arr[1]["note_type"], "caveat");
 }

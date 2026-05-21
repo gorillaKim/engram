@@ -22,10 +22,15 @@ impl Db {
         .map_err(Into::into)
     }
 
-    pub async fn issue_get(&self, id: i64) -> Result<Issue> {
-        sqlx::query_as::<_, Issue>(
-            "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues WHERE id = ?",
-        )
+    pub async fn issue_get(&self, id: i64, compact: bool) -> Result<Issue> {
+        let select_fields = if compact {
+            "id, epic_id, sprint_id, title, NULL AS description, NULL AS goal, status, priority, assigned_agent, created_at, updated_at"
+        } else {
+            "id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at"
+        };
+        sqlx::query_as::<_, Issue>(&format!(
+            "SELECT {} FROM issues WHERE id = ?", select_fields
+        ))
         .bind(id)
         .fetch_optional(&self.pool)
         .await?
@@ -56,7 +61,7 @@ impl Db {
 
     /// 이슈의 스프린트 소속을 변경한다. None 을 넘기면 백로그로 이동.
     pub async fn issue_set_sprint(&self, id: i64, sprint_id: Option<i64>, changed_by: &str) -> Result<Issue> {
-        let current = self.issue_get(id).await?;
+        let current = self.issue_get(id, false).await?;
         sqlx::query("UPDATE issues SET sprint_id = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(sprint_id)
             .bind(id)
@@ -70,12 +75,12 @@ impl Db {
             new_value: Some(sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())),
             changed_by: changed_by.to_string(),
         }).await;
-        self.issue_get(id).await
+        self.issue_get(id, false).await
     }
 
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
         if let Some(ref new_status) = input.status {
-            let current = self.issue_get(id).await?;
+            let current = self.issue_get(id, false).await?;
             if !current.status.can_transition_to(new_status) {
                 return Err(crate::Error::InvalidTransition(
                     format!("{:?} → {:?}", current.status, new_status)
@@ -162,7 +167,7 @@ impl Db {
                 changed_by: changed_by.to_string(),
             }).await;
         }
-        self.issue_get(id).await
+        self.issue_get(id, false).await
     }
 
     pub async fn issue_link(&self, source_id: i64, target_id: i64, link_type: LinkType) -> Result<IssueLink> {
@@ -192,7 +197,7 @@ impl Db {
     ///
     /// 같은 agent_id 가 재호출하면 idempotent (이미 자기가 잡은 working 이슈를 그대로 반환).
     pub async fn issue_claim(&self, id: i64, agent_id: &str) -> Result<Issue> {
-        let current = self.issue_get(id).await?; // 존재 확인 + 디버그용 컨텍스트
+        let current = self.issue_get(id, false).await?; // 존재 확인 + 디버그용 컨텍스트
 
         // claim = working 전환과 동치이므로 활성 블로커 확인
         let blockers = self.active_blockers_for(id).await?;
@@ -236,7 +241,7 @@ impl Db {
             }).await;
         }
 
-        self.issue_get(id).await
+        self.issue_get(id, false).await
     }
 
     /// 이슈 점유를 해제하고 지정 상태로 전이한다. 보통 `ready` (다른 agent 가 픽업 가능)
@@ -246,7 +251,7 @@ impl Db {
     /// `force=true` 면 검증 우회 — 좀비 lease 회수, 사용자 또는 리더가 강제 ready 환원할 때 사용.
     /// history.changed_by 에는 항상 호출자의 `agent_id` 가 기록되므로 force 회수도 감사 가능.
     pub async fn issue_release(&self, id: i64, transition_to: IssueStatus, agent_id: &str, force: bool) -> Result<Issue> {
-        let current = self.issue_get(id).await?;
+        let current = self.issue_get(id, false).await?;
 
         // ownership 검증 (force=false 일 때만)
         if !force {
@@ -279,7 +284,7 @@ impl Db {
             }).await;
         }
 
-        self.issue_get(id).await
+        self.issue_get(id, false).await
     }
 
     /// 이슈를 삭제한다. 하위 태스크/노트/링크/태스크테스트도 함께 cascade 삭제.
@@ -288,7 +293,7 @@ impl Db {
     /// 트랜잭션 내에서 task_tests → tasks → notes/links → issues 순으로 명시 삭제한다.
     /// (`notes`, `issue_links` 는 FK CASCADE 이지만 트랜잭션 일관성을 위해 명시적으로 처리)
     pub async fn issue_delete(&self, id: i64, changed_by: &str) -> Result<()> {
-        let issue = self.issue_get(id).await?; // 존재 확인
+        let issue = self.issue_get(id, false).await?; // 존재 확인
 
         let mut tx = self.pool.begin().await?;
 
@@ -422,4 +427,90 @@ impl Db {
         .await
         .map_err(Error::Db)
     }
+
+    pub async fn planning_review_queue(
+        &self,
+        project_key: &str,
+        sprint_id: Option<i64>,
+        statuses: Option<Vec<IssueStatus>>,
+    ) -> Result<IssuePlanningSnapshot> {
+        let sprint = match sprint_id {
+            Some(sid) => Some(self.sprint_get(sid).await?),
+            None => self.sprint_current().await?,
+        };
+
+        let sid = sprint.as_ref().map(|s| s.id);
+        let sname = sprint.as_ref().map(|s| s.name.clone());
+
+        let mut sql = r#"
+            SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
+            FROM issues i
+            JOIN epics e ON i.epic_id = e.id
+            WHERE e.project_key = ?
+        "#.to_string();
+
+        if sid.is_some() {
+            sql.push_str(" AND i.sprint_id = ?");
+        } else {
+            sql.push_str(" AND i.sprint_id IS NULL");
+        }
+
+        sql.push_str(" ORDER BY i.id DESC");
+
+        let mut q = sqlx::query_as::<_, Issue>(&sql).bind(project_key);
+        if let Some(s) = sid {
+            q = q.bind(s);
+        }
+
+        let db_issues = q.fetch_all(&self.pool).await?;
+
+        let mut items = Vec::new();
+        for issue in db_issues {
+            if let Some(ref s_list) = statuses {
+                if !s_list.contains(&issue.status) {
+                    continue;
+                }
+            }
+
+            let description_excerpt = issue.description.as_ref().map(|d| {
+                if d.len() > 100 {
+                    format!("{}...", &d[..100])
+                } else {
+                    d.clone()
+                }
+            });
+
+            let blockers = sqlx::query_scalar::<_, i64>(
+                "SELECT source_id FROM issue_links WHERE target_id = ? AND link_type = 'blocks'"
+            )
+            .bind(issue.id)
+            .fetch_all(&self.pool)
+            .await?;
+
+            let existing_context_note_count = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM notes WHERE issue_id = ? AND note_type = 'context'"
+            )
+            .bind(issue.id)
+            .fetch_one(&self.pool)
+            .await?;
+
+            items.push(IssuePlanningItem {
+                id: issue.id,
+                title: issue.title,
+                status: issue.status,
+                priority: issue.priority,
+                description_excerpt,
+                blockers,
+                existing_context_note_count,
+                updated_at: issue.updated_at,
+            });
+        }
+
+        Ok(IssuePlanningSnapshot {
+            sprint_id: sid,
+            sprint_name: sname,
+            issues: items,
+        })
+    }
 }
+
