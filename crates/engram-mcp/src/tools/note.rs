@@ -142,7 +142,9 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     for v in list {
         let note_type = v["note_type"].as_str()
             .and_then(parse_note_type)
-            .unwrap_or(NoteType::Context);
+            .ok_or_else(|| engram_core::Error::Validation(
+                format!("invalid note_type: {:?}. 허용값: caveat, decision, discovery, blocker_detail, context, reference, comment", v["note_type"])
+            ))?;
         let scope = v["scope"].as_str().and_then(|s| match s {
             "project" => Some(engram_core::models::note::NoteScope::Project),
             "sprint"  => Some(engram_core::models::note::NoteScope::Sprint),

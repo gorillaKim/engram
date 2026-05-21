@@ -165,13 +165,19 @@ impl Db {
         let mut notes = Vec::new();
         for input in inputs {
             let author = input.author.clone().unwrap_or_else(|| "agent".to_string());
-            let nt = serde_json::to_value(&input.note_type).unwrap().as_str().unwrap().to_string();
+            let nt = serde_json::to_value(&input.note_type)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .ok_or_else(|| Error::Validation("note_type 직렬화 실패".to_string()))?;
 
             // scope 자동 판정
             let scope = input.scope.unwrap_or_else(|| {
                 if input.task_id.is_some() { NoteScope::Task } else { NoteScope::Issue }
             });
-            let scope_str = serde_json::to_value(scope).unwrap().as_str().unwrap().to_string();
+            let scope_str = serde_json::to_value(scope)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .ok_or_else(|| Error::Validation("scope 직렬화 실패".to_string()))?;
 
             // scope 별 검증 + 컬럼 채우기 결정
             let (issue_id_db, scope_target_id_db, project_key_db) = match scope {

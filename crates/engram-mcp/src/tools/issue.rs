@@ -272,12 +272,22 @@ pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Re
     let project_key = args["project_key"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("project_key is required".to_string()))?;
     let sprint_id = args["sprint_id"].as_i64();
-    let statuses: Option<Vec<IssueStatus>> = args["statuses"].as_array().map(|arr| {
-        arr.iter()
-            .filter_map(|v| v.as_str())
-            .filter_map(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
-            .collect()
-    });
+    let statuses: Option<Vec<IssueStatus>> = if let Some(arr) = args["statuses"].as_array() {
+        let mut result = Vec::new();
+        for v in arr {
+            let s = v.as_str().ok_or_else(|| engram_core::Error::Validation(
+                format!("statuses 배열에 문자열이 아닌 값이 포함되어 있습니다: {:?}", v)
+            ))?;
+            let status = serde_json::from_value::<IssueStatus>(serde_json::Value::String(s.to_string()))
+                .map_err(|_| engram_core::Error::Validation(
+                    format!("invalid status: '{}'. 허용값: required, ready, working, demo, finished, cancelled", s)
+                ))?;
+            result.push(status);
+        }
+        Some(result)
+    } else {
+        None
+    };
     let snapshot = db.planning_review_queue(project_key, sprint_id, statuses).await?;
     Ok(serde_json::to_value(&snapshot).unwrap())
 }
