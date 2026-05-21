@@ -51,6 +51,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(move |app| {
             app.manage(db);
             app.manage(supervisor_for_setup);
@@ -152,6 +154,8 @@ fn main() {
             commands::mcp_set_autostart,
             commands::hide_tray_popover,
             commands::show_main_window,
+            commands::get_app_version,
+            commands::relaunch_app,
         ])
         .on_window_event(|window, event| {
             // Auto-hide tray popover when it loses focus (native popover behaviour).

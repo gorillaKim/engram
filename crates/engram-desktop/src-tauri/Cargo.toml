@@ -1,6 +1,6 @@
 [package]
 name = "engram-desktop"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2021"
 
 [build-dependencies]
@@ -12,6 +12,8 @@ engram-mcp  = { path = "../../engram-mcp" }
 tauri       = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-notification    = "2"
+tauri-plugin-updater         = "2"
+tauri-plugin-process         = "2"
 serde       = { version = "1", features = ["derive"] }
 serde_json  = "1"
 tokio       = { version = "1", features = ["full"] }

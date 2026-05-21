@@ -2,6 +2,8 @@ use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::issue::*;
 use crate::{Db, Error, Result};
 
+const DESCRIPTION_EXCERPT_CHARS: usize = 100;
+
 impl Db {
     pub async fn issue_create(&self, input: CreateIssueInput) -> Result<Issue> {
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
@@ -473,10 +475,12 @@ impl Db {
             }
 
             let description_excerpt = issue.description.as_ref().map(|d| {
-                if d.len() > 100 {
-                    format!("{}...", &d[..100])
+                let mut iter = d.chars();
+                let head: String = iter.by_ref().take(DESCRIPTION_EXCERPT_CHARS).collect();
+                if iter.next().is_some() {
+                    format!("{head}...")
                 } else {
-                    d.clone()
+                    head
                 }
             });
 

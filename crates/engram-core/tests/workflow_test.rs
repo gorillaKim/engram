@@ -1087,3 +1087,53 @@ async fn test_blocked_issue_can_move_required_ready() {
     assert!(to_required.is_ok(), "blocked 이슈도 ready→required 는 가능해야 함");
     assert_eq!(to_required.unwrap().status, IssueStatus::Required);
 }
+
+// ─── Issue #95: planning_review_queue 한국어 description 패닉 회귀 테스트 ───
+
+/// 한국어(멀티바이트 UTF-8) description이 100바이트 초과일 때 planning_review_queue가
+/// 패닉 없이 정상 응답을 반환해야 한다. (&d[..100] 바이트 슬라이싱 버그 재발 방지)
+#[tokio::test]
+async fn test_planning_review_queue_multibyte_description_no_panic() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    // 한국어 글자 1자 = UTF-8 3바이트.
+    // 40자 → 120바이트: d.len()>100 이지만 chars().count()==40 이므로 excerpt 불필요
+    let short_korean = "가".repeat(40);
+    assert!(short_korean.chars().count() <= 100);
+    assert!(short_korean.len() > 100, "바이트 길이는 100 초과여야 함");
+
+    db.issue_create(CreateIssueInput {
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "멀티바이트 테스트 이슈".into(),
+        description: Some(short_korean),
+        goal: None,
+        priority: Some(IssuePriority::Medium),
+    }).await.unwrap();
+
+    // 110자 한국어 → chars().count()>100 → excerpt 생성 경로
+    let long_korean = "가".repeat(110);
+    db.issue_create(CreateIssueInput {
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "긴 한국어 설명 이슈".into(),
+        description: Some(long_korean),
+        goal: None,
+        priority: Some(IssuePriority::High),
+    }).await.unwrap();
+
+    // 패닉 없이 성공해야 함 (버그 수정 전에는 여기서 panic → MCP 소켓 크래시)
+    let snapshot = db.planning_review_queue("test-project", Some(sprint_id), None).await;
+    assert!(snapshot.is_ok(), "한국어 description이 있어도 패닉 없이 성공해야 함");
+
+    let snapshot = snapshot.unwrap();
+    let long_item = snapshot.issues.iter()
+        .find(|i| i.title == "긴 한국어 설명 이슈")
+        .expect("긴 이슈가 결과에 있어야 함");
+
+    let excerpt = long_item.description_excerpt.as_deref().unwrap_or("");
+    assert!(excerpt.ends_with("..."), "100자 초과 description은 '...'로 끝나야 함");
+    let body = excerpt.trim_end_matches("...");
+    assert_eq!(body.chars().count(), 100, "excerpt 본문은 정확히 100자여야 함");
+}

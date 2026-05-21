@@ -515,6 +515,18 @@ pub async fn history_list(
     do_history_list(&db, &entity_type, entity_id).await.map_err(|e| e.to_string())
 }
 
+// ── App info / lifecycle ──────────────────────────────────────────────────────
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_app_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn relaunch_app(app: tauri::AppHandle) {
+    tauri::process::restart(&app.env());
+}
+
 // ── MCP Supervisor commands ───────────────────────────────────────────────────
 
 #[tauri::command(rename_all = "snake_case")]

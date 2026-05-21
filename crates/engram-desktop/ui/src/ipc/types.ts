@@ -245,6 +245,20 @@ export interface IssueLink {
   created_at: string;
 }
 
+// ── Updater ───────────────────────────────────────────────────────────────────
+
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  body: string | null;
+  date: string | null;
+}
+
+export interface UpdateProgress {
+  chunkLength: number;
+  contentLength: number | null;
+}
+
 export interface HistoryEntry {
   id: number;
   entity_type: string;

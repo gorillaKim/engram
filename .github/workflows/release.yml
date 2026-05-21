@@ -74,7 +74,11 @@ jobs:
       matrix:
         include:
           - target: aarch64-apple-darwin
+            artifact: desktop-aarch64
+            platform: darwin-aarch64
           - target: x86_64-apple-darwin
+            artifact: desktop-x86_64
+            platform: darwin-x86_64
     steps:
       - uses: actions/checkout@v4
 
@@ -107,10 +111,89 @@ jobs:
 
       - name: Build desktop app
         working-directory: crates/engram-desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: tauri build --target ${{ matrix.target }}
 
       - name: Upload DMG
         uses: softprops/action-gh-release@v2
         with:
           files: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: true
+
+      - name: Collect update artifacts
+        shell: bash
+        run: |
+          mkdir -p update-artifacts
+          cp target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz     update-artifacts/ 2>/dev/null || true
+          cp target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig update-artifacts/ 2>/dev/null || true
+
+      - name: Upload update artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: update-artifacts/
+          if-no-files-found: warn
+
+  merge-latest-json:
+    name: merge latest.json
+    runs-on: ubuntu-latest
+    needs: desktop
+    steps:
+      - name: Download aarch64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-aarch64
+          path: aarch64/
+
+      - name: Download x86_64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-x86_64
+          path: x86_64/
+
+      - name: Resolve version
+        id: version
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          echo "ver=${ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate latest.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.ver }}"
+
+          AARCH64_SIG=$(cat aarch64/*.app.tar.gz.sig)
+          X64_SIG=$(cat x86_64/*.app.tar.gz.sig)
+          AARCH64_BUNDLE=$(basename aarch64/*.app.tar.gz)
+          X64_BUNDLE=$(basename x86_64/*.app.tar.gz)
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg aarch64_sig "$AARCH64_SIG" \
+            --arg x64_sig    "$X64_SIG" \
+            --arg aarch64_url "https://github.com/gorillaKim/engram/releases/download/v${VERSION}/${AARCH64_BUNDLE}" \
+            --arg x64_url     "https://github.com/gorillaKim/engram/releases/download/v${VERSION}/${X64_BUNDLE}" \
+            '{
+              version: $version,
+              notes: "",
+              pub_date: $date,
+              platforms: {
+                "darwin-aarch64": { signature: $aarch64_sig, url: $aarch64_url },
+                "darwin-x86_64":  { signature: $x64_sig,    url: $x64_url }
+              }
+            }' > latest.json
+
+      - name: Upload bundles, sigs, and latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            aarch64/*.app.tar.gz
+            aarch64/*.app.tar.gz.sig
+            x86_64/*.app.tar.gz
+            x86_64/*.app.tar.gz.sig
+            latest.json
           fail_on_unmatched_files: true

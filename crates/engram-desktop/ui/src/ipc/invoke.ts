@@ -165,3 +165,11 @@ export const issueDelete = (id: number) =>
 
 export const historyList = (entity_type: string, entity_id: number) =>
   invoke<HistoryEntry[]>('history_list', { entity_type, entity_id });
+
+// ── App lifecycle ─────────────────────────────────────────────────────────────
+
+export const getAppVersion = () =>
+  invoke<string>('get_app_version');
+
+export const relaunchApp = () =>
+  invoke<void>('relaunch_app');

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { IssuePriority } from '../ipc/types';
 
-type View = 'board' | 'issues' | 'mcp' | 'history';
+type View = 'board' | 'issues' | 'mcp' | 'history' | 'settings';
 
 export interface BoardFilters {
   projects: string[];          // empty = all projects
