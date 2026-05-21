@@ -110,9 +110,11 @@ jobs:
         run: pnpm add -g @tauri-apps/cli@^2
 
       - name: Write signing key
+        env:
+          TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.tauri
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > ~/.tauri/engram.key
+          printf '%s' "$TAURI_KEY" > ~/.tauri/engram.key
 
       - name: Build desktop app
         working-directory: crates/engram-desktop
