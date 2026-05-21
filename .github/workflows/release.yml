@@ -126,8 +126,15 @@ jobs:
         shell: bash
         run: |
           mkdir -p update-artifacts
-          cp target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz     update-artifacts/ 2>/dev/null || true
-          cp target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig update-artifacts/ 2>/dev/null || true
+          PLATFORM="${{ matrix.platform }}"
+          for f in target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz; do
+            fname=$(basename "$f")
+            cp "$f" "update-artifacts/${fname%.app.tar.gz}-${PLATFORM}.app.tar.gz"
+          done
+          for f in target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig; do
+            fname=$(basename "$f")
+            cp "$f" "update-artifacts/${fname%.app.tar.gz.sig}-${PLATFORM}.app.tar.gz.sig"
+          done
 
       - name: Upload update artifacts
         uses: actions/upload-artifact@v4
