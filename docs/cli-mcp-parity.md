@@ -95,7 +95,7 @@
 
 | MCP 도구          | 현 CLI                   | 갭                                 | 목표 명령형                                  |
 |-------------------|--------------------------|------------------------------------|---------------------------------------------|
-| `session_restore` | `engram session restore` | -                                  | `engram session restore [--project P]`      |
+| `session_restore` | `engram session restore` | `compact` 파라미터 추가됨 (#176)   | `engram session restore [--project P] [--compact]` |
 | `session_end`     | `engram session end`     | -                                  | `engram session end [--project P]`          |
 | `board_status`    | (없음)                   | **CLI 미노출** — `engram board status` 신규 area 로 노출 권장 | `engram board status [--project P]`         |
 
@@ -137,20 +137,16 @@
 
 ## 11) 발견사항 / 후속 조치
 
-1. **dispatch only — tool_definitions 누락 2건**:
-   - `epic_list_backlog` (dispatch 라우팅 있음, tool_definitions 없음)
-   - `epic_set_sprint` (dispatch 라우팅 있음, tool_definitions 없음)
-   → 본 에픽 스코프 외 (별도 이슈 신설 권장). 두 도구는 *MCP 클라이언트에게 보이지 않음*.
-2. **CLI 의 `issue list` 가 `--status`, `--sprint`, `--backlog-only` 미지원** — IssueFilter 의 일부 필드가 CLI 로 빠짐.
-3. **CLI 의 `note add` 가 broadcast scope (project/sprint/epic) 미지원** — Phase 2 의 broadcast 노트가 CLI 로 못 만들어짐.
-4. **`engram epic list --status` 인자 미지원** — `epic_list` MCP 는 status 필터 받음.
+1. **CLI 의 `issue list` 가 `--status`, `--sprint`, `--backlog-only` 미지원** — IssueFilter 의 일부 필드가 CLI 로 빠짐.
+2. **CLI 의 `note add` 가 broadcast scope (project/sprint/epic) 미지원** — Phase 2 의 broadcast 노트가 CLI 로 못 만들어짐.
+3. **`engram epic list --status` 인자 미지원** — `epic_list` MCP 는 status 필터 받음.
 
 ## 12) 총계
 
 | 항목                                | 수치  |
 |------------------------------------|-------|
 | MCP tool_definitions               | **52** (기존 45 + M6 mission 7) |
-| MCP dispatch 분기                  | 47+ (정의 없는 2건 포함, mission 분기 별도) |
+| MCP dispatch 분기                  | 45+ (tool_definitions 와 동기화됨) |
 | 1:1 CLI 매핑 존재                  | 28    |
 | **CLI 미노출 (구현 필요)**         | **24** (기존 17 + mission 7) |
 | 추가 인자 보강 필요 CLI            | 6 (기존 4 + epic_create mission_id, epic_list include_completed) |

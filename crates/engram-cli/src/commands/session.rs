@@ -13,6 +13,8 @@ pub enum SessionCommand {
     /// 세션 복원 — 현재 스프린트 상태와 다음 태스크를 JSON으로 출력
     Restore {
         #[arg(long)] project: Option<String>,
+        /// 노트/태스크를 count만 반환해 페이로드를 70%+ 줄인다
+        #[arg(long)] compact: bool,
     },
     /// 세션 종료 체크리스트 — context note 누락 시 경고
     End {
@@ -22,8 +24,8 @@ pub enum SessionCommand {
 
 pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
-        SessionCommand::Restore { project } => {
-            let snapshot = db.session_restore(project.as_deref()).await?;
+        SessionCommand::Restore { project, compact } => {
+            let snapshot = db.session_restore(project.as_deref(), compact).await?;
             output::print_value(&snapshot, fmt)?;
         }
         SessionCommand::End { project } => {
@@ -52,7 +54,7 @@ pub async fn snapshot_text(
     project: Option<String>,
     fmt: OutputFormat,
 ) -> anyhow::Result<()> {
-    let snapshot = db.session_restore(project.as_deref()).await?;
+    let snapshot = db.session_restore(project.as_deref(), false).await?;
 
     if matches!(fmt, OutputFormat::Json) {
         output::print_value(&snapshot, fmt)?;

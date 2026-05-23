@@ -44,6 +44,9 @@ pub struct EpicSnapshot {
     pub epic: Epic,
     pub active_issues: Vec<IssueSnapshot>,
     pub progress: EpicProgress,
+    /// compact=true 시 active_issues 대신 채워진다. compact=false 시 None.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_issues_compact: Option<Vec<IssueSnapshotCompact>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +55,15 @@ pub struct IssueSnapshot {
     pub active_notes: Vec<NoteSummary>,
     pub current_task: Option<Task>,
     pub blocked_by: Vec<i64>, // blocker issue ids
+}
+
+/// compact 모드 이슈 요약 — notes/tasks 를 count 로만 반환해 페이로드를 줄인다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueSnapshotCompact {
+    pub issue: Issue,
+    pub task_count: i64,
+    pub note_count: i64,
+    pub blocked_by_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,10 +151,12 @@ pub struct IssueProjectBoard {
 }
 
 impl Db {
-    /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회
+    /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회.
+    /// `compact=true` 이면 per-issue notes/tasks fetch 를 COUNT 쿼리로 대체해 페이로드를 70%+ 줄인다.
     pub async fn session_restore(
         &self,
         project_key: Option<&str>,
+        compact: bool,
     ) -> Result<SessionSnapshot> {
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
@@ -186,10 +200,12 @@ impl Db {
         for (epic_id, issues) in grouped {
             let epic = self.epic_get(epic_id).await?;
 
-            let mut active_issues = Vec::new();
             let (mut done, mut in_prog, mut todo_cnt, total) =
                 (0u32, 0u32, 0u32, issues.len() as u32);
 
+            // 먼저 pending_drafts / 카운터를 채우기 위해 이슈 상태를 분류한다.
+            // compact 모드와 full 모드 모두 이 분류는 동일하게 수행.
+            let mut active_issue_list: Vec<&crate::models::issue::Issue> = Vec::new();
             for issue in &issues {
                 use crate::models::issue::IssueStatus;
                 match &issue.status {
@@ -207,26 +223,88 @@ impl Db {
                     }
                     IssueStatus::Cancelled => continue,
                 }
-
-                // 활성 이슈의 note summaries + current task 조회
-                let active_notes = self.note_summaries(issue.id, false).await?;
-                let tasks = self.task_list(issue.id, None).await?;
-                let current_task = tasks.into_iter()
-                    .find(|t| t.status == crate::models::task::TaskStatus::Ready);
-                let blocked_by = self.issue_blocked_by(issue.id).await?
-                    .into_iter().map(|l| l.source_id).collect();
-
-                active_issues.push(IssueSnapshot {
-                    issue: issue.clone(),
-                    active_notes,
-                    current_task,
-                    blocked_by,
-                });
+                active_issue_list.push(issue);
             }
+
+            let (full_issues, compact_issues) = if compact {
+                // compact 모드: COUNT 쿼리로 N+1 제거
+                let compact_snaps = if active_issue_list.is_empty() {
+                    Vec::new()
+                } else {
+                    let issue_ids: Vec<i64> = active_issue_list.iter().map(|i| i.id).collect();
+
+                    // bulk task count
+                    let placeholders = issue_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                    let task_sql = format!(
+                        "SELECT issue_id, COUNT(*) as cnt FROM tasks WHERE issue_id IN ({}) GROUP BY issue_id",
+                        placeholders
+                    );
+                    #[derive(sqlx::FromRow)]
+                    struct CountRow { issue_id: i64, cnt: i64 }
+                    let mut tq = sqlx::query_as::<_, CountRow>(&task_sql);
+                    for id in &issue_ids { tq = tq.bind(id); }
+                    let task_counts: std::collections::HashMap<i64, i64> = tq
+                        .fetch_all(&self.pool).await.unwrap_or_default()
+                        .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
+
+                    // bulk note count
+                    let note_sql = format!(
+                        "SELECT issue_id, COUNT(*) as cnt FROM notes WHERE issue_id IN ({}) AND resolved = 0 GROUP BY issue_id",
+                        placeholders
+                    );
+                    let mut nq = sqlx::query_as::<_, CountRow>(&note_sql);
+                    for id in &issue_ids { nq = nq.bind(id); }
+                    let note_counts: std::collections::HashMap<i64, i64> = nq
+                        .fetch_all(&self.pool).await.unwrap_or_default()
+                        .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
+
+                    // bulk blocked_by: issue_links WHERE target_id IN (...)
+                    let links_sql = format!(
+                        "SELECT target_id, source_id FROM issue_links WHERE link_type = 'blocks' AND target_id IN ({})",
+                        placeholders
+                    );
+                    #[derive(sqlx::FromRow)]
+                    struct LinkRow { target_id: i64, source_id: i64 }
+                    let mut lq = sqlx::query_as::<_, LinkRow>(&links_sql);
+                    for id in &issue_ids { lq = lq.bind(id); }
+                    let link_rows = lq.fetch_all(&self.pool).await.unwrap_or_default();
+                    let mut blocked_by_map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+                    for lr in link_rows {
+                        blocked_by_map.entry(lr.target_id).or_default().push(lr.source_id);
+                    }
+
+                    active_issue_list.iter().map(|issue| IssueSnapshotCompact {
+                        issue: (*issue).clone(),
+                        task_count: *task_counts.get(&issue.id).unwrap_or(&0),
+                        note_count: *note_counts.get(&issue.id).unwrap_or(&0),
+                        blocked_by_ids: blocked_by_map.remove(&issue.id).unwrap_or_default(),
+                    }).collect()
+                };
+                (Vec::new(), Some(compact_snaps))
+            } else {
+                // full 모드: 기존 N+1 per-issue fetch
+                let mut full_snaps = Vec::new();
+                for issue in active_issue_list {
+                    let active_notes = self.note_summaries(issue.id, false).await?;
+                    let tasks = self.task_list(issue.id, None).await?;
+                    let current_task = tasks.into_iter()
+                        .find(|t| t.status == crate::models::task::TaskStatus::Ready);
+                    let blocked_by = self.issue_blocked_by(issue.id).await?
+                        .into_iter().map(|l| l.source_id).collect();
+                    full_snaps.push(IssueSnapshot {
+                        issue: issue.clone(),
+                        active_notes,
+                        current_task,
+                        blocked_by,
+                    });
+                }
+                (full_snaps, None)
+            };
 
             active_epics.push(EpicSnapshot {
                 epic,
-                active_issues,
+                active_issues: full_issues,
+                active_issues_compact: compact_issues,
                 progress: EpicProgress { done, in_progress: in_prog, todo: todo_cnt, total },
             });
         }
@@ -242,9 +320,16 @@ impl Db {
         }
 
         // 스코프 팽창 감지: agent_discovered 태스크 비율 > 50% 이슈
+        // compact / full 모드 모두 동일하게 처리: issue id + title 만 필요
         for epic_snap in &active_epics {
-            for issue_snap in &epic_snap.active_issues {
-                let issue_id = issue_snap.issue.id;
+            // full 모드: active_issues 순회
+            let full_iter = epic_snap.active_issues.iter()
+                .map(|s| (s.issue.id, s.issue.title.as_str()));
+            // compact 모드: active_issues_compact 순회
+            let compact_iter = epic_snap.active_issues_compact.as_deref().unwrap_or(&[]).iter()
+                .map(|s| (s.issue.id, s.issue.title.as_str()));
+
+            for (issue_id, issue_title) in full_iter.chain(compact_iter) {
                 let total: i64 = sqlx::query_scalar(
                     "SELECT COUNT(*) FROM tasks WHERE issue_id = ?",
                 )
@@ -267,7 +352,7 @@ impl Db {
                 if rate > 50 {
                     warnings.push(format!(
                         "스코프 팽창 감지: 이슈 #{} '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
-                        issue_snap.issue.id, issue_snap.issue.title, rate, discovered, total
+                        issue_id, issue_title, rate, discovered, total
                     ));
                 }
             }

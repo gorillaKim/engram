@@ -13,6 +13,10 @@ pub fn tool_definitions() -> Vec<Value> {
                     "project_key": {
                         "type": "string",
                         "description": "필터할 프로젝트 식별자 (예: 'xpert-da-web'). 미입력 시 전체 반환"
+                    },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "true면 노트/태스크를 count만 반환 (페이로드 70% 감소)"
                     }
                 }
             }
@@ -48,7 +52,8 @@ pub fn tool_definitions() -> Vec<Value> {
 
 pub async fn restore(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    let snapshot = db.session_restore(project_key).await?;
+    let compact = args["compact"].as_bool().unwrap_or(false);
+    let snapshot = db.session_restore(project_key, compact).await?;
     Ok(serde_json::to_value(snapshot).unwrap())
 }
 

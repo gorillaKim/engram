@@ -37,7 +37,7 @@ pub async fn do_session_restore(
     db: &Db,
     project_key: Option<&str>,
 ) -> engram_core::Result<SessionSnapshot> {
-    db.session_restore(project_key).await
+    db.session_restore(project_key, false).await
 }
 
 pub async fn do_board_status(
