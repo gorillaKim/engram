@@ -37,6 +37,7 @@ Phase 3 Desktop: `crates/engram-desktop/` — Tauri v2 앱. `engram-core`, `engr
 | 7 | Agent Demo Gate — 규칙+UI 어포던스, 코드 강제 없음 | `docs/adr/0007-agent-demo-gate.md` |
 | 10 | CLI ↔ MCP 패리티 컨벤션 (`engram <area> <verb>`, `--json`, exit code 0/2/3/4) | `docs/adr/0010-cli-mcp-parity.md` |
 | 11 | CLI 배포 — `cargo install` 1차 + GitHub Releases prebuilt 2차 | `docs/adr/0011-cli-distribution.md` |
+| 12 | Mission 레이어 도입 — Sprint→Mission→Epic 계층, cross-project, 0008 마이그레이션 | `docs/adr/0012-mission-layer.md` |
 
 ## 개발 명령
 
