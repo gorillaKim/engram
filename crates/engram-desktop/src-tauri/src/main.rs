@@ -156,6 +156,14 @@ fn main() {
             commands::show_main_window,
             commands::get_app_version,
             commands::relaunch_app,
+            commands::mission_list,
+            commands::mission_create,
+            commands::mission_get,
+            commands::mission_update,
+            commands::mission_delete,
+            commands::mission_get_progress,
+            commands::mission_get_tree,
+            commands::mission_set_sprint,
         ])
         .on_window_event(|window, event| {
             // Auto-hide tray popover when it loses focus (native popover behaviour).

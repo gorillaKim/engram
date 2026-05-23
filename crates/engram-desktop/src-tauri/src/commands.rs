@@ -9,6 +9,10 @@ use engram_core::{
             Issue, IssueFilter, IssueLink, IssueStatus, IssuePriority,
             CreateIssueInput, LinkType, UpdateIssueInput,
         },
+        mission::{
+            Mission, CreateMissionInput, UpdateMissionInput, MissionFilter,
+            MissionStatus, MissionProgress, MissionTree,
+        },
         note::{Note, CreateNoteInput},
         sprint::{Sprint, CreateSprintInput},
         task::{Task, CreateTaskInput, TaskSource, TaskStatus, UpdateTaskInput},
@@ -85,8 +89,9 @@ pub async fn do_issue_update(
 pub async fn do_epic_list(
     db: &Db,
     project_key: Option<&str>,
+    include_completed: bool,
 ) -> engram_core::Result<Vec<Epic>> {
-    db.epic_list(project_key, None).await
+    db.epic_list(project_key, include_completed).await
 }
 
 pub async fn do_sprint_current(db: &Db) -> engram_core::Result<Option<Sprint>> {
@@ -153,7 +158,7 @@ pub async fn do_epic_create(
     title: String,
     description: Option<String>,
 ) -> engram_core::Result<Epic> {
-    db.epic_create(CreateEpicInput { project_key, title, description }).await
+    db.epic_create(CreateEpicInput { project_key, mission_id: None, title, description }).await
 }
 
 pub async fn do_issue_create(
@@ -170,7 +175,7 @@ pub async fn do_issue_create(
         None => None,
     };
     db.issue_create(CreateIssueInput {
-        epic_id, sprint_id, title, description, goal, priority: parsed_priority,
+        epic_id, mission_id: None, sprint_id, title, description, goal, priority: parsed_priority,
     }).await
 }
 
@@ -213,7 +218,9 @@ pub async fn do_epic_set_status(
     status: &str,
 ) -> engram_core::Result<Epic> {
     let parsed: EpicStatus = parse(status)?;
-    db.epic_update(id, UpdateEpicInput { status: Some(parsed), ..Default::default() }, "user").await
+    db.epic_update(id, UpdateEpicInput { status: Some(parsed), ..Default::default() }, "user")
+        .await
+        .map(|(epic, _, _)| epic)
 }
 
 pub async fn do_history_list(
@@ -223,6 +230,70 @@ pub async fn do_history_list(
 ) -> engram_core::Result<Vec<History>> {
     let parsed: EntityType = parse(entity_type)?;
     db.history_list(parsed, entity_id).await
+}
+
+pub async fn do_mission_list(
+    db: &Db,
+    sprint_id: Option<i64>,
+    include_completed: Option<bool>,
+) -> engram_core::Result<Vec<Mission>> {
+    let filter = MissionFilter {
+        sprint_id,
+        status: None,
+        include_completed: include_completed.unwrap_or(false),
+    };
+    db.mission_list(filter).await
+}
+
+pub async fn do_mission_create(
+    db: &Db,
+    title: String,
+    description: Option<String>,
+    jira_key: Option<String>,
+    sprint_id: Option<i64>,
+) -> engram_core::Result<Mission> {
+    db.mission_create(CreateMissionInput { title, description, jira_key, sprint_id }).await
+}
+
+pub async fn do_mission_get(db: &Db, id: i64) -> engram_core::Result<Mission> {
+    db.mission_get(id).await
+}
+
+pub async fn do_mission_update(
+    db: &Db,
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    jira_key: Option<String>,
+    status: Option<MissionStatus>,
+    sprint_id: Option<i64>,
+) -> engram_core::Result<Mission> {
+    let input = UpdateMissionInput { title, description, jira_key, status, sprint_id };
+    db.mission_update(id, input, "user").await
+}
+
+pub async fn do_mission_delete(db: &Db, id: i64) -> engram_core::Result<()> {
+    db.mission_delete(id).await
+}
+
+pub async fn do_mission_get_progress(db: &Db, id: i64) -> engram_core::Result<MissionProgress> {
+    db.mission_progress_query(id).await
+}
+
+pub async fn do_mission_get_tree(db: &Db, id: i64) -> engram_core::Result<MissionTree> {
+    db.mission_get_tree(id).await
+}
+
+/// mission_set_sprint: mission_update 를 통해 sprint_id 를 변경한다.
+/// sprint_id=None 으로 백로그 이동은 UpdateMissionInput.sprint_id 가 Option<i64> 이므로
+/// Some(None) 패턴을 지원하지 않아 현재는 지원하지 않는다.
+pub async fn do_mission_set_sprint(
+    db: &Db,
+    mission_id: i64,
+    sprint_id: Option<i64>,
+) -> engram_core::Result<Mission> {
+    let input = UpdateMissionInput { sprint_id, ..Default::default() };
+    db.mission_update(mission_id, input, "user").await
 }
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
@@ -289,8 +360,9 @@ pub async fn issue_update(
 pub async fn epic_list(
     db: State<'_, Arc<Db>>,
     project_key: Option<String>,
+    include_completed: Option<bool>,
 ) -> Result<Vec<Epic>, String> {
-    do_epic_list(&db, project_key.as_deref()).await.map_err(|e| e.to_string())
+    do_epic_list(&db, project_key.as_deref(), include_completed.unwrap_or(false)).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -487,6 +559,7 @@ pub async fn epic_update(
     };
     db.epic_update(id, UpdateEpicInput { title, description, status: status_parsed, ..Default::default() }, "user")
         .await
+        .map(|(epic, _, _)| epic)
         .map_err(|e| e.to_string())
 }
 
@@ -513,6 +586,89 @@ pub async fn history_list(
     entity_id: i64,
 ) -> Result<Vec<History>, String> {
     do_history_list(&db, &entity_type, entity_id).await.map_err(|e| e.to_string())
+}
+
+// ── Mission IPC ───────────────────────────────────────────────────────────────
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_list(
+    db: State<'_, Arc<Db>>,
+    sprint_id: Option<i64>,
+    include_completed: Option<bool>,
+) -> Result<Vec<Mission>, String> {
+    do_mission_list(&db, sprint_id, include_completed).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_create(
+    db: State<'_, Arc<Db>>,
+    title: String,
+    description: Option<String>,
+    jira_key: Option<String>,
+    sprint_id: Option<i64>,
+) -> Result<Mission, String> {
+    do_mission_create(&db, title, description, jira_key, sprint_id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_get(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<Mission, String> {
+    do_mission_get(&db, id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_update(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    jira_key: Option<String>,
+    status: Option<String>,
+    sprint_id: Option<i64>,
+) -> Result<Mission, String> {
+    let status_parsed = if let Some(s) = status {
+        Some(parse::<MissionStatus>(&s).map_err(|e| e.to_string())?)
+    } else {
+        None
+    };
+    do_mission_update(&db, id, title, description, jira_key, status_parsed, sprint_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_delete(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), String> {
+    do_mission_delete(&db, id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_get_progress(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<MissionProgress, String> {
+    do_mission_get_progress(&db, id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_get_tree(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<MissionTree, String> {
+    do_mission_get_tree(&db, id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mission_set_sprint(
+    db: State<'_, Arc<Db>>,
+    mission_id: i64,
+    sprint_id: Option<i64>,
+) -> Result<Mission, String> {
+    do_mission_set_sprint(&db, mission_id, sprint_id).await.map_err(|e| e.to_string())
 }
 
 // ── App info / lifecycle ──────────────────────────────────────────────────────
@@ -636,10 +792,11 @@ mod tests {
         }, "agent").await.unwrap();
         let epic = db.epic_create(CreateEpicInput {
             project_key: "proj".to_string(),
+            mission_id: None,
             title: "E1".to_string(), description: None,
         }).await.unwrap();
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, sprint_id: Some(sprint.id), title: "I1".to_string(),
+            epic_id: epic.id, mission_id: None, sprint_id: Some(sprint.id), title: "I1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
         (epic.id, issue.id)
