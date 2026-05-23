@@ -21,6 +21,7 @@ pub enum EntityType {
     Issue,
     Task,
     Note,
+    Mission,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

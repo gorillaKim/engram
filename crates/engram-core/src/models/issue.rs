@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct Issue {
     pub id: i64,
     pub epic_id: i64,
+    pub mission_id: Option<i64>,
     /// 소속 스프린트. None 이면 백로그 (Sprint↔Issue 직접 매핑 — ADR-0008 참고).
     pub sprint_id: Option<i64>,
     pub title: String,
@@ -86,6 +87,9 @@ pub enum LinkType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIssueInput {
     pub epic_id: i64,
+    /// None 이면 부모 epic.mission_id 를 자동 상속한다.
+    /// Some(id) 면 상속을 건너뛰고 명시값을 사용한다.
+    pub mission_id: Option<i64>,
     /// None 이면 백로그(스프린트 미지정).
     pub sprint_id: Option<i64>,
     pub title: String,
@@ -107,6 +111,7 @@ pub struct UpdateIssueInput {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFilter {
     pub epic_id: Option<i64>,
+    pub mission_id: Option<i64>,
     /// 특정 스프린트의 이슈만 (`Some`).
     pub sprint_id: Option<i64>,
     /// `true` 면 백로그(sprint_id IS NULL) 이슈만 — `sprint_id` 필터보다 우선.
