@@ -119,66 +119,26 @@ function AppContent() {
           <span className="font-bold text-slate-900 text-xl tracking-tight">Engram</span>
           
           <nav className="flex items-center p-1 bg-slate-100 rounded-lg ml-4">
-            <button
-              onClick={() => setView('board')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'board' 
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              칸반보드
-            </button>
-            <button
-              onClick={() => setView('history')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'history' 
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              히스토리
-            </button>
-            <button
-              onClick={() => setView('issues')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'issues' 
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200' 
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              이슈관리
-            </button>
-            <button
-              onClick={() => setView('mcp')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'mcp'
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              MCP 서버
-            </button>
-            <button
-              onClick={() => setView('missions')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'missions'
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Missions
-            </button>
-            <button
-              onClick={() => setView('settings')}
-              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
-                view === 'settings'
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              설정
-            </button>
+            {([
+              { key: 'board',    label: '칸반보드' },
+              { key: 'missions', label: 'Missions' },
+              { key: 'issues',   label: '이슈관리' },
+              { key: 'history',  label: '히스토리' },
+              { key: 'mcp',      label: 'MCP 서버' },
+              { key: 'settings', label: '설정' },
+            ] as const).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
+                  view === key
+                    ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </nav>
         </div>
 
