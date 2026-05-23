@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCorners, useSensor, useSensors } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueCard } from './IssueCard';
@@ -12,7 +13,8 @@ import { useIssueDnd } from '../hooks/useIssueDnd';
 import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useEpics } from '../hooks/useEpics';
 import { useUIStore } from '../store/ui';
-import type { Issue, IssueStatus, IssueProjectBoard } from '../ipc/types';
+import { missionList } from '../ipc/invoke';
+import type { Issue, IssueStatus, IssueProjectBoard, Mission } from '../ipc/types';
 
 type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
 const STANDARD_COLUMNS: BoardColumn[] = ['required', 'ready', 'working', 'demo', 'finished'];
@@ -28,6 +30,10 @@ export function KanbanBoard() {
   const { data, isLoading, error } = useBoardStatus(selectedProjectKey ?? undefined);
   const { data: session } = useSessionRestore(selectedProjectKey ?? undefined);
   const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
+  const { data: missions = [] } = useQuery<Mission[]>({
+    queryKey: ['missionList'],
+    queryFn: () => missionList(null, false),
+  });
   const dnd = useIssueDnd(selectedProjectKey ?? undefined);
 
   const epicMap = new Map(epics.map((e) => [e.id, e.title]));
@@ -93,6 +99,8 @@ export function KanbanBoard() {
           onToggleShowCancelled={toggleShowCancelled}
           onChange={setBoardFilters}
           onReset={resetBoardFilters}
+          missions={missions}
+          epics={epics}
         />
 
         {/* Scope expansion banner */}
@@ -193,19 +201,53 @@ function applyFilters(
     result = result.filter((b) => filters.projects.includes(b.project_key));
   }
 
-  // Priority filter (applied per column)
+  // Mission filter
+  if (filters.missionIds.length > 0) {
+    result = result.map((board) => {
+      const f = (issues: Issue[]) =>
+        issues.filter((i) => i.mission_id != null && filters.missionIds.includes(i.mission_id));
+      return {
+        ...board,
+        required: f(board.required),
+        ready: f(board.ready),
+        working: f(board.working),
+        demo: f(board.demo),
+        finished: f(board.finished),
+        cancelled: f(board.cancelled ?? []),
+      };
+    });
+  }
+
+  // Epic filter
+  if (filters.epicIds.length > 0) {
+    result = result.map((board) => {
+      const f = (issues: Issue[]) =>
+        issues.filter((i) => filters.epicIds.includes(i.epic_id));
+      return {
+        ...board,
+        required: f(board.required),
+        ready: f(board.ready),
+        working: f(board.working),
+        demo: f(board.demo),
+        finished: f(board.finished),
+        cancelled: f(board.cancelled ?? []),
+      };
+    });
+  }
+
+  // Priority filter
   if (filters.priorities.length > 0) {
     result = result.map((board) => {
-      const filterIssues = (issues: Issue[]) =>
+      const f = (issues: Issue[]) =>
         issues.filter((i) => filters.priorities.includes(i.priority));
       return {
         ...board,
-        required: filterIssues(board.required),
-        ready: filterIssues(board.ready),
-        working: filterIssues(board.working),
-        demo: filterIssues(board.demo),
-        finished: filterIssues(board.finished),
-        cancelled: filterIssues(board.cancelled ?? []),
+        required: f(board.required),
+        ready: f(board.ready),
+        working: f(board.working),
+        demo: f(board.demo),
+        finished: f(board.finished),
+        cancelled: f(board.cancelled ?? []),
       };
     });
   }
