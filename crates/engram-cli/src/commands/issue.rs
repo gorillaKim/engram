@@ -58,6 +58,8 @@ pub struct IssueArgs {
 pub enum IssueCommand {
     Create {
         #[arg(long)] epic: i64,
+        /// 소속 미션 ID (생략 시 부모 epic.mission_id 자동 상속)
+        #[arg(long = "mission-id")] mission_id: Option<i64>,
         /// 소속 스프린트 ID (생략 시 백로그)
         #[arg(long)] sprint: Option<i64>,
         #[arg(long)] title: String,
@@ -68,6 +70,8 @@ pub enum IssueCommand {
     List {
         #[arg(long)] project: Option<String>,
         #[arg(long)] epic: Option<i64>,
+        /// 특정 미션 소속 이슈만 필터링
+        #[arg(long)] mission: Option<i64>,
         #[arg(long)] sprint: Option<i64>,
         #[arg(long = "backlog-only")] backlog_only: bool,
         #[arg(long)] status: Option<String>,
@@ -124,15 +128,16 @@ pub enum IssueCommand {
 
 pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        IssueCommand::Create { epic, sprint, title, goal, description } => {
+        IssueCommand::Create { epic, mission_id, sprint, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, sprint_id: sprint, title, description, goal, priority: None,
+                epic_id: epic, mission_id, sprint_id: sprint, title, description, goal, priority: None,
             }).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::List { project, epic, sprint, backlog_only, status, priority } => {
+        IssueCommand::List { project, epic, mission, sprint, backlog_only, status, priority } => {
             let list = db.issue_list(IssueFilter {
                 epic_id: epic,
+                mission_id: mission,
                 sprint_id: sprint,
                 backlog_only,
                 project_key: project,
@@ -378,13 +383,35 @@ mod tests {
             "--status", "ready", "--priority", "high",
         ]);
         match cmd {
-            IssueCommand::List { project, epic, sprint, backlog_only, status, priority } => {
+            IssueCommand::List { project, epic, sprint, backlog_only, status, priority, .. } => {
                 assert_eq!(project.as_deref(), Some("engram"));
                 assert_eq!(epic, Some(4));
                 assert_eq!(sprint, Some(2));
                 assert!(backlog_only);
                 assert_eq!(status.as_deref(), Some("ready"));
                 assert_eq!(priority.as_deref(), Some("high"));
+            }
+            _ => panic!("List 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_with_mission() {
+        let cmd = parse(&["list", "--mission", "7"]);
+        match cmd {
+            IssueCommand::List { mission, .. } => {
+                assert_eq!(mission, Some(7), "--mission 옵션이 파싱되어야 함");
+            }
+            _ => panic!("List 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_list_mission_default_none() {
+        let cmd = parse(&["list", "--project", "proj"]);
+        match cmd {
+            IssueCommand::List { mission, .. } => {
+                assert_eq!(mission, None, "--mission 미지정 시 None이어야 함");
             }
             _ => panic!("List 변형이 파싱되어야 함"),
         }

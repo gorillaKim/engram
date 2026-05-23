@@ -22,6 +22,7 @@ use engram_core::{
     models::{
         epic::CreateEpicInput,
         issue::{CreateIssueInput, IssueFilter, LinkType},
+        mission::CreateMissionInput,
         note::{CreateNoteInput, NoteType},
         sprint::{CreateSprintInput, SprintStatus, UpdateSprintInput},
         task::CreateTaskInput,
@@ -46,11 +47,14 @@ async fn seed_via_db(db: &Arc<Db>) -> (i64, i64, i64, i64) {
         name: None, status: Some(SprintStatus::Active),
         goal: None, start_date: None, end_date: None,
     }, "test").await.unwrap();
+    let m = db.mission_create(CreateMissionInput {
+        title: "M".into(), description: None, jira_key: None, sprint_id: Some(s.id),
+    }).await.unwrap();
     let e = db.epic_create(CreateEpicInput {
-        project_key: "p".into(), title: "E".into(), description: None,
+        project_key: "p".into(), mission_id: Some(m.id), title: "E".into(), description: None,
     }).await.unwrap();
     let i = db.issue_create(CreateIssueInput {
-        epic_id: e.id, sprint_id: Some(s.id), title: "I".into(),
+        epic_id: e.id, mission_id: Some(m.id), sprint_id: Some(s.id), title: "I".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap();
     let t = db.task_create(CreateTaskInput {
@@ -65,8 +69,11 @@ async fn seed_via_dispatch(db: &Arc<Db>) -> (i64, i64, i64, i64) {
     let sid = s["id"].as_i64().unwrap();
     dispatch(Arc::clone(db), "sprint_update", &json!({"id": sid, "status": "active"}))
         .await.unwrap();
+    let m = dispatch(Arc::clone(db), "mission_create",
+        &json!({"title": "M", "sprint_id": sid, "project_key": "p"})).await.unwrap();
+    let mid = m["id"].as_i64().unwrap();
     let e = dispatch(Arc::clone(db), "epic_create",
-        &json!({"sprint_id": sid, "project_key": "p", "title": "E"})).await.unwrap();
+        &json!({"sprint_id": sid, "project_key": "p", "title": "E", "mission_id": mid})).await.unwrap();
     let eid = e["id"].as_i64().unwrap();
     let i = dispatch(Arc::clone(db), "issue_create",
         &json!({"epic_id": eid, "sprint_id": sid, "title": "I"})).await.unwrap();
@@ -125,7 +132,7 @@ async fn test_parity_sprint_list_and_current() {
 async fn test_parity_epic_list() {
     let db_a = fresh_db().await; seed_via_db(&db_a).await;
     let db_b = fresh_db().await; seed_via_dispatch(&db_b).await;
-    let cli = normalize(serde_json::to_value(db_a.epic_list(Some("p"), None).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.epic_list(Some("p"), false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "epic_list", &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli, mcp, "epic_list 동치 실패");
 }
@@ -299,7 +306,7 @@ async fn test_parity_link_unlink_roundtrip() {
 
     // 두 번째 이슈 추가
     let a2 = db_a.issue_create(CreateIssueInput {
-        epic_id: eid_a, sprint_id: None, title: "I2".into(),
+        epic_id: eid_a, mission_id: None, sprint_id: None, title: "I2".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap().id;
     let b2 = dispatch(Arc::clone(&db_b), "issue_create",
@@ -421,6 +428,170 @@ async fn test_parity_task_insert_after_and_delete() {
     let mcp = normalize(dispatch(Arc::clone(&db_b), "task_list",
         &json!({"issue_id": iid_b})).await.unwrap());
     assert_eq!(cli, mcp, "task insert_after + delete 동치 실패");
+}
+
+// ---------- mission 패리티 ----------
+
+/// mission_create → mission_get 동치 검증.
+/// CLI 쪽: db.mission_create + db.mission_get (직렬화)
+/// MCP 쪽: dispatch("mission_create") + dispatch("mission_get")
+#[tokio::test]
+async fn test_mission_crud_parity() {
+    let db_a = fresh_db().await;
+    let db_b = fresh_db().await;
+
+    // CLI 쪽: sprint 생성 후 mission 생성
+    let s_a = db_a.sprint_create(CreateSprintInput {
+        name: "MS1".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let m_a = db_a.mission_create(CreateMissionInput {
+        title: "테스트 미션".into(),
+        description: Some("미션 설명".into()),
+        jira_key: Some("PROJ-42".into()),
+        sprint_id: Some(s_a.id),
+    }).await.unwrap();
+
+    // MCP 쪽: dispatch로 동일 시퀀스
+    let s_b = dispatch(Arc::clone(&db_b), "sprint_create",
+        &json!({"name": "MS1"})).await.unwrap();
+    let sid_b = s_b["id"].as_i64().unwrap();
+    let m_b = dispatch(Arc::clone(&db_b), "mission_create", &json!({
+        "title": "테스트 미션",
+        "description": "미션 설명",
+        "jira_key": "PROJ-42",
+        "sprint_id": sid_b
+    })).await.unwrap();
+    let mid_b = m_b["id"].as_i64().unwrap();
+
+    // mission_get 동치 검증
+    let cli_get = normalize(serde_json::to_value(db_a.mission_get(m_a.id).await.unwrap()).unwrap());
+    let mcp_get = normalize(dispatch(Arc::clone(&db_b), "mission_get",
+        &json!({"id": mid_b})).await.unwrap());
+    assert_eq!(cli_get, mcp_get, "mission_get 동치 실패");
+
+    // create 반환값 자체도 동치
+    let cli_created = normalize(serde_json::to_value(&m_a).unwrap());
+    let mcp_created = normalize(m_b);
+    assert_eq!(cli_created, mcp_created, "mission_create 반환값 동치 실패");
+}
+
+/// mission_list 동치 검증.
+/// sprint_id 필터 포함/미포함 두 케이스 모두 확인.
+#[tokio::test]
+async fn test_mission_list_parity() {
+    let db_a = fresh_db().await;
+    let db_b = fresh_db().await;
+
+    // CLI 쪽: sprint + mission 2개 생성
+    let s_a = db_a.sprint_create(CreateSprintInput {
+        name: "ML1".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db_a.mission_create(CreateMissionInput {
+        title: "미션 A".into(), description: None, jira_key: None,
+        sprint_id: Some(s_a.id),
+    }).await.unwrap();
+    db_a.mission_create(CreateMissionInput {
+        title: "미션 B".into(), description: None, jira_key: None,
+        sprint_id: Some(s_a.id),
+    }).await.unwrap();
+
+    // MCP 쪽: dispatch로 동일 시퀀스
+    let s_b = dispatch(Arc::clone(&db_b), "sprint_create",
+        &json!({"name": "ML1"})).await.unwrap();
+    let sid_b = s_b["id"].as_i64().unwrap();
+    dispatch(Arc::clone(&db_b), "mission_create",
+        &json!({"title": "미션 A", "sprint_id": sid_b})).await.unwrap();
+    dispatch(Arc::clone(&db_b), "mission_create",
+        &json!({"title": "미션 B", "sprint_id": sid_b})).await.unwrap();
+
+    // 필터 없이 전체 목록 동치 (active only 기본값)
+    let cli_all = normalize(serde_json::to_value(
+        db_a.mission_list(engram_core::models::mission::MissionFilter::default()).await.unwrap()
+    ).unwrap());
+    let mcp_all = normalize(dispatch(Arc::clone(&db_b), "mission_list",
+        &json!({})).await.unwrap());
+    assert_eq!(cli_all, mcp_all, "mission_list (전체) 동치 실패");
+    assert_eq!(cli_all.as_array().unwrap().len(), 2, "mission 2건이어야 함");
+
+    // sprint_id 필터 동치
+    let cli_filtered = normalize(serde_json::to_value(
+        db_a.mission_list(engram_core::models::mission::MissionFilter {
+            sprint_id: Some(s_a.id),
+            ..Default::default()
+        }).await.unwrap()
+    ).unwrap());
+    let mcp_filtered = normalize(dispatch(Arc::clone(&db_b), "mission_list",
+        &json!({"sprint_id": sid_b})).await.unwrap());
+    assert_eq!(cli_filtered, mcp_filtered, "mission_list (sprint_id 필터) 동치 실패");
+}
+
+/// mission_get_tree 동치 검증.
+/// Mission → Epics → Issues 계층 트리 구조가 CLI/MCP 양쪽에서 동일한지 확인.
+#[tokio::test]
+async fn test_mission_get_tree_parity() {
+    let db_a = fresh_db().await;
+    let db_b = fresh_db().await;
+
+    // CLI 쪽: sprint → mission → epic → issue 계층 구성
+    let s_a = db_a.sprint_create(CreateSprintInput {
+        name: "GT1".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db_a.sprint_update(s_a.id, engram_core::models::sprint::UpdateSprintInput {
+        name: None, status: Some(engram_core::models::sprint::SprintStatus::Active),
+        goal: None, start_date: None, end_date: None,
+    }, "test").await.unwrap();
+    let m_a = db_a.mission_create(CreateMissionInput {
+        title: "트리 미션".into(), description: None, jira_key: None,
+        sprint_id: Some(s_a.id),
+    }).await.unwrap();
+    let e_a = db_a.epic_create(CreateEpicInput {
+        project_key: "tp".into(), mission_id: Some(m_a.id), title: "에픽 1".into(),
+        description: None,
+    }).await.unwrap();
+    db_a.issue_create(CreateIssueInput {
+        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: Some(s_a.id),
+        title: "이슈 1".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db_a.issue_create(CreateIssueInput {
+        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: Some(s_a.id),
+        title: "이슈 2".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // MCP 쪽: dispatch로 동일 계층 구성
+    let s_b = dispatch(Arc::clone(&db_b), "sprint_create",
+        &json!({"name": "GT1"})).await.unwrap();
+    let sid_b = s_b["id"].as_i64().unwrap();
+    dispatch(Arc::clone(&db_b), "sprint_update",
+        &json!({"id": sid_b, "status": "active"})).await.unwrap();
+    let m_b = dispatch(Arc::clone(&db_b), "mission_create",
+        &json!({"title": "트리 미션", "sprint_id": sid_b})).await.unwrap();
+    let mid_b = m_b["id"].as_i64().unwrap();
+    let e_b = dispatch(Arc::clone(&db_b), "epic_create",
+        &json!({"sprint_id": sid_b, "project_key": "tp", "title": "에픽 1", "mission_id": mid_b}))
+        .await.unwrap();
+    let eid_b = e_b["id"].as_i64().unwrap();
+    dispatch(Arc::clone(&db_b), "issue_create",
+        &json!({"epic_id": eid_b, "sprint_id": sid_b, "title": "이슈 1", "mission_id": mid_b}))
+        .await.unwrap();
+    dispatch(Arc::clone(&db_b), "issue_create",
+        &json!({"epic_id": eid_b, "sprint_id": sid_b, "title": "이슈 2", "mission_id": mid_b}))
+        .await.unwrap();
+
+    // mission_get_tree 동치 검증
+    let cli_tree = normalize(serde_json::to_value(
+        db_a.mission_get_tree(m_a.id).await.unwrap()
+    ).unwrap());
+    let mcp_tree = normalize(dispatch(Arc::clone(&db_b), "mission_get_tree",
+        &json!({"id": mid_b})).await.unwrap());
+    assert_eq!(cli_tree, mcp_tree, "mission_get_tree 동치 실패");
+
+    // 트리 구조 내용 검증
+    assert_eq!(cli_tree["mission"]["title"], "트리 미션", "mission 제목 확인");
+    assert_eq!(cli_tree["epics"].as_array().unwrap().len(), 1, "epic 1건");
+    assert_eq!(
+        cli_tree["epics"][0]["issues"].as_array().unwrap().len(), 2,
+        "이슈 2건"
+    );
 }
 
 #[tokio::test]

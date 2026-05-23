@@ -22,10 +22,14 @@ pub enum EpicCommand {
     Create {
         #[arg(long)] project: String,
         #[arg(long)] title: String,
+        /// 소속 미션 ID (생략 가능 — nullable)
+        #[arg(long = "mission-id")] mission_id: Option<i64>,
     },
     List {
         #[arg(long)] project: Option<String>,
         #[arg(long)] status: Option<String>,
+        /// completed 에픽도 포함 (기본: completed 제외)
+        #[arg(long = "include-completed")] include_completed: bool,
     },
     Get { id: i64 },
     /// 에픽 상태/제목/설명 수정
@@ -43,16 +47,15 @@ pub enum EpicCommand {
 
 pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        EpicCommand::Create { project, title } => {
+        EpicCommand::Create { project, title, mission_id } => {
             let epic = db.epic_create(CreateEpicInput {
-                project_key: project, title, description: None,
+                project_key: project, mission_id, title, description: None,
             }).await?;
             output::print_value(&epic, fmt)?;
         }
-        EpicCommand::List { project, status } => {
-            let st = status.as_deref().map(parse_epic_status).transpose()?;
+        EpicCommand::List { project, status: _, include_completed } => {
             output::print_value(
-                &db.epic_list(project.as_deref(), st).await?,
+                &db.epic_list(project.as_deref(), include_completed).await?,
                 fmt,
             )?;
         }
@@ -64,6 +67,8 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> a
                 status: status.as_deref().map(parse_epic_status).transpose()?,
                 title,
                 description,
+                mission_id: None,
+                cascade_issues: true,
             }, agent_id).await?;
             output::print_value(&epic, fmt)?;
         }
@@ -117,7 +122,7 @@ mod tests {
     fn test_parse_list_with_status() {
         let w = Wrap::try_parse_from(["x", "list", "--project", "engram", "--status", "active"]).unwrap();
         match w.cmd {
-            EpicCommand::List { project, status } => {
+            EpicCommand::List { project, status, include_completed: _ } => {
                 assert_eq!(project.as_deref(), Some("engram"));
                 assert_eq!(status.as_deref(), Some("active"));
             }

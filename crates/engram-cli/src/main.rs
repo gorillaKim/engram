@@ -41,6 +41,8 @@ enum Commands {
     Stalled(commands::stalled::StalledArgs),
     /// 변경 이력 — recent / for / by-agent
     History(commands::history::HistoryArgs),
+    /// 미션 관리 (Sprint→Mission→Epic 계층, ADR-0012)
+    Mission(commands::mission::MissionArgs),
     /// 스프린트 회고 리포트 생성
     Retro(commands::retro::RetroArgs),
     /// Claude Code Hook 설치/제거
@@ -80,6 +82,7 @@ async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
         Commands::Blocked(args) => commands::blocked::run(db, args, fmt).await?,
         Commands::Stalled(args) => commands::stalled::run(db, args, fmt).await?,
         Commands::History(args) => commands::history::run(db, args, fmt).await?,
+        Commands::Mission(args) => commands::mission::run(db, args, fmt, agent_id).await?,
         Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,
         Commands::Hook(args)    => commands::hook::run(args, fmt).await?,
         Commands::SnapshotText { project } => {

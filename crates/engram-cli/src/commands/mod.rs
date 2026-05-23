@@ -4,6 +4,7 @@ pub mod epic;
 pub mod history;
 pub mod hook;
 pub mod issue;
+pub mod mission;
 pub mod note;
 pub mod retro;
 pub mod session;
