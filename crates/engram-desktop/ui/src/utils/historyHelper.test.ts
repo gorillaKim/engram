@@ -7,6 +7,7 @@ function createMockIssue(id: number, title: string, priority: 'critical' | 'high
   return {
     id,
     epic_id: 1,
+    mission_id: null,
     sprint_id: 1,
     title,
     description: '',

@@ -5,6 +5,8 @@ import type {
   SupervisorStatusSnapshot, CallRecord,
   CreateEpicInput, CreateIssueInput, CreateTaskInput,
   IssueLink, LinkType, EpicStatus, HistoryEntry, CreateSprintInput,
+  Mission, MissionProgress, MissionTree,
+  CreateMissionInput, UpdateMissionInput,
 } from './types';
 
 export const sessionRestore = (project_key?: string) =>
@@ -116,12 +118,14 @@ export const epicCreate = (input: CreateEpicInput) =>
     project_key: input.project_key,
     title: input.title,
     description: input.description ?? null,
+    mission_id: input.mission_id ?? null,
   });
 
 export const issueCreate = (input: CreateIssueInput) =>
   invoke<Issue>('issue_create', {
     epic_id: input.epic_id,
     sprint_id: input.sprint_id ?? null,
+    mission_id: input.mission_id ?? null,
     title: input.title,
     description: input.description ?? null,
     goal: input.goal ?? null,
@@ -165,6 +169,48 @@ export const issueDelete = (id: number) =>
 
 export const historyList = (entity_type: string, entity_id: number) =>
   invoke<HistoryEntry[]>('history_list', { entity_type, entity_id });
+
+// ── Mission IPC ───────────────────────────────────────────────────────────────
+
+export const missionList = (sprint_id?: number | null, include_completed?: boolean) =>
+  invoke<Mission[]>('mission_list', {
+    sprint_id: sprint_id ?? null,
+    include_completed: include_completed ?? null,
+  });
+
+export const missionCreate = (input: CreateMissionInput) =>
+  invoke<Mission>('mission_create', {
+    title: input.title,
+    description: input.description ?? null,
+    jira_key: input.jira_key ?? null,
+    sprint_id: input.sprint_id ?? null,
+  });
+
+export const missionGet = (id: number) =>
+  invoke<Mission>('mission_get', { id });
+
+export const missionUpdate = (id: number, input: UpdateMissionInput) =>
+  invoke<Mission>('mission_update', {
+    id,
+    title: input.title ?? null,
+    description: input.description ?? null,
+    jira_key: input.jira_key ?? null,
+    status: input.status ?? null,
+    sprint_id: input.sprint_id ?? null,
+  });
+
+export const missionDelete = (id: number) =>
+  invoke<void>('mission_delete', { id });
+
+export const missionGetProgress = (id: number) =>
+  invoke<MissionProgress>('mission_get_progress', { id });
+
+export const missionGetTree = (id: number) =>
+  invoke<MissionTree>('mission_get_tree', { id });
+
+/** sprint_id=null 로 백로그 이동은 현재 Core가 미지원. sprint_id 에 유효한 id 만 전달. */
+export const missionSetSprint = (mission_id: number, sprint_id: number | null) =>
+  invoke<Mission>('mission_set_sprint', { mission_id, sprint_id });
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 

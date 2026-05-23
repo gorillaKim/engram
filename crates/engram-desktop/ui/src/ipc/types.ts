@@ -9,6 +9,7 @@ export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 
 export interface Issue {
   id: number;
   epic_id: number;
+  mission_id: number | null;
   /** null이면 백로그(스프린트 미지정). Sprint↔Issue 는 직접 매핑. */
   sprint_id: number | null;
   title: string;
@@ -23,6 +24,7 @@ export interface Issue {
 export interface Epic {
   id: number;
   project_key: string;
+  mission_id: number | null;
   title: string;
   description: string | null;
   status: EpicStatus;
@@ -218,6 +220,7 @@ export interface CreateIssueInput {
   epic_id: number;
   /** null/undefined 이면 백로그(스프린트 미지정) */
   sprint_id?: number | null;
+  mission_id?: number | null;
   title: string;
   description?: string;
   goal?: string;
@@ -226,6 +229,7 @@ export interface CreateIssueInput {
 
 export interface CreateEpicInput {
   project_key: string;
+  mission_id?: number | null;
   title: string;
   description?: string;
 }
@@ -243,6 +247,61 @@ export interface IssueLink {
   target_id: number;
   link_type: LinkType;
   created_at: string;
+}
+
+// ── Mission ───────────────────────────────────────────────────────────────────
+
+export type MissionStatus = 'active' | 'completed' | 'cancelled';
+
+export interface Mission {
+  id: number;
+  jira_key: string | null;
+  title: string;
+  description: string | null;
+  status: MissionStatus;
+  sprint_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MissionProgress {
+  id: number;
+  title: string;
+  epics_count: number;
+  issues_count: number;
+  todo_issues: number;
+  working_issues: number;
+  demo_issues: number;
+  finished_issues: number;
+  cancelled_issues: number;
+  progress_rate: number;
+}
+
+export interface EpicWithIssues {
+  epic: Epic;
+  issues: Issue[];
+}
+
+export interface MissionTree {
+  mission: Mission;
+  epics: EpicWithIssues[];
+  /** missions.sprint_id 로 조회한 sprint.title. sprint_id 없으면 null. */
+  sprint_name: string | null;
+}
+
+export interface CreateMissionInput {
+  title: string;
+  description?: string | null;
+  jira_key?: string | null;
+  sprint_id?: number | null;
+}
+
+export interface UpdateMissionInput {
+  title?: string | null;
+  description?: string | null;
+  jira_key?: string | null;
+  status?: MissionStatus | null;
+  sprint_id?: number | null;
 }
 
 // ── Updater ───────────────────────────────────────────────────────────────────

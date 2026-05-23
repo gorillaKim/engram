@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicCreate } from '../ipc/invoke';
+import { epicCreate, missionList } from '../ipc/invoke';
+import type { Mission } from '../ipc/types';
 
 interface Props {
   open: boolean;
@@ -15,12 +16,22 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
   const [projectKey, setProjectKey] = useState('');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
+
+  const { data: missions = [] } = useQuery<Mission[]>({
+    queryKey: ['missionList'],
+    queryFn: () => missionList(null, false),
+    enabled: open,
+  });
+
+  const activeMissions = missions.filter((m) => m.status === 'active');
 
   useEffect(() => {
     if (open) {
       setProjectKey(defaultProjectKey ?? '');
       setTitle('');
       setDescription('');
+      setSelectedMissionId(null);
     }
   }, [open, defaultProjectKey]);
 
@@ -30,6 +41,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
         project_key: projectKey.trim(),
         title: title.trim(),
         description: description.trim() || undefined,
+        mission_id: selectedMissionId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['boardStatus'] });
@@ -54,6 +66,20 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
         <h3 className="text-lg font-semibold text-white mb-4">새 에픽 생성</h3>
 
         <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">미션</label>
+            <select
+              value={selectedMissionId ?? ''}
+              onChange={(e) => setSelectedMissionId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="">미션 없음</option>
+              {activeMissions.map((m) => (
+                <option key={m.id} value={m.id}>{m.title}</option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">프로젝트 키 *</label>
             <input

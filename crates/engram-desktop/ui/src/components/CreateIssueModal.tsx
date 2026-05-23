@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicList, issueCreate, sprintList } from '../ipc/invoke';
-import type { Epic, IssuePriority, Sprint } from '../ipc/types';
+import { epicList, issueCreate, missionList, sprintList } from '../ipc/invoke';
+import type { Epic, IssuePriority, Mission, Sprint } from '../ipc/types';
 
 interface Props {
   open: boolean;
@@ -20,7 +20,7 @@ export function CreateIssueModal({
 }: Props) {
   const qc = useQueryClient();
 
-  const { data: epics = [] } = useQuery({
+  const { data: allEpics = [] } = useQuery<Epic[]>({
     queryKey: ['epicList', projectKey],
     queryFn: () => epicList(projectKey),
     enabled: open,
@@ -32,27 +32,51 @@ export function CreateIssueModal({
     enabled: open,
   });
 
+  const { data: missions = [] } = useQuery<Mission[]>({
+    queryKey: ['missionList'],
+    queryFn: () => missionList(null, false),
+    enabled: open,
+  });
+
+  const activeMissions = useMemo(() => missions.filter((m) => m.status === 'active'), [missions]);
+
+  const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
   const [epicId, setEpicId] = useState<number | ''>('');
   const [sprintId, setSprintId] = useState<number | null>(null); // null = 백로그
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<IssuePriority>('medium');
 
+  // 미션 선택에 따라 에픽 필터링
+  const filteredEpics = useMemo(() => {
+    if (selectedMissionId === null) return allEpics;
+    return allEpics.filter((e) => e.mission_id === selectedMissionId);
+  }, [selectedMissionId, allEpics]);
+
+  // 미션 변경 시 에픽 선택 초기화
+  useEffect(() => {
+    if (selectedMissionId !== null) {
+      setEpicId('');
+    }
+  }, [selectedMissionId]);
+
   useEffect(() => {
     if (open) {
-      setEpicId(defaultEpicId ?? (epics[0]?.id ?? ''));
+      setSelectedMissionId(null);
+      setEpicId(defaultEpicId ?? (allEpics[0]?.id ?? ''));
       setSprintId(defaultSprintId ?? null);
       setTitle('');
       setDescription('');
       setPriority('medium');
     }
-  }, [open, defaultEpicId, defaultSprintId, epics]);
+  }, [open, defaultEpicId, defaultSprintId, allEpics]);
 
   const create = useMutation({
     mutationFn: () =>
       issueCreate({
         epic_id: epicId as number,
         sprint_id: sprintId,
+        mission_id: selectedMissionId,
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
@@ -83,6 +107,20 @@ export function CreateIssueModal({
 
         <div className="space-y-4">
           <div>
+            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">미션</label>
+            <select
+              value={selectedMissionId ?? ''}
+              onChange={(e) => setSelectedMissionId(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="">미션 없음 (전체 에픽 표시)</option>
+              {activeMissions.map((m) => (
+                <option key={m.id} value={m.id}>{m.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽</label>
             <select
               value={epicId}
@@ -90,7 +128,7 @@ export function CreateIssueModal({
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
             >
               <option value="">에픽 선택...</option>
-              {epics.map((epic: Epic) => (
+              {filteredEpics.map((epic: Epic) => (
                 <option key={epic.id} value={epic.id}>
                   [{epic.project_key}] {epic.title}
                 </option>
