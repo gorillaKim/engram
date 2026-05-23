@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::models::{Epic, Issue, Note, NoteSummary, Task};
+use crate::models::{Epic, Issue, Note, NoteSummary, Task, MissionSummary};
 use crate::{Db, Result};
 
 /// session_restore 전체 응답 구조
@@ -22,6 +22,10 @@ pub struct SessionSnapshot {
     /// 어느 이슈로 session_restore 를 호출해도 같은 광역 공지가 모든 에이전트에 전파된다.
     #[serde(default)]
     pub active_caveats: Vec<Note>,
+    /// 현재 active 상태인 미션 목록 (완료/취소 미션 제외).
+    /// project_key 지정 시 해당 프로젝트의 에픽을 가진 미션만 포함.
+    #[serde(default)]
+    pub active_missions: Vec<MissionSummary>,
 }
 
 /// `assigned_agent` 가 NULL 이 아닌 working 이슈의 점유 정보.
@@ -152,6 +156,7 @@ impl Db {
                 pending_drafts: vec![],
                 active_workers: vec![],
                 active_caveats: vec![],
+                active_missions: vec![],
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
                 scope_expansion_ids: vec![],
             });
@@ -325,6 +330,50 @@ impl Db {
             cq.fetch_all(&self.pool).await.unwrap_or_default()
         };
 
+        // active 미션 목록 조회 — project_key 있으면 해당 프로젝트 에픽을 가진 미션만 포함
+        let active_missions: Vec<MissionSummary> = {
+            #[derive(sqlx::FromRow)]
+            struct MissionSummaryRaw {
+                id: i64,
+                title: String,
+                status: crate::models::MissionStatus,
+                progress_rate: Option<f64>,
+                epic_count: i64,
+            }
+
+            let mut msql = String::from(
+                "SELECT \
+                    m.id, m.title, m.status, \
+                    COUNT(DISTINCT e.id) as epic_count, \
+                    CAST( \
+                        COUNT(CASE WHEN i.status = 'finished' THEN 1 END) AS REAL \
+                    ) / NULLIF(COUNT(i.id), 0) as progress_rate \
+                 FROM missions m \
+                 LEFT JOIN epics e ON e.mission_id = m.id \
+                 LEFT JOIN issues i ON i.mission_id = m.id \
+                 WHERE m.status = 'active'",
+            );
+            if project_key.is_some() {
+                msql.push_str(" AND EXISTS ( \
+                    SELECT 1 FROM epics ep \
+                    WHERE ep.mission_id = m.id AND ep.project_key = ? \
+                )");
+            }
+            msql.push_str(" GROUP BY m.id ORDER BY m.id");
+
+            let mut mq = sqlx::query_as::<_, MissionSummaryRaw>(&msql);
+            if let Some(pk) = project_key { mq = mq.bind(pk); }
+            let rows = mq.fetch_all(&self.pool).await.unwrap_or_default();
+
+            rows.into_iter().map(|r| MissionSummary {
+                id: r.id,
+                title: r.title,
+                status: r.status,
+                progress_rate: r.progress_rate.unwrap_or(0.0),
+                epic_count: r.epic_count,
+            }).collect()
+        };
+
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
@@ -337,6 +386,7 @@ impl Db {
             scope_expansion_ids,
             active_workers,
             active_caveats,
+            active_missions,
         })
     }
 
@@ -524,7 +574,7 @@ impl Db {
         };
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal,
+            SELECT i.id, i.epic_id, i.mission_id, i.sprint_id, i.title, i.description, i.goal,
                    i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at,
                    e.project_key as proj
             FROM issues i
@@ -540,6 +590,7 @@ impl Db {
         struct IssueRow {
             id: i64,
             epic_id: i64,
+            mission_id: Option<i64>,
             sprint_id: Option<i64>,
             title: String,
             description: Option<String>,
@@ -579,6 +630,7 @@ impl Db {
             let issue = crate::models::Issue {
                 id: r.id,
                 epic_id: r.epic_id,
+                mission_id: r.mission_id,
                 sprint_id: r.sprint_id,
                 title: r.title,
                 description: r.description,

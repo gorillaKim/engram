@@ -88,12 +88,12 @@ mod tests {
     async fn seed(db: &Db) -> (i64, i64) { // sprint_id, epic_id
         let sprint = db.sprint_create(CreateSprintInput { name: "S".to_string(), goal: None, start_date: None, end_date: None }).await.unwrap();
         db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }, "agent").await.unwrap();
-        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), title: "E".to_string(), description: None }).await.unwrap();
+        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), mission_id: None, title: "E".to_string(), description: None }).await.unwrap();
         (sprint.id, epic.id)
     }
 
     async fn make_issue(db: &Db, sprint_id: i64, epic_id: i64, title: &str) -> i64 {
-        db.issue_create(CreateIssueInput { epic_id, sprint_id: Some(sprint_id), title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
+        db.issue_create(CreateIssueInput { epic_id, mission_id: None, sprint_id: Some(sprint_id), title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
     }
 
     #[tokio::test]

@@ -8,12 +8,28 @@ impl Db {
     pub async fn issue_create(&self, input: CreateIssueInput) -> Result<Issue> {
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
+
+        // mission_id: 명시 전달이 없으면 부모 epic 에서 자동 상속.
+        // epic 에도 mission_id 가 없으면 NULL 저장 (에러 없음).
+        let mission_id = if input.mission_id.is_some() {
+            input.mission_id
+        } else {
+            sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT mission_id FROM epics WHERE id = ?",
+            )
+            .bind(input.epic_id)
+            .fetch_optional(&self.pool)
+            .await?
+            .flatten()
+        };
+
         // RETURNING * 단일 쿼리 — sprint/epic_create 와 동일 패턴.
         sqlx::query_as::<_, Issue>(
-            "INSERT INTO issues (epic_id, sprint_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?)
-             RETURNING id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
+            "INSERT INTO issues (epic_id, mission_id, sprint_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?, ?)
+             RETURNING id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
         )
         .bind(input.epic_id)
+        .bind(mission_id)
         .bind(input.sprint_id)
         .bind(&input.title)
         .bind(&input.description)
@@ -26,9 +42,9 @@ impl Db {
 
     pub async fn issue_get(&self, id: i64, compact: bool) -> Result<Issue> {
         let select_fields = if compact {
-            "id, epic_id, sprint_id, title, NULL AS description, NULL AS goal, status, priority, assigned_agent, created_at, updated_at"
+            "id, epic_id, mission_id, sprint_id, title, NULL AS description, NULL AS goal, status, priority, assigned_agent, created_at, updated_at"
         } else {
-            "id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at"
+            "id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at"
         };
         sqlx::query_as::<_, Issue>(&format!(
             "SELECT {} FROM issues WHERE id = ?", select_fields
@@ -40,8 +56,9 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT id, epic_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues i WHERE 1=1".to_string();
+        let mut sql = "SELECT id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues i WHERE 1=1".to_string();
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
+        if filter.mission_id.is_some()  { sql.push_str(" AND i.mission_id = ?"); }
         if filter.sprint_id.is_some()   { sql.push_str(" AND i.sprint_id = ?"); }
         if filter.backlog_only           { sql.push_str(" AND i.sprint_id IS NULL"); }
         if filter.project_key.is_some() {
@@ -52,6 +69,7 @@ impl Db {
 
         let mut q = sqlx::query_as::<_, Issue>(&sql);
         if let Some(e) = filter.epic_id     { q = q.bind(e); }
+        if let Some(m) = filter.mission_id  { q = q.bind(m); }
         if let Some(s) = filter.sprint_id   { q = q.bind(s); }
         if let Some(p) = filter.project_key { q = q.bind(p); }
         if let Some(s) = filter.status {
@@ -445,7 +463,7 @@ impl Db {
         let sname = sprint.as_ref().map(|s| s.name.clone());
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
+            SELECT i.id, i.epic_id, i.mission_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
             WHERE e.project_key = ?
@@ -515,6 +533,116 @@ impl Db {
             sprint_name: sname,
             issues: items,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Db;
+    use crate::models::epic::CreateEpicInput;
+    use crate::models::mission::CreateMissionInput;
+    use crate::models::sprint::CreateSprintInput;
+
+    async fn setup_db() -> Db {
+        Db::open_in_memory().await.expect("open in-memory db")
+    }
+
+    #[tokio::test]
+    async fn test_issue_list_filtered_by_mission() {
+        let db = setup_db().await;
+
+        let sprint = db.sprint_create(CreateSprintInput {
+            name: "S1".to_string(),
+            goal: None,
+            start_date: None,
+            end_date: None,
+        }).await.unwrap();
+
+        // 미션 A, B 생성
+        let mission_a = db.mission_create(CreateMissionInput {
+            title: "Mission A".to_string(),
+            description: None,
+            jira_key: None,
+            sprint_id: Some(sprint.id),
+        }).await.unwrap();
+        let mission_b = db.mission_create(CreateMissionInput {
+            title: "Mission B".to_string(),
+            description: None,
+            jira_key: None,
+            sprint_id: Some(sprint.id),
+        }).await.unwrap();
+
+        // 에픽 A (mission_id=A), 에픽 B (mission_id=B)
+        let epic_a = db.epic_create(CreateEpicInput {
+            mission_id: Some(mission_a.id),
+            project_key: "proj".to_string(),
+            title: "Epic A".to_string(),
+            description: None,
+        }).await.unwrap();
+        let epic_b = db.epic_create(CreateEpicInput {
+            mission_id: Some(mission_b.id),
+            project_key: "proj".to_string(),
+            title: "Epic B".to_string(),
+            description: None,
+        }).await.unwrap();
+
+        // 이슈 A1, A2 (epic_a → mission_id 자동 상속)
+        let issue_a1 = db.issue_create(CreateIssueInput {
+            epic_id: epic_a.id,
+            mission_id: None,
+            sprint_id: None,
+            title: "Issue A1".to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+        let issue_a2 = db.issue_create(CreateIssueInput {
+            epic_id: epic_a.id,
+            mission_id: None,
+            sprint_id: None,
+            title: "Issue A2".to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+
+        // 이슈 B1 (epic_b → mission_id 자동 상속)
+        let issue_b1 = db.issue_create(CreateIssueInput {
+            epic_id: epic_b.id,
+            mission_id: None,
+            sprint_id: None,
+            title: "Issue B1".to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+
+        // mission_id 상속 확인
+        assert_eq!(issue_a1.mission_id, Some(mission_a.id), "A1은 mission A 상속");
+        assert_eq!(issue_a2.mission_id, Some(mission_a.id), "A2은 mission A 상속");
+        assert_eq!(issue_b1.mission_id, Some(mission_b.id), "B1은 mission B 상속");
+
+        // mission_a 필터 → A1, A2 만
+        let result_a = db.issue_list(IssueFilter {
+            mission_id: Some(mission_a.id),
+            ..Default::default()
+        }).await.unwrap();
+        let ids_a: Vec<i64> = result_a.iter().map(|i| i.id).collect();
+        assert!(ids_a.contains(&issue_a1.id), "A1이 mission_a 결과에 있어야 함");
+        assert!(ids_a.contains(&issue_a2.id), "A2가 mission_a 결과에 있어야 함");
+        assert!(!ids_a.contains(&issue_b1.id), "B1은 mission_a 결과에 없어야 함");
+        assert_eq!(result_a.len(), 2, "mission A 필터 결과는 2건");
+
+        // mission_b 필터 → B1 만
+        let result_b = db.issue_list(IssueFilter {
+            mission_id: Some(mission_b.id),
+            ..Default::default()
+        }).await.unwrap();
+        let ids_b: Vec<i64> = result_b.iter().map(|i| i.id).collect();
+        assert!(ids_b.contains(&issue_b1.id), "B1이 mission_b 결과에 있어야 함");
+        assert!(!ids_b.contains(&issue_a1.id), "A1은 mission_b 결과에 없어야 함");
+        assert_eq!(result_b.len(), 1, "mission B 필터 결과는 1건");
     }
 }
 
