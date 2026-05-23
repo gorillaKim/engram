@@ -1,6 +1,7 @@
 pub mod epic;
 pub mod history;
 pub mod issue;
+pub mod mission;
 pub mod note;
 pub mod session;
 pub mod sprint;
@@ -18,6 +19,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
     [
         sprint::tool_definitions(),
         epic::tool_definitions(),
+        mission::tool_definitions(),
         issue::tool_definitions(),
         task::tool_definitions(),
         task_test::tool_definitions(),
@@ -40,6 +42,14 @@ pub async fn dispatch(
         "sprint_current" => sprint::current(db, args).await,
         "sprint_update"  => sprint::update(db, args).await,
         "sprint_delete"  => sprint::delete(db, args).await,
+        // Mission
+        "mission_create"     => mission::mission_create(db, args).await,
+        "mission_get"        => mission::mission_get(db, args).await,
+        "mission_list"       => mission::mission_list(db, args).await,
+        "mission_update"     => mission::mission_update(db, args).await,
+        "mission_delete"     => mission::mission_delete(db, args).await,
+        "mission_get_tree"   => mission::mission_get_tree(db, args).await,
+        "mission_set_sprint" => mission::mission_set_sprint(db, args).await,
         // Epic
         "epic_create"  => epic::create(db, args).await,
         "epic_get"     => epic::get(db, args).await,

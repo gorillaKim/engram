@@ -20,6 +20,7 @@ pub fn tool_definitions() -> Vec<Value> {
             "inputSchema": { "type": "object", "required": ["epic_id", "title"],
                 "properties": {
                     "epic_id":     { "type": "integer" },
+                    "mission_id":  { "type": "integer", "description": "미지정 시 부모 epic.mission_id 자동 상속" },
                     "sprint_id":   { "type": "integer", "description": "소속 스프린트 ID (생략 시 백로그)" },
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
@@ -53,6 +54,7 @@ pub fn tool_definitions() -> Vec<Value> {
             "inputSchema": { "type": "object",
                 "properties": {
                     "epic_id":     { "type": "integer" },
+                    "mission_id":  { "type": "integer", "description": "특정 미션 소속 이슈만 필터링" },
                     "sprint_id":   { "type": "integer" },
                     "project_key": { "type": "string" },
                     "status":      { "type": "string", "enum": ["required","ready","working","demo","finished","cancelled"] },
@@ -152,6 +154,7 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
     let input = CreateIssueInput {
         epic_id:     args["epic_id"].as_i64().unwrap_or(0),
+        mission_id:  args["mission_id"].as_i64(),
         sprint_id:   args["sprint_id"].as_i64(),
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
@@ -180,6 +183,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
     let filter = IssueFilter {
         epic_id:      args["epic_id"].as_i64(),
+        mission_id:   args["mission_id"].as_i64(),
         sprint_id:    args["sprint_id"].as_i64(),
         backlog_only: args["backlog_only"].as_bool().unwrap_or(false),
         project_key:  args["project_key"].as_str().map(String::from),

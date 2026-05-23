@@ -27,10 +27,18 @@ async fn seed(db: &Arc<Db>) -> (i64, i64, i64) {
     )
     .await
     .unwrap();
+    let mission = dispatch(
+        Arc::clone(db),
+        "mission_create",
+        &json!({"title": "M", "sprint_id": sprint_id}),
+    )
+    .await
+    .unwrap();
+    let mission_id = mission["id"].as_i64().unwrap();
     let epic = dispatch(
         Arc::clone(db),
         "epic_create",
-        &json!({"sprint_id": sprint_id, "project_key": "p", "title": "E"}),
+        &json!({"sprint_id": sprint_id, "project_key": "p", "title": "E", "mission_id": mission_id}),
     )
     .await
     .unwrap();
