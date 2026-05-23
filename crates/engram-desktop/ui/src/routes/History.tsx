@@ -1,15 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useIssues } from '../hooks/useIssues';
 import { useSprints } from '../hooks/useSprints';
 import { useEpics } from '../hooks/useEpics';
 import { useDebounce } from '../hooks/useDebounce';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { useUIStore } from '../store/ui';
+import { missionList } from '../ipc/invoke';
+import type { Mission } from '../ipc/types';
 import { sortHistoryIssues, paginateHistoryIssues, calculateHistoryStats, SortKey, SortOrder } from '../utils/historyHelper';
 
 export function History() {
   const { selectIssue } = useUIStore();
-  const [viewMode, setViewMode] = useState<'sprint' | 'epic'>('sprint');
+  const [viewMode, setViewMode] = useState<'sprint' | 'epic' | 'mission'>('sprint');
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // 정렬 및 페이징 상태
@@ -19,6 +22,10 @@ export function History() {
 
   const { data: sprints } = useSprints();
   const { data: epics } = useEpics();
+  const { data: missions } = useQuery<Mission[]>({
+    queryKey: ['missionList', 'all'],
+    queryFn: () => missionList(null, true),
+  });
 
   // Set default selection when data loads or mode changes
   useEffect(() => {
@@ -32,29 +39,41 @@ export function History() {
       if (selectedId === null || !epics.find(e => e.id === selectedId)) {
         setSelectedId(epics[0].id);
       }
+    } else if (viewMode === 'mission' && missions && missions.length > 0) {
+      if (selectedId === null || !missions.find(m => m.id === selectedId)) {
+        setSelectedId(missions[0].id);
+      }
     }
-  }, [viewMode, sprints, epics, selectedId]);
+  }, [viewMode, sprints, epics, missions, selectedId]);
 
   // 필터나 모드 변경 시 페이징 수 초기화
   useEffect(() => {
     setVisibleCount(30);
   }, [viewMode, selectedId]);
 
-  const filter = {
+  const filter = useMemo(() => ({
     status: 'finished' as const,
-    ...(viewMode === 'sprint' ? { sprint_id: selectedId } : { epic_id: selectedId ?? undefined }),
-  };
+    ...(viewMode === 'sprint'
+      ? { sprint_id: selectedId }
+      : viewMode === 'epic'
+      ? { epic_id: selectedId ?? undefined }
+      : {}),
+  }), [viewMode, selectedId]);
 
   const { data: issues, isLoading } = useIssues(filter);
 
   // 진척률 계산을 위해 전체 이슈(상태 필터링 없음) 조회
   const totalFilter = useMemo(() => ({
-    ...(viewMode === 'sprint' ? { sprint_id: selectedId } : { epic_id: selectedId ?? undefined }),
+    ...(viewMode === 'sprint'
+      ? { sprint_id: selectedId }
+      : viewMode === 'epic'
+      ? { epic_id: selectedId ?? undefined }
+      : {}),
   }), [viewMode, selectedId]);
-  
+
   const { data: allIssues } = useIssues(totalFilter);
 
-  const handleModeChange = (mode: 'sprint' | 'epic') => {
+  const handleModeChange = (mode: 'sprint' | 'epic' | 'mission') => {
     setViewMode(mode);
     setSelectedId(null);
   };
@@ -62,19 +81,32 @@ export function History() {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedQuery = useDebounce(searchQuery);
 
-  const finishedIssues = issues ?? [];
+  const finishedIssues = useMemo(() => {
+    const raw = issues ?? [];
+    if (viewMode === 'mission' && selectedId != null) {
+      return raw.filter((i) => i.mission_id === selectedId);
+    }
+    return raw;
+  }, [issues, viewMode, selectedId]);
 
   // 통계 계산
   const stats = useMemo(() => calculateHistoryStats(finishedIssues), [finishedIssues]);
   
-  const progressPercent = useMemo(() => {
-    if (!allIssues || allIssues.length === 0) return 0;
-    const finishedCount = allIssues.filter(i => i.status === 'finished').length;
-    return Math.round((finishedCount / allIssues.length) * 100);
-  }, [allIssues]);
+  const missionScopedAllIssues = useMemo(() => {
+    if (viewMode === 'mission' && selectedId != null) {
+      return (allIssues ?? []).filter((i) => i.mission_id === selectedId);
+    }
+    return allIssues ?? [];
+  }, [allIssues, viewMode, selectedId]);
 
-  const totalIssueCount = allIssues?.length ?? 0;
-  const finishedIssueCount = allIssues?.filter(i => i.status === 'finished').length ?? 0;
+  const progressPercent = useMemo(() => {
+    if (missionScopedAllIssues.length === 0) return 0;
+    const finishedCount = missionScopedAllIssues.filter(i => i.status === 'finished').length;
+    return Math.round((finishedCount / missionScopedAllIssues.length) * 100);
+  }, [missionScopedAllIssues]);
+
+  const totalIssueCount = missionScopedAllIssues.length;
+  const finishedIssueCount = missionScopedAllIssues.filter(i => i.status === 'finished').length;
 
   const filteredIssues = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
@@ -128,6 +160,16 @@ export function History() {
               스프린트별
             </button>
             <button
+              onClick={() => handleModeChange('mission')}
+              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
+                viewMode === 'mission'
+                  ? 'bg-white text-violet-600 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              미션별
+            </button>
+            <button
               onClick={() => handleModeChange('epic')}
               className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
                 viewMode === 'epic'
@@ -149,6 +191,12 @@ export function History() {
               sprints?.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name} {s.status === 'active' ? '(활성)' : ''}
+                </option>
+              ))
+            ) : viewMode === 'mission' ? (
+              missions?.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.title} {m.status === 'active' ? '' : `(${m.status})`}
                 </option>
               ))
             ) : (
@@ -181,7 +229,7 @@ export function History() {
             <div className="flex flex-col justify-between space-y-3">
               <div>
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  {viewMode === 'sprint' ? '스프린트' : '에픽'} 완료율
+                  {viewMode === 'sprint' ? '스프린트' : viewMode === 'mission' ? '미션' : '에픽'} 완료율
                 </h3>
                 <div className="flex items-baseline gap-2 mt-1">
                   <span className="text-2xl font-bold text-slate-800">{progressPercent}%</span>
@@ -235,7 +283,7 @@ export function History() {
             <p>
               {searchQuery.trim()
                 ? `"${searchQuery.trim()}" 에 일치하는 이슈가 없습니다.`
-                : `해당 ${viewMode === 'sprint' ? '스프린트' : '에픽'}에 완료된 이슈가 없습니다.`}
+                : `해당 ${viewMode === 'sprint' ? '스프린트' : viewMode === 'mission' ? '미션' : '에픽'}에 완료된 이슈가 없습니다.`}
             </p>
           </div>
         ) : (
