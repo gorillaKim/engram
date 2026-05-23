@@ -1,4 +1,5 @@
-import type { IssuePriority, IssueProjectBoard } from '../ipc/types';
+import { useState, useRef, useEffect } from 'react';
+import type { IssuePriority, IssueProjectBoard, Mission, Epic } from '../ipc/types';
 import type { BoardFilters } from '../store/ui';
 
 interface Props {
@@ -10,13 +11,15 @@ interface Props {
   onToggleShowCancelled: () => void;
   onChange: (f: Partial<BoardFilters>) => void;
   onReset: () => void;
+  missions?: Mission[];
+  epics?: Epic[];
 }
 
 const PRIORITIES: IssuePriority[] = ['critical', 'high', 'medium', 'low'];
 const PRIORITY_LABEL: Record<IssuePriority, string> = {
   critical: '긴급', high: '높음', medium: '중간', low: '낮음',
 };
-const PRIORITY_COLOR: Record<IssuePriority, string> = {
+const PRIORITY_ACTIVE: Record<IssuePriority, string> = {
   critical: 'bg-red-100 text-red-700 border-red-300',
   high: 'bg-orange-100 text-orange-700 border-orange-300',
   medium: 'bg-yellow-100 text-yellow-700 border-yellow-300',
@@ -27,17 +30,95 @@ function toggle<T>(arr: T[], val: T): T[] {
   return arr.includes(val) ? arr.filter((x) => x !== val) : [...arr, val];
 }
 
+interface DropdownProps {
+  label: string;
+  count: number;
+  activeColor: string;
+  children: React.ReactNode;
+}
+
+function FilterDropdown({ label, count, activeColor, children }: DropdownProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const isActive = count > 0;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+          isActive
+            ? `${activeColor} font-medium`
+            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+        }`}
+      >
+        {label}
+        {isActive && (
+          <span className="text-[10px] bg-white/60 rounded-full px-1 font-bold min-w-[16px] text-center">
+            {count}
+          </span>
+        )}
+        <span className="text-[9px] opacity-60">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-lg z-50 min-w-[180px] max-h-[260px] overflow-y-auto py-1.5">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownItem({
+  label, checked, onChange,
+}: { label: string; checked: boolean; onChange: () => void }) {
+  return (
+    <label className="flex items-center gap-2.5 px-3 py-1.5 hover:bg-slate-50 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="rounded border-slate-300 text-indigo-600 w-3 h-3"
+      />
+      <span className="text-xs text-slate-700 truncate">{label}</span>
+    </label>
+  );
+}
+
 export function FilterBar({
   boards, filters, hideFinished, onToggleHideFinished,
   showCancelled, onToggleShowCancelled, onChange, onReset,
+  missions = [], epics = [],
 }: Props) {
   const allProjects = boards.map((b) => b.project_key);
-  const hasActiveFilters = filters.projects.length > 0 || filters.priorities.length > 0;
+
+  // 미션 필터가 활성화된 경우 해당 미션 소속 에픽만 표시
+  const visibleEpics = filters.missionIds.length > 0
+    ? epics.filter((e) => e.mission_id != null && filters.missionIds.includes(e.mission_id))
+    : epics;
+
+  const hasActiveFilters =
+    filters.projects.length > 0 ||
+    filters.priorities.length > 0 ||
+    filters.missionIds.length > 0 ||
+    filters.epicIds.length > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-3 text-sm">
-      {/* Hide finished toggle */}
-      <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer select-none">
+    <div className="flex items-center gap-2 flex-wrap text-sm">
+      {/* 완료/취소 토글 */}
+      <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
         <input
           type="checkbox"
           checked={hideFinished}
@@ -46,9 +127,7 @@ export function FilterBar({
         />
         완료 숨기기
       </label>
-
-      {/* Show cancelled toggle */}
-      <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer select-none">
+      <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer select-none">
         <input
           type="checkbox"
           checked={showCancelled}
@@ -58,51 +137,88 @@ export function FilterBar({
         취소 보기
       </label>
 
-      {/* Project filter (only shown when multiple projects) */}
+      <div className="h-4 w-px bg-slate-200" />
+
+      {/* 프로젝트 드롭다운 */}
       {allProjects.length > 1 && (
-        <div className="flex items-center gap-1.5">
-          <span className="text-slate-400 text-xs">프로젝트</span>
+        <FilterDropdown
+          label="프로젝트"
+          count={filters.projects.length}
+          activeColor="bg-indigo-100 text-indigo-700 border-indigo-300"
+        >
           {allProjects.map((key) => (
-            <button
+            <DropdownItem
               key={key}
-              onClick={() => onChange({ projects: toggle(filters.projects, key) })}
-              className={`px-2 py-0.5 rounded border text-xs transition-colors ${
-                filters.projects.includes(key)
-                  ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-              }`}
-            >
-              {key}
-            </button>
+              label={key}
+              checked={filters.projects.includes(key)}
+              onChange={() => onChange({ projects: toggle(filters.projects, key) })}
+            />
           ))}
-        </div>
+        </FilterDropdown>
       )}
 
-      {/* Priority filter */}
-      <div className="flex items-center gap-1.5">
-        <span className="text-slate-400 text-xs">우선순위</span>
-        {PRIORITIES.map((p) => (
-          <button
-            key={p}
-            onClick={() => onChange({ priorities: toggle(filters.priorities, p) })}
-            className={`px-2 py-0.5 rounded border text-xs transition-colors ${
-              filters.priorities.includes(p)
-                ? PRIORITY_COLOR[p]
-                : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
-            }`}
-          >
-            {PRIORITY_LABEL[p]}
-          </button>
-        ))}
-      </div>
+      {/* 미션 드롭다운 */}
+      {missions.length > 0 && (
+        <FilterDropdown
+          label="미션"
+          count={filters.missionIds.length}
+          activeColor="bg-violet-100 text-violet-700 border-violet-300"
+        >
+          {missions.map((m) => (
+            <DropdownItem
+              key={m.id}
+              label={m.title}
+              checked={filters.missionIds.includes(m.id)}
+              onChange={() => onChange({ missionIds: toggle(filters.missionIds, m.id), epicIds: [] })}
+            />
+          ))}
+        </FilterDropdown>
+      )}
 
-      {/* Reset */}
+      {/* 에픽 드롭다운 */}
+      {visibleEpics.length > 0 && (
+        <FilterDropdown
+          label="에픽"
+          count={filters.epicIds.length}
+          activeColor="bg-sky-100 text-sky-700 border-sky-300"
+        >
+          {visibleEpics.map((e) => (
+            <DropdownItem
+              key={e.id}
+              label={e.title}
+              checked={filters.epicIds.includes(e.id)}
+              onChange={() => onChange({ epicIds: toggle(filters.epicIds, e.id) })}
+            />
+          ))}
+        </FilterDropdown>
+      )}
+
+      <div className="h-4 w-px bg-slate-200" />
+
+      {/* 우선순위 칩 */}
+      {PRIORITIES.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onChange({ priorities: toggle(filters.priorities, p) })}
+          className={`px-2 py-0.5 rounded-full border text-xs transition-colors ${
+            filters.priorities.includes(p)
+              ? PRIORITY_ACTIVE[p]
+              : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          {PRIORITY_LABEL[p]}
+        </button>
+      ))}
+
+      {/* 초기화 */}
       {hasActiveFilters && (
         <button
+          type="button"
           onClick={onReset}
-          className="text-xs text-indigo-600 hover:text-indigo-800 underline"
+          className="text-xs text-slate-400 hover:text-red-500 transition-colors"
         >
-          필터 초기화
+          ✕ 초기화
         </button>
       )}
     </div>

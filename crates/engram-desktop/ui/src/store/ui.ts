@@ -6,7 +6,8 @@ type View = 'board' | 'issues' | 'mcp' | 'history' | 'settings' | 'missions';
 export interface BoardFilters {
   projects: string[];          // empty = all projects
   priorities: IssuePriority[]; // empty = all priorities
-  // TODO(M6): epicIds filter — UI control + applyFilters logic needed
+  missionIds: number[];        // empty = all missions
+  epicIds: number[];           // empty = all epics
 }
 
 interface UIState {
@@ -30,6 +31,8 @@ interface UIState {
 const DEFAULT_FILTERS: BoardFilters = {
   projects: [],
   priorities: [],
+  missionIds: [],
+  epicIds: [],
 };
 
 export const useUIStore = create<UIState>((set) => ({
