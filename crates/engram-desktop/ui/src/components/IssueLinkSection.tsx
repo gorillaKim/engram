@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { issueLinks, issueLink, issueUnlink, issueList } from '../ipc/invoke';
 import type { Issue, IssueLink, LinkType } from '../ipc/types';
+import { useUIStore } from '../store/ui';
 
 const LINK_TYPE_LABEL: Record<LinkType, string> = {
   blocks: '차단함',
@@ -18,10 +19,13 @@ const LINK_TYPE_COLOR: Record<LinkType, string> = {
 
 interface Props {
   issueId: number;
+  /** 연결된 이슈를 IssueDetail 패널에 열 때 selectProject 호출에 사용. */
+  projectKey?: string;
 }
 
-export function IssueLinkSection({ issueId }: Props) {
+export function IssueLinkSection({ issueId, projectKey }: Props) {
   const qc = useQueryClient();
+  const { selectIssue, selectProject } = useUIStore();
   const [showAdd, setShowAdd] = useState(false);
   const [targetId, setTargetId] = useState<number | null>(null);
   const [linkType, setLinkType] = useState<LinkType>('blocks');
@@ -31,11 +35,11 @@ export function IssueLinkSection({ issueId }: Props) {
     queryFn: () => issueLinks(issueId),
   });
 
-  // 검색용 — 모든 이슈 (cross-project 연결 허용).
+  // 검색용 + 제목 표시용 — 모든 이슈 (cross-project 연결 허용).
+  // enabled 조건 없이 항상 fetch → issueMap 이 항상 채워져 제목 표시 가능.
   const { data: allIssues = [] } = useQuery<Issue[]>({
     queryKey: ['issueList', 'all-for-link'],
     queryFn: () => issueList({}),
-    enabled: showAdd,
     staleTime: 30_000,
   });
 
@@ -144,6 +148,10 @@ export function IssueLinkSection({ issueId }: Props) {
               direction="outgoing"
               other={issueMap.get(link.target_id)}
               onRemove={() => removeLink.mutate(link.id)}
+              onOpen={() => {
+                selectProject(projectKey ?? null);
+                selectIssue(link.target_id);
+              }}
             />
           ))}
         </div>
@@ -159,6 +167,10 @@ export function IssueLinkSection({ issueId }: Props) {
               direction="incoming"
               other={issueMap.get(link.source_id)}
               onRemove={() => removeLink.mutate(link.id)}
+              onOpen={() => {
+                selectProject(projectKey ?? null);
+                selectIssue(link.source_id);
+              }}
             />
           ))}
         </div>
@@ -296,31 +308,42 @@ function IssueSearchSelect({
 // ── Link row ────────────────────────────────────────────────────────────────
 
 function LinkRow({
-  link, direction, other, onRemove,
+  link, direction, other, onRemove, onOpen,
 }: {
   link: IssueLink;
   direction: 'outgoing' | 'incoming';
   other?: Issue;
   onRemove: () => void;
+  onOpen: () => void;
 }) {
   const otherId = direction === 'outgoing' ? link.target_id : link.source_id;
   const arrow = direction === 'outgoing' ? '→' : '←';
   return (
     <div className={`flex items-center justify-between text-xs px-2 py-1 border rounded ${LINK_TYPE_COLOR[link.link_type]}`}>
-      <span className="flex items-baseline gap-1.5 min-w-0">
+      <span className="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
         <span className="shrink-0">{arrow}</span>
         <span className="font-semibold shrink-0">{LINK_TYPE_LABEL[link.link_type]}</span>
         <span className="shrink-0">#{otherId}</span>
         {other && <span className="truncate opacity-75">{other.title}</span>}
       </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="text-slate-400 hover:text-red-600 ml-2 leading-none shrink-0"
-        title="연결 해제"
-      >
-        ×
-      </button>
+      <span className="flex items-center gap-1 ml-2 shrink-0">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-slate-400 hover:text-indigo-600 leading-none px-0.5"
+          title="이 이슈 열기"
+        >
+          ↗
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-slate-400 hover:text-red-600 leading-none"
+          title="연결 해제"
+        >
+          ×
+        </button>
+      </span>
     </div>
   );
 }
