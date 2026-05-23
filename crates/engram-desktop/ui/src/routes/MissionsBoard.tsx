@@ -48,6 +48,8 @@ type MissionNodeData = {
   label: string;
   progress_rate: number;
   status: string;
+  missionData: Mission;
+  onDoubleClickMission: (mission: Mission) => void;
   [key: string]: unknown;
 };
 
@@ -77,7 +79,11 @@ type IssueFlowNode = Node<IssueNodeData, 'issue'>;
 
 function MissionNodeComponent({ data }: NodeProps<MissionFlowNode>) {
   return (
-    <div className="relative w-52 rounded-xl border-2 border-indigo-400 bg-white shadow-lg p-3 flex flex-col gap-2">
+    <div
+      className="relative w-52 rounded-xl border-2 border-indigo-400 bg-white shadow-lg p-3 flex flex-col gap-2 cursor-pointer hover:border-indigo-600 hover:shadow-xl transition-all"
+      onDoubleClick={() => data.onDoubleClickMission(data.missionData)}
+      title="더블클릭으로 수정"
+    >
       <Handle type="source" position={Position.Right} style={{ background: '#a78bfa', border: 'none' }} />
       <div className="flex items-center justify-between gap-1">
         <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Mission</span>
@@ -169,6 +175,7 @@ function buildGraph(
   tree: MissionTree,
   onDoubleClickIssue: (issueId: number) => void,
   onDoubleClickEpic: (epic: Epic) => void,
+  onDoubleClickMission: (mission: Mission) => void,
 ): {
   nodes: Node[];
   edges: Edge[];
@@ -208,6 +215,8 @@ function buildGraph(
       label: tree.mission.title,
       progress_rate: progressRate,
       status: tree.mission.status,
+      missionData: tree.mission,
+      onDoubleClickMission,
     },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
@@ -277,13 +286,14 @@ function buildGraph(
 
 // ── FlowCanvas ────────────────────────────────────────────────────────────────
 
-function FlowCanvas({ tree, onIssueDoubleClick, onEpicDoubleClick }: {
+function FlowCanvas({ tree, onIssueDoubleClick, onEpicDoubleClick, onMissionDoubleClick }: {
   tree: MissionTree;
   onIssueDoubleClick: (issueId: number) => void;
   onEpicDoubleClick: (epic: Epic) => void;
+  onMissionDoubleClick: (mission: Mission) => void;
 }) {
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => buildGraph(tree, onIssueDoubleClick, onEpicDoubleClick),
+    () => buildGraph(tree, onIssueDoubleClick, onEpicDoubleClick, onMissionDoubleClick),
     // stable callbacks from useCallback in parent
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tree],
@@ -345,6 +355,11 @@ export function MissionsBoard() {
 
   const handleEpicDoubleClick = useCallback((epic: Epic) => {
     setEditingEpic(epic);
+  }, []);
+
+  const handleMissionDoubleClick = useCallback((mission: Mission) => {
+    setEditingMission(mission);
+    setModalOpen(true);
   }, []);
 
   const reloadMissions = useCallback(() => {
@@ -471,7 +486,7 @@ export function MissionsBoard() {
         )}
         {tree && !treeLoading && (
           <div className="w-full h-full">
-            <FlowCanvas key={tree.mission.id} tree={tree} onIssueDoubleClick={handleIssueDoubleClick} onEpicDoubleClick={handleEpicDoubleClick} />
+            <FlowCanvas key={tree.mission.id} tree={tree} onIssueDoubleClick={handleIssueDoubleClick} onEpicDoubleClick={handleEpicDoubleClick} onMissionDoubleClick={handleMissionDoubleClick} />
           </div>
         )}
         {!tree && !treeLoading && (
