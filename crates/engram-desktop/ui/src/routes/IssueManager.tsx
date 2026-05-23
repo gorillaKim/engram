@@ -15,6 +15,7 @@ import { CreateIssueModal } from '../components/CreateIssueModal';
 import { EditEpicModal } from '../components/EditEpicModal';
 import { EditSprintModal } from '../components/EditSprintModal';
 import { ConfirmCompleteSprintModal } from '../components/ConfirmCompleteSprintModal';
+import { MissionModal } from '../components/MissionModal';
 import { PriorityBadge } from '../components/PriorityBadge';
 import type { Sprint, Epic, Issue, SprintStatus, Mission } from '../ipc/types';
 import { clampSidebarWidth } from '../utils/sidebarHelper';
@@ -447,6 +448,12 @@ export function IssueManager() {
   // 미션 필터 상태 — 비어 있으면 전체 선택
   const [selectedMissionIds, setSelectedMissionIds] = useState<number[]>([]);
 
+  // 에픽 필터 상태 — 비어 있으면 전체 선택
+  const [selectedEpicIds, setSelectedEpicIds] = useState<number[]>([]);
+
+  // 필터 패널 접기/펼치기 — 기본 닫힘
+  const [filterOpen, setFilterOpen] = useState(false);
+
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -471,6 +478,7 @@ export function IssueManager() {
   }, [sidebarWidth]);
 
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
+  const [missionModalOpen, setMissionModalOpen] = useState(false);
   const [epicModalOpen, setEpicModalOpen] = useState(false);
   const [issueModalEpicId, setIssueModalEpicId] = useState<number | null>(null);
   const [editEpic, setEditEpic] = useState<Epic | null>(null);
@@ -518,13 +526,10 @@ export function IssueManager() {
     refetchInterval: 30_000,
   });
 
-  // 현재 선택된 스프린트의 미션 목록.
+  // 전체 활성 미션 목록 (sprint_id 무관).
   const { data: missions = [] } = useQuery<Mission[]>({
-    queryKey: ['missionList', selectedSprintId],
-    queryFn: () => isBacklog || selectedSprintId == null
-      ? Promise.resolve([])
-      : missionList(selectedSprintId),
-    enabled: !isBacklog && selectedSprintId != null,
+    queryKey: ['missionList'],
+    queryFn: () => missionList(null, false),
   });
 
   // 이슈를 epic_id 별로 그룹핑.
@@ -544,11 +549,13 @@ export function IssueManager() {
     return result;
   }, [issuesInView, allEpics, hideFinished]);
 
-  // 스프린트 전환 시 검색어, 선택 이슈, 미션 필터 초기화
+  // 스프린트 전환 시 검색어, 선택 이슈, 미션/에픽 필터 초기화 + 필터 패널 닫기
   useEffect(() => {
     setSearchQuery('');
     setSelectedIssueIds([]);
     setSelectedMissionIds([]);
+    setSelectedEpicIds([]);
+    setFilterOpen(false);
   }, [selectedSprintId]);
 
   // 미션 필터 적용 — selectedMissionIds가 비어 있으면 전체, 있으면 해당 mission_id 에픽만.
@@ -559,12 +566,23 @@ export function IssueManager() {
     );
   }, [grouped, selectedMissionIds]);
 
+  // 에픽 필터 적용
+  const epicFilteredGrouped = useMemo(() => {
+    if (selectedEpicIds.length === 0) return missionFilteredGrouped;
+    return missionFilteredGrouped.filter(({ epic }) => selectedEpicIds.includes(epic.id));
+  }, [missionFilteredGrouped, selectedEpicIds]);
+
+  // 미션 선택 변경 시 에픽 필터 초기화
+  useEffect(() => {
+    setSelectedEpicIds([]);
+  }, [selectedMissionIds]);
+
   const filteredGrouped = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
-    if (!q) return missionFilteredGrouped;
+    if (!q) return epicFilteredGrouped;
     const isIdSearch = q.startsWith('#');
     const targetId = isIdSearch ? parseInt(q.slice(1)) : NaN;
-    return missionFilteredGrouped
+    return epicFilteredGrouped
       .map(({ epic, issues }) => ({
         epic,
         issues: issues.filter((i) =>
@@ -572,7 +590,7 @@ export function IssueManager() {
         ),
       }))
       .filter(({ issues }) => issues.length > 0);
-  }, [missionFilteredGrouped, debouncedQuery]);
+  }, [epicFilteredGrouped, debouncedQuery]);
 
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
@@ -645,35 +663,92 @@ export function IssueManager() {
                 onDelete={() => deleteSprint.mutate(sprint.id)}
                 onEdit={() => setEditSprint(sprint)}
               />
-              {/* 선택된 스프린트의 미션 체크박스 */}
-              {sprint.id === selectedSprintId && missions.length > 0 && (
-                <div className="pl-4 mb-2 space-y-1">
-                  <label className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-                    <input
-                      type="checkbox"
-                      checked={selectedMissionIds.length === 0}
-                      onChange={() => setSelectedMissionIds([])}
-                      className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3 h-3"
-                    />
-                    <span className="text-slate-500 font-medium">전체</span>
-                  </label>
-                  {missions.map((m) => (
-                    <label key={m.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedMissionIds.includes(m.id)}
-                        onChange={() => {
-                          setSelectedMissionIds((prev) =>
-                            prev.includes(m.id)
-                              ? prev.filter((id) => id !== m.id)
-                              : [...prev, m.id]
-                          );
-                        }}
-                        className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3 h-3"
-                      />
-                      <span className="truncate text-slate-600">{m.title}</span>
-                    </label>
-                  ))}
+              {/* 미션 + 에픽 필터 (콜랩스) */}
+              {sprint.id === selectedSprintId && (missions.length > 0 || missionFilteredGrouped.length > 0) && (
+                <div className="mx-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setFilterOpen((v) => !v)}
+                    className="w-full flex items-center justify-between px-2 py-1 text-[11px] text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>필터</span>
+                      {(selectedMissionIds.length > 0 || selectedEpicIds.length > 0) && (
+                        <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1.5 font-bold">
+                          {selectedMissionIds.length + selectedEpicIds.length}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[9px]">{filterOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {filterOpen && (
+                    <div className="mt-1 px-2 py-2 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2">
+                      {missions.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">미션</p>
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedMissionIds([])}
+                              className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                                selectedMissionIds.length === 0
+                                  ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                  : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                              }`}
+                            >
+                              전체
+                            </button>
+                            {missions.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                title={m.title}
+                                onClick={() =>
+                                  setSelectedMissionIds((prev) =>
+                                    prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                                  )
+                                }
+                                className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors max-w-[120px] truncate ${
+                                  selectedMissionIds.includes(m.id)
+                                    ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                                }`}
+                              >
+                                {m.title}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {missionFilteredGrouped.length > 0 && (
+                        <div>
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽</p>
+                          <div className="flex flex-wrap gap-1">
+                            {missionFilteredGrouped.map(({ epic }) => (
+                              <button
+                                key={epic.id}
+                                type="button"
+                                title={epic.title}
+                                onClick={() =>
+                                  setSelectedEpicIds((prev) =>
+                                    prev.includes(epic.id) ? prev.filter((id) => id !== epic.id) : [...prev, epic.id]
+                                  )
+                                }
+                                className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors max-w-[130px] truncate ${
+                                  selectedEpicIds.includes(epic.id)
+                                    ? 'bg-indigo-100 text-indigo-700 border-indigo-300 font-medium'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-200'
+                                }`}
+                              >
+                                {epic.title}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -704,34 +779,90 @@ export function IssueManager() {
                         onDelete={() => deleteSprint.mutate(sprint.id)}
                         onEdit={() => setEditSprint(sprint)}
                       />
-                      {sprint.id === selectedSprintId && missions.length > 0 && (
-                        <div className="pl-4 mb-2 space-y-1">
-                          <label className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-                            <input
-                              type="checkbox"
-                              checked={selectedMissionIds.length === 0}
-                              onChange={() => setSelectedMissionIds([])}
-                              className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3 h-3"
-                            />
-                            <span className="text-slate-500 font-medium">전체</span>
-                          </label>
-                          {missions.map((m) => (
-                            <label key={m.id} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-                              <input
-                                type="checkbox"
-                                checked={selectedMissionIds.includes(m.id)}
-                                onChange={() => {
-                                  setSelectedMissionIds((prev) =>
-                                    prev.includes(m.id)
-                                      ? prev.filter((id) => id !== m.id)
-                                      : [...prev, m.id]
-                                  );
-                                }}
-                                className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3 h-3"
-                              />
-                              <span className="truncate text-slate-600">{m.title}</span>
-                            </label>
-                          ))}
+                      {sprint.id === selectedSprintId && (missions.length > 0 || missionFilteredGrouped.length > 0) && (
+                        <div className="mx-2 mb-2">
+                          <button
+                            type="button"
+                            onClick={() => setFilterOpen((v) => !v)}
+                            className="w-full flex items-center justify-between px-2 py-1 text-[11px] text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <span>필터</span>
+                              {(selectedMissionIds.length > 0 || selectedEpicIds.length > 0) && (
+                                <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1.5 font-bold">
+                                  {selectedMissionIds.length + selectedEpicIds.length}
+                                </span>
+                              )}
+                            </span>
+                            <span className="text-[9px]">{filterOpen ? '▲' : '▼'}</span>
+                          </button>
+                          {filterOpen && (
+                            <div className="mt-1 px-2 py-2 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2">
+                              {missions.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">미션</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedMissionIds([])}
+                                      className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                                        selectedMissionIds.length === 0
+                                          ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                          : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                                      }`}
+                                    >
+                                      전체
+                                    </button>
+                                    {missions.map((m) => (
+                                      <button
+                                        key={m.id}
+                                        type="button"
+                                        title={m.title}
+                                        onClick={() =>
+                                          setSelectedMissionIds((prev) =>
+                                            prev.includes(m.id) ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                                          )
+                                        }
+                                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors max-w-[120px] truncate ${
+                                          selectedMissionIds.includes(m.id)
+                                            ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                            : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                                        }`}
+                                      >
+                                        {m.title}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {missionFilteredGrouped.length > 0 && (
+                                <div>
+                                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    {missionFilteredGrouped.map(({ epic }) => (
+                                      <button
+                                        key={epic.id}
+                                        type="button"
+                                        title={epic.title}
+                                        onClick={() =>
+                                          setSelectedEpicIds((prev) =>
+                                            prev.includes(epic.id) ? prev.filter((id) => id !== epic.id) : [...prev, epic.id]
+                                          )
+                                        }
+                                        className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors max-w-[130px] truncate ${
+                                          selectedEpicIds.includes(epic.id)
+                                            ? 'bg-indigo-100 text-indigo-700 border-indigo-300 font-medium'
+                                            : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-200'
+                                        }`}
+                                      >
+                                        {epic.title}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -811,6 +942,13 @@ export function IssueManager() {
             />
             <button
               type="button"
+              onClick={() => setMissionModalOpen(true)}
+              className="text-sm px-3 py-1.5 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-md"
+            >
+              + 새 미션
+            </button>
+            <button
+              type="button"
               onClick={() => setEpicModalOpen(true)}
               className="text-sm px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md"
             >
@@ -884,6 +1022,10 @@ export function IssueManager() {
       </div>
 
       {/* Modals */}
+      <MissionModal
+        open={missionModalOpen}
+        onClose={() => { setMissionModalOpen(false); }}
+      />
       <CreateSprintModal
         open={sprintModalOpen}
         onClose={() => setSprintModalOpen(false)}
