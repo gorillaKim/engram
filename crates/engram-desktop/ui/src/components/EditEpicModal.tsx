@@ -83,29 +83,38 @@ export function EditEpicModal({ epic, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-700 rounded-lg p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold text-white mb-4">에픽 수정</h3>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-800">에픽 수정</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+        </div>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽 이름 *</label>
+        <div className="flex flex-col gap-4">
+          {/* Title */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">
+              에픽 이름 <span className="text-red-400">*</span>
+            </label>
             <input
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+              placeholder="에픽 이름"
+              className="text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">상태</label>
+          {/* Status */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">상태</label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as EpicStatus)}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+              className="text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
             >
               {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -113,26 +122,29 @@ export function EditEpicModal({ epic, onClose }: Props) {
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">설명</label>
+          {/* Description */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">설명</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="에픽 설명 (선택)"
               rows={3}
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-blue-500"
+              className="text-sm border border-slate-200 rounded-md px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
             />
           </div>
 
-          <p className="text-xs text-slate-500">프로젝트 키: {epic.project_key} · #{epic.id}</p>
+          {/* Meta */}
+          <p className="text-xs text-slate-400">프로젝트: {epic.project_key} · #{epic.id}</p>
         </div>
 
-        <div className="flex items-center justify-between mt-6">
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-1 border-t border-slate-100">
           <button
             type="button"
             onClick={handleDelete}
             disabled={remove.isPending}
-            className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg disabled:opacity-50"
-            title="에픽과 하위 이슈/태스크/노트를 모두 삭제합니다 (비가역)"
+            className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
           >
             {remove.isPending ? '삭제 중…' : '에픽 삭제'}
           </button>
@@ -140,7 +152,7 @@ export function EditEpicModal({ epic, onClose }: Props) {
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg"
+              className="px-4 py-2 text-sm rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
             >
               취소
             </button>
@@ -148,7 +160,7 @@ export function EditEpicModal({ epic, onClose }: Props) {
               type="button"
               disabled={!canSubmit || update.isPending}
               onClick={() => update.mutate()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg disabled:opacity-50"
+              className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 font-medium"
             >
               {update.isPending ? '저장 중…' : '저장'}
             </button>
