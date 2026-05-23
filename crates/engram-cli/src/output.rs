@@ -67,9 +67,9 @@ pub fn print_error(err: &anyhow::Error, fmt: OutputFormat) {
 pub fn classify_error(err: &anyhow::Error) -> (&'static str, String) {
     if let Some(e) = err.downcast_ref::<engram_core::Error>() {
         match e {
-            engram_core::Error::Validation(m)        => ("validation", m.clone()),
-            engram_core::Error::NotFound(m)          => ("not_found", m.clone()),
-            engram_core::Error::InvalidTransition(m) => ("invalid_transition", m.clone()),
+            engram_core::Error::Validation(m) => ("validation", m.clone()),
+            engram_core::Error::NotFound(m)   => ("not_found", m.clone()),
+            engram_core::Error::Conflict(m)   => ("conflict", m.clone()),
             engram_core::Error::Db(_) | engram_core::Error::Migration(_) => {
                 ("internal", e.to_string())
             }
@@ -81,14 +81,14 @@ pub fn classify_error(err: &anyhow::Error) -> (&'static str, String) {
 
 /// ADR-0010 의 exit code 매핑.
 ///   0 = ok (호출 측이 분기), 1 = 기타 (Db/Migration/그외 anyhow),
-///   2 = Validation, 3 = NotFound, 4 = InvalidTransition (CAS 거부 포함).
+///   2 = Validation, 3 = NotFound, 4 = Conflict (CAS 거부 포함).
 ///   clap 파싱 실패는 clap 기본(2) 사용.
 pub fn error_exit_code(err: &anyhow::Error) -> i32 {
     if let Some(e) = err.downcast_ref::<engram_core::Error>() {
         match e {
-            engram_core::Error::Validation(_)        => 2,
-            engram_core::Error::NotFound(_)          => 3,
-            engram_core::Error::InvalidTransition(_) => 4,
+            engram_core::Error::Validation(_) => 2,
+            engram_core::Error::NotFound(_)   => 3,
+            engram_core::Error::Conflict(_)   => 4,
             engram_core::Error::Db(_) | engram_core::Error::Migration(_) => 1,
         }
     } else {
@@ -118,10 +118,10 @@ mod tests {
     }
 
     #[test]
-    fn test_classify_invalid_transition() {
-        let e: anyhow::Error = engram_core::Error::InvalidTransition("cas refused".into()).into();
+    fn test_classify_conflict() {
+        let e: anyhow::Error = engram_core::Error::Conflict("cas refused".into()).into();
         let (code, _) = classify_error(&e);
-        assert_eq!(code, "invalid_transition");
+        assert_eq!(code, "conflict");
         assert_eq!(error_exit_code(&e), 4);
     }
 

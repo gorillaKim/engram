@@ -99,10 +99,20 @@ impl Db {
     }
 
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
+        // Demo gate: finished/cancelled 전이는 사용자(agent_id="user")만 가능하다.
+        // 에이전트가 규칙 파일 없이 호출하더라도 repository layer에서 코드 레벨로 막힌다.
+        if matches!(input.status.as_ref(), Some(IssueStatus::Finished) | Some(IssueStatus::Cancelled))
+            && changed_by != "user"
+        {
+            return Err(Error::Validation(format!(
+                "finished/cancelled 전이는 사용자(agent_id=\"user\")만 가능합니다 (현재 호출자: {}). agent_demo_gate 규칙 참조",
+                changed_by
+            )));
+        }
         if let Some(ref new_status) = input.status {
             let current = self.issue_get(id, false).await?;
             if !current.status.can_transition_to(new_status) {
-                return Err(crate::Error::InvalidTransition(
+                return Err(crate::Error::Conflict(
                     format!("{:?} → {:?}", current.status, new_status)
                 ));
             }
@@ -111,7 +121,7 @@ impl Db {
                 let blockers = self.active_blockers_for(id).await?;
                 if !blockers.is_empty() {
                     let list = blockers.iter().map(|b| format!("#{}", b)).collect::<Vec<_>>().join(", ");
-                    return Err(crate::Error::InvalidTransition(format!(
+                    return Err(crate::Error::Conflict(format!(
                         "이슈 #{}은(는) 블로킹 이슈 [{}]이(가) demo 또는 finished 상태가 될 때까지 작업이 불가합니다.",
                         id, list
                     )));
@@ -223,7 +233,7 @@ impl Db {
         let blockers = self.active_blockers_for(id).await?;
         if !blockers.is_empty() {
             let list = blockers.iter().map(|b| format!("#{}", b)).collect::<Vec<_>>().join(", ");
-            return Err(crate::Error::InvalidTransition(format!(
+            return Err(crate::Error::Conflict(format!(
                 "이슈 #{}은(는) 블로킹 이슈 [{}]이(가) demo 또는 finished 상태가 될 때까지 작업이 불가합니다.",
                 id, list
             )));
@@ -243,7 +253,7 @@ impl Db {
         .await?;
 
         if result.rows_affected() == 0 {
-            return Err(Error::Validation(format!(
+            return Err(Error::Conflict(format!(
                 "issue:{id} is already held by another agent (current: status={:?}, assigned_agent={:?})",
                 current.status, current.assigned_agent
             )));
@@ -277,7 +287,7 @@ impl Db {
         if !force {
             if let Some(holder) = current.assigned_agent.as_deref() {
                 if holder != agent_id {
-                    return Err(Error::Validation(format!(
+                    return Err(Error::Conflict(format!(
                         "issue:{id} is held by '{holder}', cannot be released by '{agent_id}' (use force=true to override)"
                     )));
                 }

@@ -146,10 +146,10 @@ mod tests {
         let b = make_issue(&db, sprint_id, epic_id, "B").await;
         db.issue_link(a, b, LinkType::Blocks).await.unwrap();
 
-        // A를 finished로 전환 (required → ready → working → finished)
+        // A를 finished로 전환 (required → ready → working → finished, 사용자 권한으로)
         db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
         db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "agent").await.unwrap();
-        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() }, "agent").await.unwrap();
+        db.issue_update(a, UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() }, "user").await.unwrap();
 
         let graph = db.blocked_issues_graph("p").await.unwrap();
         assert!(graph.chains.is_empty(), "finished blocker는 체인에 포함 안 됨");

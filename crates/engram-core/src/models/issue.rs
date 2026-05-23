@@ -35,10 +35,10 @@ pub enum IssueStatus {
 impl IssueStatus {
     /// 사용자 / Agent 모두 임의의 상태로 자유롭게 전이할 수 있다.
     /// 권장 흐름은 required → ready → working → (demo →) finished 지만
-    /// 칸반 UX 에서 카드를 양방향으로 옮길 수 있어야 하기 때문에 가드를 두지 않는다.
+    /// 칸반 UX 에서 카드를 양방향으로 옮길 수 있어야 하기 때문에 여기서는 가드를 두지 않는다.
     ///
-    /// Agent 가 demo → finished / *→ cancelled 를 호출하지 못하게 막는 책임은
-    /// `.claude/rules/agent-demo-gate.md` (워커 에이전트 프롬프트) 가 진다 — 코드 강제 없음.
+    /// **단, `finished` / `cancelled` 전이는 repository layer(`issue_update`)에서
+    /// `changed_by == "user"` 일 때만 허용한다** — agent_demo_gate 코드 강제 참조.
     pub fn can_transition_to(&self, _next: &IssueStatus) -> bool {
         true
     }
