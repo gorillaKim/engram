@@ -56,10 +56,6 @@ pub async fn dispatch(
         "epic_list"    => epic::list(db, args).await,
         "epic_update"       => epic::update(db, args).await,
         "epic_delete"       => epic::delete(db, args).await,
-        // 백로그 / 스프린트 이동 헬퍼 (이슈가 sprint_id 를 직접 보유하는 신모델에서는
-        //   epic 단위 헬퍼는 "에픽 안의 모든 이슈를 옮기는" 편의 shim 으로 동작한다)
-        "epic_list_backlog" => epic::list_backlog(db, args).await,
-        "epic_set_sprint"   => epic::set_sprint(db, args).await,
         // Issue
         "issue_create" => issue::create(db, args).await,
         "issue_get"    => issue::get(db, args).await,

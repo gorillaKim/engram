@@ -29,21 +29,9 @@ pub async fn run(args: HookArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     }
 }
 
-async fn install(fmt: OutputFormat) -> anyhow::Result<()> {
-    let home = std::env::var("HOME")?;
-    let settings_path = format!("{home}/.claude/settings.json");
-
-    // settings.json 읽기 (없으면 빈 객체)
-    let content = tokio::fs::read_to_string(&settings_path)
-        .await
-        .unwrap_or_else(|_| "{}".to_string());
-
-    let mut settings: serde_json::Value = serde_json::from_str(&content)?;
-
-    // hooks 섹션 추가
-    let hooks = serde_json::json!({
-        "PreToolUse": [{
-            "matcher": "Bash",
+pub fn build_hooks_value() -> serde_json::Value {
+    serde_json::json!({
+        "SessionStart": [{
             "hooks": [{
                 "type": "command",
                 "command": "engram snapshot-text"
@@ -55,9 +43,36 @@ async fn install(fmt: OutputFormat) -> anyhow::Result<()> {
                 "command": "engram hook post-session-check"
             }]
         }]
-    });
+    })
+}
 
-    settings["hooks"] = hooks;
+async fn install(fmt: OutputFormat) -> anyhow::Result<()> {
+    let home = std::env::var("HOME")?;
+    let settings_path = format!("{home}/.claude/settings.json");
+
+    // settings.json 읽기 (없으면 빈 객체)
+    let content = tokio::fs::read_to_string(&settings_path)
+        .await
+        .unwrap_or_else(|_| "{}".to_string());
+
+    let mut settings: serde_json::Value = serde_json::from_str(&content)?;
+
+    // 기존 PreToolUse 중 Bash 매처 항목 제거 (이전 버전 마이그레이션)
+    if let Some(hooks) = settings["hooks"].as_object_mut() {
+        if let Some(pre_tool_use) = hooks.get_mut("PreToolUse") {
+            if let Some(arr) = pre_tool_use.as_array_mut() {
+                arr.retain(|entry| {
+                    entry.get("matcher")
+                        .and_then(|m| m.as_str())
+                        .map(|m| m != "Bash")
+                        .unwrap_or(true)
+                });
+            }
+        }
+    }
+
+    // hooks 섹션 추가
+    settings["hooks"] = build_hooks_value();
 
     tokio::fs::write(&settings_path, serde_json::to_string_pretty(&settings)?).await?;
 
@@ -129,6 +144,14 @@ mod tests {
             }
             _ => panic!("PostSessionCheck 변형이 파싱되어야 함"),
         }
+    }
+
+    #[test]
+    fn test_build_hooks_value_session_start() {
+        let v = build_hooks_value();
+        assert!(v.get("SessionStart").is_some(), "SessionStart 키가 있어야 함");
+        assert!(v.get("PreToolUse").is_none(), "PreToolUse 키가 없어야 함");
+        assert!(v["SessionStart"][0].get("matcher").is_none(), "SessionStart 엔트리에 matcher 필드 없어야 함");
     }
 }
 

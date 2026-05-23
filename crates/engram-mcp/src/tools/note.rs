@@ -34,16 +34,16 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "note_get", "description": "노트 상세를 조회합니다.",
-            "inputSchema": { "type": "object", "required": ["note_id"],
+            "inputSchema": { "type": "object", "required": ["id"],
                 "properties": {
-                    "note_id": { "type": "integer" },
+                    "id": { "type": "integer" },
                     "compact": { "type": "boolean", "description": "true인 경우 detail 필드를 NULL로 반환하여 대역폭 절약" }
                 }
             }
         }),
         json!({ "name": "note_resolve", "description": "노트를 해결됨으로 표시합니다. 질문성 코멘트에 답변 후 원본 질문 노트를 종결할 때 사용하세요.",
-            "inputSchema": { "type": "object", "required": ["note_id"],
-                "properties": { "note_id": { "type": "integer" } }
+            "inputSchema": { "type": "object", "required": ["id"],
+                "properties": { "id": { "type": "integer" } }
             }
         }),
         json!({ "name": "note_add_bulk",
@@ -124,13 +124,13 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["note_id"].as_i64().unwrap_or(0);
+    let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
     let compact = args["compact"].as_bool().unwrap_or(false);
     Ok(serde_json::to_value(db.note_get(id, compact).await?).unwrap())
 }
 
 pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["note_id"].as_i64().unwrap_or(0);
+    let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     Ok(serde_json::to_value(db.note_resolve(id, agent_id).await?).unwrap())
 }

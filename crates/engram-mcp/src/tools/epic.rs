@@ -107,22 +107,3 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     }
     Ok(result)
 }
-
-pub async fn list_backlog(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let project_key = args["project_key"].as_str();
-    let include_completed = args["include_completed"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.epic_list(project_key, include_completed).await?).unwrap())
-}
-
-pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    use engram_core::models::issue::IssueFilter;
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
-    let sprint_id = args["sprint_id"].as_i64();
-    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
-    let issues = db.issue_list(IssueFilter { epic_id: Some(id), ..Default::default() }).await?;
-    for issue in &issues {
-        db.issue_set_sprint(issue.id, sprint_id, agent_id).await?;
-    }
-    Ok(serde_json::to_value(db.epic_get(id).await?).unwrap())
-}
