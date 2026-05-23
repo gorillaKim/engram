@@ -6,6 +6,7 @@ import { History } from './routes/History';
 import { IssueDetail } from './routes/IssueDetail';
 import { IssueManager } from './routes/IssueManager';
 import { McpManager } from './routes/McpManager';
+import { MissionsBoard } from './routes/MissionsBoard';
 import { Settings } from './routes/Settings';
 import { useUIStore } from './store/ui';
 import {
@@ -159,6 +160,16 @@ function AppContent() {
               MCP 서버
             </button>
             <button
+              onClick={() => setView('missions')}
+              className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
+                view === 'missions'
+                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Missions
+            </button>
+            <button
               onClick={() => setView('settings')}
               className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
                 view === 'settings'
@@ -180,6 +191,7 @@ function AppContent() {
         {view === 'history' && <History />}
         {view === 'issues' && <IssueManager />}
         {view === 'mcp' && <McpManager />}
+        {view === 'missions' && <MissionsBoard />}
         {view === 'settings' && <Settings />}
       </main>
       {selectedIssueId != null && <IssueDetail />}
