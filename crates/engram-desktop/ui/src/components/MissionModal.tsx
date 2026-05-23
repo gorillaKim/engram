@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { missionCreate, missionUpdate, sprintList } from '../ipc/invoke';
+import { missionCreate, missionUpdate, missionDelete, sprintList } from '../ipc/invoke';
 import type { Mission, MissionStatus } from '../ipc/types';
 
 interface Props {
@@ -78,7 +78,26 @@ export function MissionModal({ open, onClose, mission }: Props) {
     onError: (err) => toast.error(`수정 실패: ${err}`),
   });
 
-  const isPending = create.isPending || update.isPending;
+  const remove = useMutation({
+    mutationFn: () => missionDelete(mission!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['missionList'] });
+      toast.success('미션이 삭제되었습니다');
+      onClose();
+    },
+    onError: (err) => toast.error(`삭제 실패: ${err}`),
+  });
+
+  const handleDelete = () => {
+    if (!mission) return;
+    const ok = window.confirm(
+      `정말 미션 "${mission.title}" 을 삭제하시겠습니까?\n` +
+      `하위 에픽/이슈 연결이 모두 해제되며 되돌릴 수 없습니다.`,
+    );
+    if (ok) remove.mutate();
+  };
+
+  const isPending = create.isPending || update.isPending || remove.isPending;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,21 +190,33 @@ export function MissionModal({ open, onClose, mission }: Props) {
             />
           </div>
 
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={isPending || !title.trim()}
-              className="flex-1 py-2 text-sm rounded-md bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 font-medium"
-            >
-              {isPending ? (isEdit ? '저장 중…' : '생성 중…') : (isEdit ? '저장' : '생성')}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-            >
-              취소
-            </button>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+            {isEdit ? (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={remove.isPending}
+                className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                {remove.isPending ? '삭제 중…' : '미션 삭제'}
+              </button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={isPending || !title.trim()}
+                className="px-4 py-2 text-sm rounded-md bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 font-medium"
+              >
+                {isPending ? (isEdit ? '저장 중…' : '생성 중…') : (isEdit ? '저장' : '생성')}
+              </button>
+            </div>
           </div>
         </form>
       </div>
