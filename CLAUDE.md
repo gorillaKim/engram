@@ -81,16 +81,14 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 - ✅ Hook 통합 — `engram hook install / uninstall / post-session-check` 동작 검증됨
 - ✅ Phase 2 선행 구현: `my_blocked_issues` (BFS + 사이클), 스코프 팽창 감지, `engram retro` 리포트, SSE transport
 - ✅ Phase 3 Desktop (M0~M5): Tauri v2 칸반보드, Drawer, MCP Supervisor, 트레이+알림, 필터, BlockingGraph
-- 📊 `cargo test --workspace`: **89+ passed / 0 failed** (기존 59 + parity 15 + cli 신규 27)
+- ✅ 에이전트 친화성 개선 (Mission #11): note_id→id 통일, SessionStart hook 수정, Demo Gate 코드 강제, Error::Conflict (exit 4), dead code 제거, Plan 문서 상태 enum 동기화
+- ✅ `session_restore(compact=true)` — N+1→벌크 COUNT 쿼리, 페이로드 70%+ 감소, `engram session restore --compact` CLI 패리티
+- ✅ 삭제 계열 MCP 응답 통일 — `issue_unlink` 응답에 `deleted_id` 추가, 전 도구 `{ ok: true, deleted_id: N }` 준수
+- 📊 `cargo test --workspace`: **263 passed / 0 failed** (기존 258 + P2 compact/delete tests 5)
 
 ### 알려진 한계
 
-- Hook installer 가 `PreToolUse:Bash` 매처로 등록 — 모든 Bash 호출마다 snapshot-text 실행되어 노이즈/토큰 부담. `SessionStart` 매처로 옮기는 게 본래 의도. 별도 트래킹.
-- Plan 문서(`doxus://brain/Ideas/agent/Engram - Implementation Plan.md`) 의 issue/task 상태 enum 명세(`draft/approved/...`)는 현 구현(`required/ready/working/demo/finished/cancelled`)과 다름 (`ce814a2`에서 재설계). Plan 문서가 stale.
 - `note_type` 의 custom_type 컬럼은 미도입 (Phase 2 잔여 항목).
-- ADR-0010 §4 의 exit code 4 = "Conflict (CAS 거부)" 는 `engram_core::Error::Conflict` variant 부재로 현재 `Validation` 으로 표면화 (exit 2). `Error::Conflict` 도입은 별도 이슈.
-- MCP dispatch 분기 47 vs tool_definitions 45 — `epic_list_backlog`, `epic_set_sprint` 가 정의 없이 라우팅만 존재 (MCP 클라이언트에 노출 안 됨). 별도 이슈.
-- MCP `note_get` / `note_resolve` 가 `note_id` 인자명 사용 (다른 도구는 모두 `id`). inputSchema 통일은 별도 이슈.
 
 ## 서브에이전트 / 외부 호출 (CLI fallback)
 
