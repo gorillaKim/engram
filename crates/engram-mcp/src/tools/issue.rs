@@ -241,7 +241,7 @@ pub async fn my_blocked_issues(db: Arc<Db>, args: &Value) -> engram_core::Result
 pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let link_id = args["link_id"].as_i64().unwrap_or(0);
     db.issue_unlink(link_id).await?;
-    Ok(serde_json::json!({ "ok": true }))
+    Ok(serde_json::json!({ "ok": true, "deleted_id": link_id }))
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

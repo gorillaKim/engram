@@ -173,7 +173,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
         IssueCommand::Unlink { link_id } => {
             db.issue_unlink(link_id).await?;
             output::print_value(
-                &serde_json::json!({ "ok": true, "unlinked_id": link_id }),
+                &serde_json::json!({ "ok": true, "deleted_id": link_id }),
                 fmt,
             )?;
         }
