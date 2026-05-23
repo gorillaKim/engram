@@ -91,7 +91,7 @@ async fn test_full_sprint_workflow() {
     }).await.unwrap();
 
     // session_restore — active_epics에 이슈가 포함되어야 함
-    let snapshot = db.session_restore(Some("test-project")).await.unwrap();
+    let snapshot = db.session_restore(Some("test-project"), false).await.unwrap();
     assert!(!snapshot.active_epics.is_empty(), "active_epics 비어있음");
 
     let epic_snap = &snapshot.active_epics[0];
@@ -229,12 +229,12 @@ async fn test_session_restore_filters_by_project() {
     }, "agent").await.unwrap();
 
     // proj-a 조회 → proj-a 에픽만
-    let snap_a = db.session_restore(Some("proj-a")).await.unwrap();
+    let snap_a = db.session_restore(Some("proj-a"), false).await.unwrap();
     assert_eq!(snap_a.active_epics.len(), 1, "proj-a: active_epics는 1개여야 함");
     assert_eq!(snap_a.active_epics[0].epic.project_key, "proj-a");
 
     // proj-b 조회 → proj-b 에픽만
-    let snap_b = db.session_restore(Some("proj-b")).await.unwrap();
+    let snap_b = db.session_restore(Some("proj-b"), false).await.unwrap();
     assert_eq!(snap_b.active_epics.len(), 1, "proj-b: active_epics는 1개여야 함");
     assert_eq!(snap_b.active_epics[0].epic.project_key, "proj-b");
 }
@@ -392,7 +392,7 @@ async fn test_cross_project_blocking() {
     db.issue_update(issue_a.id, UpdateIssueInput {
         status: Some(IssueStatus::Finished),
         ..Default::default()
-    }, "agent").await.unwrap();
+    }, "user").await.unwrap();
 
     // 이제 이슈 B의 blocker가 finished → task_next(proj-b) 태스크 반환
     let next_after = db.task_next(Some("proj-b"), None).await.unwrap();
@@ -437,7 +437,7 @@ async fn test_scope_expansion_warning() {
         }).await.unwrap();
     }
 
-    let snapshot = db.session_restore(Some("test-project")).await.unwrap();
+    let snapshot = db.session_restore(Some("test-project"), false).await.unwrap();
 
     let expansion_warning = snapshot.warnings.iter()
         .any(|w| w.contains("스코프 팽창") || w.contains("agent_discovered") || w.contains("팽창"));
@@ -890,13 +890,13 @@ async fn test_broadcast_caveat_appears_in_session_restore() {
     }).await.unwrap();
 
     // session_restore 호출 → active_caveats 에 노출
-    let snap = db.session_restore(Some("test-project")).await.unwrap();
+    let snap = db.session_restore(Some("test-project"), false).await.unwrap();
     assert_eq!(snap.active_caveats.len(), 1, "project caveat 1건 노출");
     assert_eq!(snap.active_caveats[0].summary, "lint 통과 필수");
     assert_eq!(snap.active_caveats[0].project_key.as_deref(), Some("test-project"));
 
     // 다른 project 필터 → 빈 결과
-    let other = db.session_restore(Some("other-project")).await.unwrap();
+    let other = db.session_restore(Some("other-project"), false).await.unwrap();
     assert!(other.active_caveats.is_empty(), "다른 프로젝트 필터는 broadcast caveat 미노출");
 }
 
@@ -919,7 +919,7 @@ async fn test_sprint_scope_note_filters_by_active_sprint() {
     }).await.unwrap();
 
     // session_restore → sprint scope caveat 노출
-    let snap = db.session_restore(Some("test-project")).await.unwrap();
+    let snap = db.session_restore(Some("test-project"), false).await.unwrap();
     let has_sprint_caveat = snap.active_caveats.iter().any(|n|
         n.summary.contains("sprint freeze") && n.scope_target_id == Some(sprint_id)
     );
@@ -992,7 +992,7 @@ async fn test_broadcast_note_input_validation() {
 
 // ─── Issue #34: blocked 이슈 상태 전이 제한 통합 테스트 ───────────────────────
 
-/// A blocks B 설정 후 B→working 시도 시 InvalidTransition, A→finished 후 B→working 성공
+/// A blocks B 설정 후 B→working 시도 시 Conflict, A→finished 후 B→working 성공
 #[tokio::test]
 async fn test_blocked_issue_cannot_transition_to_working() {
     let db = setup().await;
@@ -1017,23 +1017,22 @@ async fn test_blocked_issue_cannot_transition_to_working() {
     // A blocks B 링크 설정
     db.issue_link(a.id, b.id, LinkType::Blocks).await.unwrap();
 
-    // B→working 시도: A가 아직 active(ready)이므로 InvalidTransition 에러
+    // B→working 시도: A가 아직 active(ready)이므로 Conflict 에러
     let err = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "agent").await;
     assert!(err.is_err(), "블로커가 있는 이슈는 working 으로 전환 불가해야 함");
     match err.unwrap_err() {
-        engram_core::Error::InvalidTransition(msg) => {
+        engram_core::Error::Conflict(msg) => {
             assert!(msg.contains(format!("#{}", a.id).as_str()), "에러 메시지에 블로커 ID 가 포함되어야 함");
         }
-        other => panic!("InvalidTransition 에러여야 하는데 {:?} 발생", other),
+        other => panic!("Conflict 에러여야 하는데 {:?} 발생", other),
     }
 
     // issue_claim 도 동일하게 차단
     let claim_err = db.issue_claim(b.id, "test-agent").await;
     assert!(claim_err.is_err(), "블로커가 있는 이슈는 claim 도 불가해야 함");
 
-    // A→finished (사용자 전용이지만 테스트에서는 직접 DB 수준 검증을 위해 우회)
-    // finished 는 agent-demo-gate 규칙상 사용자 전용이나, 도메인 레이어에 직접 강제는 없음.
-    // 여기서는 demo 상태로 전환 후 finished 로 전환 (can_transition_to 통과).
+    // A→finished: repository layer 에서 changed_by="user" 일 때만 허용.
+    // 여기서는 demo 상태로 전환 후 블로커 해소 여부만 검증하므로 demo 까지만 이동.
     db.issue_claim(a.id, "agent-a").await.unwrap(); // A→working
     db.issue_release(a.id, IssueStatus::Demo, "agent-a", false).await.unwrap(); // A→demo
     // A가 demo 상태가 되면 B 의 블로커가 해소됨
@@ -1063,8 +1062,8 @@ async fn test_blocked_issue_can_cancel() {
 
     db.issue_link(a.id, b.id, LinkType::Blocks).await.unwrap();
 
-    // B→cancelled 는 블로커와 무관하게 허용
-    let result = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Cancelled), ..Default::default() }, "agent").await;
+    // B→cancelled 는 블로커와 무관하게 허용 (사용자 권한으로)
+    let result = db.issue_update(b.id, UpdateIssueInput { status: Some(IssueStatus::Cancelled), ..Default::default() }, "user").await;
     assert!(result.is_ok(), "blocked 이슈도 cancelled 로는 전환 가능해야 함");
     assert_eq!(result.unwrap().status, IssueStatus::Cancelled);
 }
@@ -1247,7 +1246,7 @@ async fn test_mission_inheritance_workflow() {
     db.issue_update(issue.id, UpdateIssueInput {
         status: Some(IssueStatus::Finished),
         ..Default::default()
-    }, "test").await.unwrap();
+    }, "user").await.unwrap();
 
     // progress_rate 검증: finished=1, total=1 → 1.0 (100%)
     let progress = db.mission_progress_query(m.id).await.unwrap();
@@ -1328,7 +1327,7 @@ async fn test_mission_progress_with_multiple_epics() {
         db.issue_update(done.id, UpdateIssueInput {
             status: Some(IssueStatus::Finished),
             ..Default::default()
-        }, "test").await.unwrap();
+        }, "user").await.unwrap();
 
         // required 이슈 (미완료)
         db.issue_create(CreateIssueInput {
@@ -1414,7 +1413,7 @@ async fn test_session_restore_includes_active_missions() {
     db.issue_update(issue1.id, UpdateIssueInput {
         status: Some(IssueStatus::Finished),
         ..Default::default()
-    }, "agent").await.unwrap();
+    }, "user").await.unwrap();
 
     // issue2는 ready 상태로 유지
     db.issue_update(issue2.id, UpdateIssueInput {
@@ -1423,7 +1422,7 @@ async fn test_session_restore_includes_active_missions() {
     }, "agent").await.unwrap();
 
     // 6. session_restore 호출 — project_key 필터 없이 전체
-    let snapshot = db.session_restore(None).await.unwrap();
+    let snapshot = db.session_restore(None, false).await.unwrap();
 
     assert_eq!(snapshot.active_missions.len(), 1, "active 미션 1건이어야 함");
     let m_summary = &snapshot.active_missions[0];
@@ -1438,11 +1437,11 @@ async fn test_session_restore_includes_active_missions() {
     );
 
     // 7. project_key 필터 — 일치하는 프로젝트
-    let snap_filtered = db.session_restore(Some("test-proj")).await.unwrap();
+    let snap_filtered = db.session_restore(Some("test-proj"), false).await.unwrap();
     assert_eq!(snap_filtered.active_missions.len(), 1, "test-proj 필터 시 미션 1건");
 
     // 8. project_key 필터 — 다른 프로젝트는 미션 포함 안 됨
-    let snap_other = db.session_restore(Some("other-proj")).await.unwrap();
+    let snap_other = db.session_restore(Some("other-proj"), false).await.unwrap();
     assert_eq!(snap_other.active_missions.len(), 0, "other-proj 필터 시 미션 0건");
 
     // 9. 미션 완료 처리 시 active_missions에서 제외
@@ -1450,6 +1449,263 @@ async fn test_session_restore_includes_active_missions() {
         status: Some(MissionStatus::Completed),
         ..Default::default()
     }, "agent").await.unwrap();
-    let snap_after = db.session_restore(None).await.unwrap();
+    let snap_after = db.session_restore(None, false).await.unwrap();
     assert_eq!(snap_after.active_missions.len(), 0, "completed 미션은 active_missions에 포함 안 됨");
+}
+
+// =====================================================
+// Issue #171: Demo gate 코드 강제 테스트 (agent_demo_gate 규칙 적용 확인)
+// =====================================================
+
+/// agent 는 finished 전이를 시도해도 Validation 에러로 차단된다.
+#[tokio::test]
+async fn test_demo_gate_blocks_agent_finish() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "demo gate finish test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    // ready → working 전이 (agent 허용)
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // agent 가 finished 로 직접 전이 시도 → Validation 에러
+    let result = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Finished),
+        ..Default::default()
+    }, "agent").await;
+    assert!(result.is_err(), "agent 는 finished 전이 불가해야 함");
+    match result.unwrap_err() {
+        engram_core::Error::Validation(msg) => {
+            assert!(msg.contains("finished") || msg.contains("agent_demo_gate"),
+                "에러 메시지에 finished/agent_demo_gate 가 언급되어야 함: {msg}");
+        }
+        other => panic!("Validation 에러여야 하는데 {:?} 발생", other),
+    }
+}
+
+/// user 는 finished 전이를 할 수 있다.
+#[tokio::test]
+async fn test_demo_gate_allows_user_finish() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "user finish test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // user 가 finished 로 전이 → 성공
+    let result = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Finished),
+        ..Default::default()
+    }, "user").await;
+    assert!(result.is_ok(), "user 는 finished 전이 가능해야 함: {:?}", result.err());
+    assert_eq!(result.unwrap().status, IssueStatus::Finished);
+}
+
+/// agent 는 demo 상태로 전이할 수 있다 (gate 는 finished/cancelled 만 차단).
+#[tokio::test]
+async fn test_demo_gate_allows_agent_demo() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "agent demo allowed test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // agent 가 demo 로 전이 → 성공 (gate 는 이를 허용해야 함)
+    let result = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo),
+        ..Default::default()
+    }, "agent").await;
+    assert!(result.is_ok(), "agent 는 demo 전이 가능해야 함 (gate 는 finished/cancelled 만 차단)");
+    assert_eq!(result.unwrap().status, IssueStatus::Demo);
+}
+
+/// agent 는 cancelled 전이도 차단된다.
+#[tokio::test]
+async fn test_demo_gate_blocks_agent_cancel() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "agent cancel blocked test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // agent 가 cancelled 로 직접 전이 시도 → Validation 에러
+    let result = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Cancelled),
+        ..Default::default()
+    }, "agent").await;
+    assert!(result.is_err(), "agent 는 cancelled 전이도 불가해야 함");
+    match result.unwrap_err() {
+        engram_core::Error::Validation(msg) => {
+            assert!(msg.contains("cancelled") || msg.contains("agent_demo_gate"),
+                "에러 메시지에 cancelled/agent_demo_gate 가 언급되어야 함: {msg}");
+        }
+        other => panic!("Validation 에러여야 하는데 {:?} 발생", other),
+    }
+}
+
+// =====================================================
+// Issue #175: Error::Conflict 분기 / CAS race / release ownership
+// =====================================================
+
+/// 두 에이전트가 동일 이슈를 claim 할 때 두 번째 에이전트는 Error::Conflict 를 받는다.
+#[tokio::test]
+async fn test_issue_claim_cas_race_returns_conflict() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "cas race test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // agent_a 가 먼저 claim → 성공
+    db.issue_claim(issue.id, "agent_a").await.unwrap();
+
+    // agent_b 가 동일 이슈 claim 시도 → Error::Conflict (exit 4)
+    let err = db.issue_claim(issue.id, "agent_b").await.unwrap_err();
+    match err {
+        engram_core::Error::Conflict(_) => {} // 예상된 결과
+        other => panic!("Conflict 에러여야 하는데 {:?} 발생 — exit 4 보장 필요", other),
+    }
+}
+
+/// 동일 에이전트가 이미 claim 한 이슈를 재호출하면 idempotent (성공).
+#[tokio::test]
+async fn test_issue_claim_idempotent_same_agent() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "idempotent claim test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // 첫 claim
+    let first = db.issue_claim(issue.id, "agent_a").await.unwrap();
+    assert_eq!(first.assigned_agent.as_deref(), Some("agent_a"));
+
+    // 동일 agent_a 재호출 → 성공 (idempotent)
+    let second = db.issue_claim(issue.id, "agent_a").await.unwrap();
+    assert_eq!(second.assigned_agent.as_deref(), Some("agent_a"),
+        "동일 에이전트의 재호출은 성공해야 함 (idempotent)");
+    assert_eq!(second.status, IssueStatus::Working);
+}
+
+/// agent_a 가 claim 한 이슈를 agent_b 가 release 시도하면 Error::Conflict 로 거부된다.
+#[tokio::test]
+async fn test_issue_release_wrong_agent_returns_conflict() {
+    let db = setup().await;
+    let (sprint_id, epic_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        mission_id: None,
+        epic_id,
+        sprint_id: Some(sprint_id),
+        title: "release ownership test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // agent_a 가 claim
+    db.issue_claim(issue.id, "agent_a").await.unwrap();
+
+    // agent_b 가 force=false 로 release 시도 → Error::Conflict
+    let err = db.issue_release(issue.id, IssueStatus::Ready, "agent_b", false).await.unwrap_err();
+    match err {
+        engram_core::Error::Conflict(msg) => {
+            assert!(msg.contains("agent_a") || msg.contains("agent_b"),
+                "에러 메시지에 소유자/요청자 정보가 있어야 함: {msg}");
+        }
+        other => panic!("Conflict 에러여야 하는데 {:?} 발생", other),
+    }
 }

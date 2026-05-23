@@ -198,7 +198,7 @@ async fn test_parity_session_restore_and_end() {
     let db_a = fresh_db().await; seed_via_db(&db_a).await;
     let db_b = fresh_db().await; seed_via_dispatch(&db_b).await;
 
-    let cli = normalize(serde_json::to_value(db_a.session_restore(Some("p")).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.session_restore(Some("p"), false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "session_restore",
         &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli, mcp, "session_restore 동치 실패");
@@ -393,11 +393,11 @@ async fn test_parity_note_add_broadcast_and_resolve() {
 
     db_a.note_resolve(n_a.id, "user").await.unwrap();
     dispatch(Arc::clone(&db_b), "note_resolve",
-        &json!({"note_id": n_b["id"].as_i64().unwrap()})).await.unwrap();
+        &json!({"id": n_b["id"].as_i64().unwrap()})).await.unwrap();
 
     let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_get",
-        &json!({"note_id": n_b["id"].as_i64().unwrap()})).await.unwrap());
+        &json!({"id": n_b["id"].as_i64().unwrap()})).await.unwrap());
     assert_eq!(cli["resolved"], mcp["resolved"], "resolved 플래그 동치");
     assert_eq!(cli["resolved"], true);
 }
