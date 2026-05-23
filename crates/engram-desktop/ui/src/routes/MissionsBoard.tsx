@@ -12,10 +12,11 @@ import {
   useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { Mission, MissionTree, EpicWithIssues, Issue } from '../ipc/types';
+import type { Mission, MissionTree, EpicWithIssues, Issue, Epic } from '../ipc/types';
 import { missionList, missionGetTree } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
+import { EditEpicModal } from '../components/EditEpicModal';
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
@@ -54,6 +55,8 @@ type EpicNodeData = {
   label: string;
   status: string;
   project_key: string;
+  epicData: Epic;
+  onDoubleClickEpic: (epic: Epic) => void;
   [key: string]: unknown;
 };
 
@@ -62,7 +65,7 @@ type IssueNodeData = {
   status: string;
   priority: string;
   issueId: number;
-  onClickIssue: (issueId: number) => void;
+  onDoubleClickIssue: (issueId: number) => void;
   [key: string]: unknown;
 };
 
@@ -101,7 +104,11 @@ function MissionNodeComponent({ data }: NodeProps<MissionFlowNode>) {
 
 function EpicNodeComponent({ data }: NodeProps<EpicFlowNode>) {
   return (
-    <div className="relative w-44 rounded-lg border border-violet-300 bg-violet-50 shadow p-2.5 flex flex-col gap-1.5">
+    <div
+      className="relative w-44 rounded-lg border border-violet-300 bg-violet-50 shadow p-2.5 flex flex-col gap-1.5 cursor-pointer hover:border-violet-500 hover:shadow-md transition-all"
+      onDoubleClick={() => data.onDoubleClickEpic(data.epicData)}
+      title="더블클릭으로 수정"
+    >
       <Handle type="target" position={Position.Left} style={{ background: '#a78bfa', border: 'none' }} />
       <Handle type="source" position={Position.Right} style={{ background: '#c4b5fd', border: 'none' }} />
       <div className="flex items-center justify-between gap-1">
@@ -128,7 +135,8 @@ function IssueNodeComponent({ data }: NodeProps<IssueFlowNode>) {
   return (
     <div
       className="relative w-36 rounded-md border border-slate-200 bg-white shadow-sm p-2 flex flex-col gap-1 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all"
-      onClick={() => data.onClickIssue(data.issueId)}
+      onDoubleClick={() => data.onDoubleClickIssue(data.issueId)}
+      title="더블클릭으로 상세 보기"
     >
       <Handle type="target" position={Position.Left} style={{ background: '#c4b5fd', border: 'none' }} />
       <div className="flex items-center gap-1.5">
@@ -157,7 +165,11 @@ const EPIC_H = 80;     // approximate epic card height
 const EPIC_GAP = 20;   // vertical gap between epic groups
 const MISSION_H = 110; // approximate mission card height
 
-function buildGraph(tree: MissionTree, onClickIssue: (issueId: number) => void): {
+function buildGraph(
+  tree: MissionTree,
+  onDoubleClickIssue: (issueId: number) => void,
+  onDoubleClickEpic: (epic: Epic) => void,
+): {
   nodes: Node[];
   edges: Edge[];
 } {
@@ -215,6 +227,8 @@ function buildGraph(tree: MissionTree, onClickIssue: (issueId: number) => void):
         label: ew.epic.title,
         status: ew.epic.status,
         project_key: ew.epic.project_key,
+        epicData: ew.epic,
+        onDoubleClickEpic,
       },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
@@ -241,7 +255,7 @@ function buildGraph(tree: MissionTree, onClickIssue: (issueId: number) => void):
           status: issue.status,
           priority: issue.priority,
           issueId: issue.id,
-          onClickIssue,
+          onDoubleClickIssue,
         },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
@@ -263,10 +277,14 @@ function buildGraph(tree: MissionTree, onClickIssue: (issueId: number) => void):
 
 // ── FlowCanvas ────────────────────────────────────────────────────────────────
 
-function FlowCanvas({ tree, onIssueClick }: { tree: MissionTree; onIssueClick: (issueId: number) => void }) {
+function FlowCanvas({ tree, onIssueDoubleClick, onEpicDoubleClick }: {
+  tree: MissionTree;
+  onIssueDoubleClick: (issueId: number) => void;
+  onEpicDoubleClick: (epic: Epic) => void;
+}) {
   const { nodes: initNodes, edges: initEdges } = useMemo(
-    () => buildGraph(tree, onIssueClick),
-    // onIssueClick is a stable callback from useCallback in parent
+    () => buildGraph(tree, onIssueDoubleClick, onEpicDoubleClick),
+    // stable callbacks from useCallback in parent
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tree],
   );
@@ -303,6 +321,7 @@ export function MissionsBoard() {
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingMission, setEditingMission] = useState<Mission | undefined>(undefined);
+  const [editingEpic, setEditingEpic] = useState<Epic | null>(null);
 
   const { selectIssue, selectProject } = useUIStore();
 
@@ -318,11 +337,15 @@ export function MissionsBoard() {
     return map;
   }, [tree]);
 
-  const handleIssueClick = useCallback((issueId: number) => {
+  const handleIssueDoubleClick = useCallback((issueId: number) => {
     const projectKey = issueProjectMap.get(issueId) ?? null;
     selectProject(projectKey);
     selectIssue(issueId);
   }, [issueProjectMap, selectIssue, selectProject]);
+
+  const handleEpicDoubleClick = useCallback((epic: Epic) => {
+    setEditingEpic(epic);
+  }, []);
 
   const reloadMissions = useCallback(() => {
     setLoading(true);
@@ -448,7 +471,7 @@ export function MissionsBoard() {
         )}
         {tree && !treeLoading && (
           <div className="w-full h-full">
-            <FlowCanvas key={tree.mission.id} tree={tree} onIssueClick={handleIssueClick} />
+            <FlowCanvas key={tree.mission.id} tree={tree} onIssueDoubleClick={handleIssueDoubleClick} onEpicDoubleClick={handleEpicDoubleClick} />
           </div>
         )}
         {!tree && !treeLoading && (
@@ -462,6 +485,10 @@ export function MissionsBoard() {
         open={modalOpen}
         onClose={handleModalClose}
         mission={editingMission}
+      />
+      <EditEpicModal
+        epic={editingEpic}
+        onClose={() => { setEditingEpic(null); if (selectedId) loadTree(selectedId); }}
       />
     </div>
   );
