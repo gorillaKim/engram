@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use serde_json::{json, Value};
 use engram_core::{Db, Error, Result};
-use engram_core::models::mission::{CreateMissionInput, UpdateMissionInput, MissionFilter};
+use engram_core::models::mission::{CreateMissionInput, UpdateMissionInput, MissionFilter, MissionStatus};
 
 pub fn tool_definitions() -> Vec<Value> {
     vec![
@@ -37,7 +37,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "sprint_id":          { "type": "integer" },
-                    "status":             { "type": "string", "enum": ["active", "completed", "cancelled"] },
+                    "status":             { "type": "string", "enum": MissionStatus::ALL },
                     "include_completed":  { "type": "boolean", "description": "true면 completed/cancelled 포함" }
                 }
             }
@@ -47,13 +47,13 @@ pub fn tool_definitions() -> Vec<Value> {
             "description": "미션 수정. id 필수, 나머지 optional. status=completed/cancelled는 사용자 전용.",
             "inputSchema": {
                 "type": "object",
-                "required": ["id"],
+                "required": ["id", "agent_id"],
                 "properties": {
                     "id":          { "type": "integer" },
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
                     "jira_key":    { "type": "string" },
-                    "status":      { "type": "string", "enum": ["active", "completed", "cancelled"] },
+                    "status":      { "type": "string", "enum": MissionStatus::ALL },
                     "sprint_id":   { "type": "integer" },
                     "agent_id":    { "type": "string" }
                 }
@@ -86,7 +86,7 @@ pub fn tool_definitions() -> Vec<Value> {
             "description": "미션을 지정한 스프린트로 이동하거나 백로그(sprint_id 생략)로 내립니다. completed 미션에는 적용 불가.",
             "inputSchema": {
                 "type": "object",
-                "required": ["mission_id"],
+                "required": ["mission_id", "agent_id"],
                 "properties": {
                     "mission_id": { "type": "integer" },
                     "sprint_id":  { "type": "integer", "description": "생략 시 백로그(NULL)" },
@@ -144,7 +144,8 @@ pub async fn mission_update(db: Arc<Db>, args: &Value) -> Result<Value> {
             .and_then(|s| serde_json::from_value(json!(s)).ok()),
         sprint_id: args["sprint_id"].as_i64(),
     };
-    let agent_id = args["agent_id"].as_str().unwrap_or("mcp");
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| Error::Validation("agent_id required".into()))?;
     let m = db.mission_update(id, input, agent_id).await?;
     Ok(serde_json::to_value(&m).unwrap())
 }
@@ -175,7 +176,8 @@ pub async fn mission_set_sprint(db: Arc<Db>, args: &Value) -> Result<Value> {
         .as_i64()
         .ok_or_else(|| Error::Validation("mission_id required".into()))?;
     let sprint_id = args["sprint_id"].as_i64();
-    let agent_id = args["agent_id"].as_str().unwrap_or("mcp");
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| Error::Validation("agent_id required".into()))?;
     let m = db.mission_set_sprint(mission_id, sprint_id, agent_id).await?;
     Ok(serde_json::to_value(&m).unwrap())
 }

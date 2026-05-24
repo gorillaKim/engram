@@ -43,6 +43,14 @@ pub fn tool_definitions() -> Vec<Value> {
                     "project_key": {
                         "type": "string",
                         "description": "특정 프로젝트만 조회. 미입력 시 전체"
+                    },
+                    "compact": {
+                        "type": "boolean",
+                        "description": "true 시 blocked_chains를 { blocker_id: [blocked_id, ...] } 형태로 압축"
+                    },
+                    "include_chains": {
+                        "type": "boolean",
+                        "description": "false 시 blocked_chains 필드를 응답에서 제외 (기본값 true)"
                     }
                 }
             }
@@ -66,6 +74,8 @@ pub async fn end(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn board_status(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    let board = db.board_status_query(project_key).await?;
+    let compact = args["compact"].as_bool().unwrap_or(false);
+    let include_chains = args["include_chains"].as_bool().unwrap_or(true);
+    let board = db.board_status_query(project_key, compact, include_chains).await?;
     Ok(serde_json::to_value(board).unwrap())
 }

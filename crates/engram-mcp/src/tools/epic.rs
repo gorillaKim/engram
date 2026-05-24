@@ -28,7 +28,7 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "epic_update", "description": "에픽 정보(제목/설명/상태/미션) 를 수정합니다. mission_id 변경 시 cascade_issues=true(기본)이면 하위 이슈 mission_id 도 함께 갱신됩니다.",
-            "inputSchema": { "type": "object", "required": ["id"],
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
                 "properties": {
                     "id":              { "type": "integer" },
                     "title":           { "type": "string" },
@@ -86,7 +86,8 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     let status: Option<EpicStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
-    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let has_cascade = args["mission_id"].as_i64().is_some()
         && args["cascade_issues"].as_bool().unwrap_or(true);
     let input = UpdateEpicInput {

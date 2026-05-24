@@ -60,8 +60,6 @@ pub enum IssueCommand {
         #[arg(long)] epic: i64,
         /// 소속 미션 ID (생략 시 부모 epic.mission_id 자동 상속)
         #[arg(long = "mission-id")] mission_id: Option<i64>,
-        /// 소속 스프린트 ID (생략 시 백로그)
-        #[arg(long)] sprint: Option<i64>,
         #[arg(long)] title: String,
         #[arg(long)] goal: Option<String>,
         #[arg(long)] description: Option<String>,
@@ -74,7 +72,7 @@ pub enum IssueCommand {
         #[arg(long)] mission: Option<i64>,
         #[arg(long)] sprint: Option<i64>,
         #[arg(long = "backlog-only")] backlog_only: bool,
-        #[arg(long)] status: Option<String>,
+        #[arg(long)] status: Vec<String>,
         #[arg(long)] priority: Option<String>,
     },
     Get {
@@ -124,24 +122,54 @@ pub enum IssueCommand {
     Delete {
         id: i64,
     },
+    /// 이슈 완료 (demo -> finished 사용자 전용)
+    Finish {
+        id: i64,
+    },
+    /// 이슈 취소 (사용자 전용)
+    Cancel {
+        id: i64,
+        #[arg(long)] reason: String,
+    },
+    /// 이슈 일괄 업데이트
+    BulkUpdate {
+        /// 업데이트할 이슈 ID 목록 (쉼표 구분)
+        #[arg(long, value_delimiter = ',')]
+        ids: Option<Vec<i64>>,
+
+        /// 표준 입력(stdin)에서 쉼표나 개행으로 구분된 이슈 ID 목록을 입력받음
+        #[arg(long = "ids-from-stdin")]
+        ids_from_stdin: bool,
+
+        #[arg(long)]
+        status: Option<String>,
+
+        #[arg(long)]
+        priority: Option<String>,
+    },
 }
 
 pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        IssueCommand::Create { epic, mission_id, sprint, title, goal, description } => {
+        IssueCommand::Create { epic, mission_id, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, mission_id, sprint_id: sprint, title, description, goal, priority: None,
+                epic_id: epic, mission_id, sprint_id: None, title, description, goal, priority: None,
             }).await?;
             output::print_value(&issue, fmt)?;
         }
         IssueCommand::List { project, epic, mission, sprint, backlog_only, status, priority } => {
+            let mut target_statuses = Vec::new();
+            for s in status {
+                target_statuses.push(parse_status(&s)?);
+            }
             let list = db.issue_list(IssueFilter {
                 epic_id: epic,
                 mission_id: mission,
                 sprint_id: sprint,
                 backlog_only,
                 project_key: project,
-                status: status.as_deref().map(parse_status).transpose()?,
+                status: None,
+                statuses: if target_statuses.is_empty() { None } else { Some(target_statuses) },
                 priority: priority.as_deref().map(parse_priority).transpose()?,
             }).await?;
             output::print_value(&list, fmt)?;
@@ -194,9 +222,10 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             let issue = db.issue_release(id, st, effective, force).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::SetSprint { id, sprint } => {
-            let issue = db.issue_set_sprint(id, sprint, agent_id).await?;
-            output::print_value(&issue, fmt)?;
+        IssueCommand::SetSprint { id: _, sprint: _ } => {
+            return Err(engram_core::Error::Validation(
+                "sprint_id 는 더 이상 직접 지정할 수 없습니다. 대신 mission set-sprint 를 사용하여 미션 단위로 스프린트를 지정해 주세요.".into()
+            ).into());
         }
         IssueCommand::Delete { id } => {
             db.issue_delete(id, agent_id).await?;
@@ -204,6 +233,44 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
                 &serde_json::json!({ "ok": true, "deleted_id": id }),
                 fmt,
             )?;
+        }
+        IssueCommand::Finish { id } => {
+            let issue = db.issue_finish(id, agent_id).await?;
+            output::print_value(&issue, fmt)?;
+        }
+        IssueCommand::Cancel { id, reason } => {
+            let issue = db.issue_cancel(id, &reason, agent_id).await?;
+            output::print_value(&issue, fmt)?;
+        }
+        IssueCommand::BulkUpdate { ids, ids_from_stdin, status, priority } => {
+            let mut target_ids = ids.unwrap_or_default();
+            if ids_from_stdin {
+                use std::io::{self, Read};
+                let mut buffer = String::new();
+                io::stdin().read_to_string(&mut buffer)?;
+                for token in buffer.split(|c: char| c == ',' || c.is_whitespace()) {
+                    let token = token.trim();
+                    if !token.is_empty() {
+                        if let Ok(id) = token.parse::<i64>() {
+                            target_ids.push(id);
+                        } else {
+                            anyhow::bail!("stdin에서 올바르지 않은 ID 토큰 발견: '{}'", token);
+                        }
+                    }
+                }
+            }
+
+            if target_ids.is_empty() {
+                anyhow::bail!("업데이트할 이슈 ID가 지정되지 않았습니다. --ids 또는 --ids-from-stdin을 사용하세요.");
+            }
+
+            let input = engram_core::models::issue::BulkUpdateInput {
+                status: status.as_deref().map(parse_status).transpose()?,
+                priority: priority.as_deref().map(parse_priority).transpose()?,
+            };
+
+            let result = db.issue_bulk_update(target_ids, input, agent_id).await?;
+            output::print_value(&result, fmt)?;
         }
     }
     Ok(())
@@ -376,11 +443,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_finish() {
+        let cmd = parse(&["finish", "10"]);
+        match cmd {
+            IssueCommand::Finish { id } => assert_eq!(id, 10),
+            _ => panic!("Finish 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_cancel() {
+        let cmd = parse(&["cancel", "11", "--reason", "Not needed anymore"]);
+        match cmd {
+            IssueCommand::Cancel { id, reason } => {
+                assert_eq!(id, 11);
+                assert_eq!(reason, "Not needed anymore");
+            }
+            _ => panic!("Cancel 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
     fn test_parse_list_full_filters() {
         let cmd = parse(&[
             "list", "--project", "engram", "--epic", "4",
             "--sprint", "2", "--backlog-only",
-            "--status", "ready", "--priority", "high",
+            "--status", "ready", "--status", "working", "--priority", "high",
         ]);
         match cmd {
             IssueCommand::List { project, epic, sprint, backlog_only, status, priority, .. } => {
@@ -388,7 +476,7 @@ mod tests {
                 assert_eq!(epic, Some(4));
                 assert_eq!(sprint, Some(2));
                 assert!(backlog_only);
-                assert_eq!(status.as_deref(), Some("ready"));
+                assert_eq!(status, vec!["ready".to_string(), "working".to_string()]);
                 assert_eq!(priority.as_deref(), Some("high"));
             }
             _ => panic!("List 변형이 파싱되어야 함"),
@@ -407,13 +495,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_list_mission_default_none() {
-        let cmd = parse(&["list", "--project", "proj"]);
-        match cmd {
-            IssueCommand::List { mission, .. } => {
-                assert_eq!(mission, None, "--mission 미지정 시 None이어야 함");
-            }
-            _ => panic!("List 변형이 파싱되어야 함"),
-        }
+    fn test_parse_create_with_sprint_fails() {
+        // --sprint 옵션이 제거되면 파싱 실패(clap Err)해야 합니다.
+        let args = &["create", "--epic", "2", "--title", "Hello", "--sprint", "3"];
+        let res = Wrap::try_parse_from(std::iter::once(&"engram-test").chain(args.iter()));
+        assert!(res.is_err(), "issue create --sprint should fail parsing");
     }
 }

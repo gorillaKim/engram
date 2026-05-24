@@ -23,7 +23,7 @@ async fn seed(db: &Arc<Db>) -> (i64, i64, i64) {
     dispatch(
         Arc::clone(db),
         "sprint_update",
-        &json!({"id": sprint_id, "status": "active"}),
+        &json!({"id": sprint_id, "status": "active", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -38,7 +38,7 @@ async fn seed(db: &Arc<Db>) -> (i64, i64, i64) {
     let epic = dispatch(
         Arc::clone(db),
         "epic_create",
-        &json!({"sprint_id": sprint_id, "project_key": "p", "title": "E", "mission_id": mission_id}),
+        &json!({"project_key": "p", "title": "E", "mission_id": mission_id}),
     )
     .await
     .unwrap();
@@ -103,7 +103,7 @@ async fn test_sprint_update_changes_status() {
     let updated = dispatch(
         Arc::clone(&db),
         "sprint_update",
-        &json!({"id": id, "status": "active"}),
+        &json!({"id": id, "status": "active", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -117,7 +117,7 @@ async fn test_epic_update_changes_status() {
     let updated = dispatch(
         Arc::clone(&db),
         "epic_update",
-        &json!({"id": epic_id, "status": "completed"}),
+        &json!({"id": epic_id, "status": "completed", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -141,7 +141,7 @@ async fn test_task_update_changes_status() {
     let updated = dispatch(
         Arc::clone(&db),
         "task_update",
-        &json!({"id": task_id, "status": "ready"}),
+        &json!({"id": task_id, "status": "ready", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -165,7 +165,7 @@ async fn test_issue_link_and_unlink_roundtrip() {
     let link: Value = dispatch(
         Arc::clone(&db),
         "issue_link",
-        &json!({"source_id": a, "target_id": b, "link_type": "blocks"}),
+        &json!({"source_id": a, "target_id": b, "link_type": "blocks", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -176,7 +176,7 @@ async fn test_issue_link_and_unlink_roundtrip() {
     let unlink: Value = dispatch(
         Arc::clone(&db),
         "issue_unlink",
-        &json!({"link_id": link_id}),
+        &json!({"link_id": link_id, "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -215,7 +215,8 @@ async fn test_note_get_returns_detail() {
             "issue_id": issue_id,
             "note_type": "caveat",
             "summary": "주의",
-            "detail": "긴 본문"
+            "detail": "긴 본문",
+            "agent_id": "test"
         }),
     )
     .await
@@ -236,21 +237,13 @@ async fn test_planning_review_queue_via_dispatch() {
 
     dispatch(
         Arc::clone(&db),
-        "issue_set_sprint",
-        &json!({
-            "id": issue_id,
-            "sprint_id": sprint_id
-        })
-    ).await.unwrap();
-
-    dispatch(
-        Arc::clone(&db),
         "issue_update",
         &json!({
             "id": issue_id,
             "status": "ready",
             "goal": "Test Goal",
-            "description": "Very long description that should be excerpted. ".repeat(5)
+            "description": "Very long description that should be excerpted. ".repeat(5),
+            "agent_id": "test"
         })
     ).await.unwrap();
 
@@ -281,6 +274,7 @@ async fn test_note_add_bulk_via_dispatch() {
         Arc::clone(&db),
         "note_add_bulk",
         &json!({
+            "agent_id": "test",
             "notes": [
                 {
                     "issue_id": issue_id,
@@ -309,18 +303,11 @@ async fn test_note_add_bulk_via_dispatch() {
 // ── Issue #178: compact mode + issue_unlink delete response shape ─────────────
 
 /// 헬퍼: issue 를 ready 상태로 승격 (seed() 는 required 로 만드므로 active_issues 에 안 보임)
-async fn promote_to_ready(db: &Arc<Db>, issue_id: i64, sprint_id: i64) {
-    dispatch(
-        Arc::clone(db),
-        "issue_set_sprint",
-        &json!({"id": issue_id, "sprint_id": sprint_id}),
-    )
-    .await
-    .unwrap();
+async fn promote_to_ready(db: &Arc<Db>, issue_id: i64, _sprint_id: i64) {
     dispatch(
         Arc::clone(db),
         "issue_update",
-        &json!({"id": issue_id, "status": "ready"}),
+        &json!({"id": issue_id, "status": "ready", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -363,7 +350,8 @@ async fn test_session_restore_compact_reduces_payload() {
                     "issue_id": extra,
                     "note_type": "caveat",
                     "summary": format!("note {n}"),
-                    "detail": "some longer detail text to inflate the payload size considerably"
+                    "detail": "some longer detail text to inflate the payload size considerably",
+                    "agent_id": "test"
                 }),
             )
             .await
@@ -389,7 +377,8 @@ async fn test_session_restore_compact_reduces_payload() {
                 "issue_id": issue_id,
                 "note_type": "decision",
                 "summary": format!("note {n}"),
-                "detail": "some longer detail text to inflate the payload size considerably"
+                "detail": "some longer detail text to inflate the payload size considerably",
+                "agent_id": "test"
             }),
         )
         .await
@@ -467,7 +456,7 @@ async fn test_session_restore_compact_counts_accurate() {
         dispatch(
             Arc::clone(&db),
             "note_add",
-            &json!({"issue_id": issue_id, "note_type": "caveat", "summary": format!("Note {n}")}),
+            &json!({"issue_id": issue_id, "note_type": "caveat", "summary": format!("Note {n}"), "agent_id": "test"}),
         )
         .await
         .unwrap();
@@ -527,7 +516,7 @@ async fn test_issue_unlink_returns_deleted_id() {
     let link = dispatch(
         Arc::clone(&db),
         "issue_link",
-        &json!({"source_id": a, "target_id": b, "link_type": "blocks"}),
+        &json!({"source_id": a, "target_id": b, "link_type": "blocks", "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -536,7 +525,7 @@ async fn test_issue_unlink_returns_deleted_id() {
     let unlink: Value = dispatch(
         Arc::clone(&db),
         "issue_unlink",
-        &json!({"link_id": link_id}),
+        &json!({"link_id": link_id, "agent_id": "test"}),
     )
     .await
     .unwrap();
@@ -607,7 +596,8 @@ async fn test_all_defined_tools_are_dispatchable() {
             "issue_id": issue_id,
             "epic_id": epic_id,
             "sprint_id": sprint_id,
-            "project_key": "p"
+            "project_key": "p",
+            "agent_id": "test"
         });
         let result = dispatch(Arc::clone(&db), name, &args).await;
         match result {

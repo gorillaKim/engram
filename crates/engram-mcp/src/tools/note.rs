@@ -5,8 +5,22 @@ use std::sync::Arc;
 pub fn tool_definitions() -> Vec<Value> {
     vec![
         json!({ "name": "note_add",
-            "description": "구조화된 노트를 추가합니다. note_type: caveat(주의)/decision(결정)/discovery(발견)/blocker_detail(블로커)/context(인수인계)/reference(참조)/comment(사용자-에이전트 대화). scope 로 적용 범위 선택: issue (기본, issue_id 필수), task (task_id 필수), project (project_key 필수), sprint/epic (scope_target_id 필수). broadcast scope (project/sprint/epic) 노트는 session_restore.active_caveats 에 자동 노출되어 어떤 이슈를 잡든 모든 에이전트가 본다.",
-            "inputSchema": { "type": "object", "required": ["note_type", "summary"],
+            "description": r#"note_add — 이슈/태스크/스프린트/에픽/프로젝트 범위 노트 추가.
+
+scope 별 필수 필드:
+- scope="issue"   → issue_id 필수
+- scope="task"    → task_id 필수
+- scope="sprint"  → scope_target_id (sprint_id) + scope="sprint" 필수
+- scope="epic"    → scope_target_id (epic_id) + scope="epic" 필수
+- scope="project" → project_key 필수
+
+note_type: caveat | decision | discovery | blocker_detail | context | reference | comment
+- caveat: 함정/주의 (broadcast 가능, session_restore 자동 노출)
+- decision: 의사결정 기록
+- discovery: 작업 중 발견
+- context: 인수인계 (demo 진입 전 필수)
+- blocker_detail: 블로커 상세"#,
+            "inputSchema": { "type": "object", "required": ["note_type", "summary", "agent_id"],
                 "properties": {
                     "issue_id":  { "type": "integer", "description": "scope='issue'|'task' 일 때 필수." },
                     "task_id":   { "type": "integer" },
@@ -14,7 +28,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "summary":   { "type": "string", "description": "한 줄 요약 (session_restore에서 항상 표시)" },
                     "detail":    { "type": "string", "description": "상세 내용 (길어도 됨, note_get으로만 로드)" },
                     "author":    { "type": "string", "description": "작성자 역할. 기본 'agent', 사용자 작성은 'user'." },
-                    "agent_id":  { "type": "string", "description": "작성 에이전트 인스턴스 식별자 (예: 'claude-opus@sess-abc'). 옵셔널." },
+                    "agent_id":  { "type": "string", "description": "작성 에이전트 인스턴스 식별자 (예: 'claude-opus@sess-abc')." },
                     "scope":     { "type": "string", "enum": ["project","sprint","epic","issue","task"], "description": "노트 적용 범위. 생략 시 issue 또는 task 자동 판정." },
                     "scope_target_id": { "type": "integer", "description": "scope='sprint'|'epic' 일 때 해당 entity id." },
                     "project_key": { "type": "string", "description": "scope='project' 일 때 필수." }
@@ -42,14 +56,18 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "note_resolve", "description": "노트를 해결됨으로 표시합니다. 질문성 코멘트에 답변 후 원본 질문 노트를 종결할 때 사용하세요.",
-            "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" } }
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자" }
+                }
             }
         }),
         json!({ "name": "note_add_bulk",
             "description": "구조화된 노트를 여러 개 한 번에 추가합니다. 트랜잭션 단위로 실행됩니다. 각 노트 입력 형식은 note_add 와 동일합니다.",
-            "inputSchema": { "type": "object", "required": ["notes"],
+            "inputSchema": { "type": "object", "required": ["notes", "agent_id"],
                 "properties": {
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자" },
                     "notes": {
                         "type": "array",
                         "items": {
@@ -99,6 +117,8 @@ pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         "task"    => Some(engram_core::models::note::NoteScope::Task),
         _ => None,
     });
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let input = CreateNoteInput {
         issue_id:  args["issue_id"].as_i64().unwrap_or(0),
         task_id:   args["task_id"].as_i64(),
@@ -106,7 +126,7 @@ pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         summary:   args["summary"].as_str().unwrap_or("").to_string(),
         detail:    args["detail"].as_str().map(String::from),
         author:    args["author"].as_str().map(String::from),
-        agent_id:  args["agent_id"].as_str().map(String::from),
+        agent_id:  Some(agent_id.to_string()),
         scope,
         scope_target_id: args["scope_target_id"].as_i64(),
         project_key:     args["project_key"].as_str().map(String::from),
@@ -131,11 +151,14 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
-    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     Ok(serde_json::to_value(db.note_resolve(id, agent_id).await?).unwrap())
 }
 
 pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let list = args["notes"].as_array()
         .ok_or_else(|| engram_core::Error::Validation("notes array is required".to_string()))?;
     let mut inputs = Vec::new();
@@ -160,7 +183,7 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
             summary:   v["summary"].as_str().unwrap_or("").to_string(),
             detail:    v["detail"].as_str().map(String::from),
             author:    v["author"].as_str().map(String::from),
-            agent_id:  v["agent_id"].as_str().map(String::from),
+            agent_id:  Some(v["agent_id"].as_str().unwrap_or(agent_id).to_string()),
             scope,
             scope_target_id: v["scope_target_id"].as_i64(),
             project_key:     v["project_key"].as_str().map(String::from),

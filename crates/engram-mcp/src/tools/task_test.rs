@@ -30,8 +30,11 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "task_test_check",
             "description": "테스트 항목 하나를 완료 처리합니다. checked_at이 자동 기록됩니다.",
-            "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" } }
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자" }
+                }
             }
         }),
         json!({ "name": "task_test_check_bulk",
@@ -44,8 +47,11 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "task_test_uncheck",
             "description": "완료 처리된 테스트 항목을 미완료 상태로 되돌립니다. 재검증이 필요할 때 사용하세요.",
-            "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" } }
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자" }
+                }
             }
         }),
         json!({ "name": "task_test_remove",
@@ -80,8 +86,10 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_test_check(id).await?).unwrap())
+    Ok(serde_json::to_value(db.task_test_check(id, agent_id).await?).unwrap())
 }
 
 pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -95,8 +103,10 @@ pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
 }
 
 pub async fn uncheck(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_test_uncheck(id).await?).unwrap())
+    Ok(serde_json::to_value(db.task_test_uncheck(id, agent_id).await?).unwrap())
 }
 
 pub async fn remove(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

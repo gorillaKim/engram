@@ -54,7 +54,7 @@ async fn seed_via_db(db: &Arc<Db>) -> (i64, i64, i64, i64) {
         project_key: "p".into(), mission_id: Some(m.id), title: "E".into(), description: None,
     }).await.unwrap();
     let i = db.issue_create(CreateIssueInput {
-        epic_id: e.id, mission_id: Some(m.id), sprint_id: Some(s.id), title: "I".into(),
+        epic_id: e.id, mission_id: Some(m.id), sprint_id: None, title: "I".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap();
     let t = db.task_create(CreateTaskInput {
@@ -67,16 +67,16 @@ async fn seed_via_db(db: &Arc<Db>) -> (i64, i64, i64, i64) {
 async fn seed_via_dispatch(db: &Arc<Db>) -> (i64, i64, i64, i64) {
     let s = dispatch(Arc::clone(db), "sprint_create", &json!({"name": "S1"})).await.unwrap();
     let sid = s["id"].as_i64().unwrap();
-    dispatch(Arc::clone(db), "sprint_update", &json!({"id": sid, "status": "active"}))
+    dispatch(Arc::clone(db), "sprint_update", &json!({"id": sid, "status": "active", "agent_id": "test"}))
         .await.unwrap();
     let m = dispatch(Arc::clone(db), "mission_create",
         &json!({"title": "M", "sprint_id": sid, "project_key": "p"})).await.unwrap();
     let mid = m["id"].as_i64().unwrap();
     let e = dispatch(Arc::clone(db), "epic_create",
-        &json!({"sprint_id": sid, "project_key": "p", "title": "E", "mission_id": mid})).await.unwrap();
+        &json!({"project_key": "p", "title": "E", "mission_id": mid})).await.unwrap();
     let eid = e["id"].as_i64().unwrap();
     let i = dispatch(Arc::clone(db), "issue_create",
-        &json!({"epic_id": eid, "sprint_id": sid, "title": "I"})).await.unwrap();
+        &json!({"epic_id": eid, "mission_id": mid, "title": "I"})).await.unwrap();
     let iid = i["id"].as_i64().unwrap();
     let t = dispatch(Arc::clone(db), "task_create",
         &json!({"issue_id": iid, "title": "T"})).await.unwrap();
@@ -150,6 +150,18 @@ async fn test_parity_issue_list_and_get() {
         &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli_list, mcp_list, "issue_list 동치 실패");
 
+    // 복수 status 동치 테스트
+    let cli_multi = normalize(serde_json::to_value(
+        db_a.issue_list(IssueFilter {
+            project_key: Some("p".into()),
+            statuses: Some(vec![engram_core::models::issue::IssueStatus::Ready, engram_core::models::issue::IssueStatus::Required]),
+            ..Default::default()
+        }).await.unwrap()
+    ).unwrap());
+    let mcp_multi = normalize(dispatch(Arc::clone(&db_b), "issue_list",
+        &json!({"project_key": "p", "status": ["ready", "required"]})).await.unwrap());
+    assert_eq!(cli_multi, mcp_multi, "issue_list 복수 status 동치 실패");
+
     let cli_get = normalize(serde_json::to_value(db_a.issue_get(iid, false).await.unwrap()).unwrap());
     let mcp_get = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid})).await.unwrap());
     assert_eq!(cli_get, mcp_get, "issue_get 동치 실패");
@@ -176,13 +188,13 @@ async fn test_parity_note_list_and_get() {
     db_a.note_add(CreateNoteInput {
         issue_id: iid, task_id: None, note_type: NoteType::Caveat,
         summary: "주의".into(), detail: Some("긴".into()),
-        author: Some("agent".into()), agent_id: None,
+        author: Some("agent".into()), agent_id: Some("test".into()),
         scope: None, scope_target_id: None, project_key: None,
     }).await.unwrap();
 
     let db_b = fresh_db().await; let (_, _, iid_b, _) = seed_via_dispatch(&db_b).await;
     dispatch(Arc::clone(&db_b), "note_add", &json!({
-        "issue_id": iid_b, "note_type": "caveat", "summary": "주의", "detail": "긴", "author": "agent"
+        "issue_id": iid_b, "note_type": "caveat", "summary": "주의", "detail": "긴", "author": "agent", "agent_id": "test"
     })).await.unwrap();
 
     let cli = normalize(serde_json::to_value(
@@ -214,15 +226,29 @@ async fn test_parity_board_status_and_blocked_graph() {
     let db_a = fresh_db().await; seed_via_db(&db_a).await;
     let db_b = fresh_db().await; seed_via_dispatch(&db_b).await;
 
-    let cli = normalize(serde_json::to_value(db_a.board_status_query(Some("p")).await.unwrap()).unwrap());
+    // 1. 기본 조회 (compact=false, include_chains=true)
+    let cli = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), false, true).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "board_status",
         &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli, mcp, "board_status 동치 실패");
 
-    let cli = normalize(serde_json::to_value(db_a.blocked_issues_graph("p").await.unwrap()).unwrap());
-    let mcp = normalize(dispatch(Arc::clone(&db_b), "my_blocked_issues",
+    // 2. compact 조회 (compact=true, include_chains=true)
+    let cli_compact = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), true, true).await.unwrap()).unwrap());
+    let mcp_compact = normalize(dispatch(Arc::clone(&db_b), "board_status",
+        &json!({"project_key": "p", "compact": true})).await.unwrap());
+    assert_eq!(cli_compact, mcp_compact, "board_status compact 동치 실패");
+
+    // 3. chains 제외 조회 (compact=false, include_chains=false)
+    let cli_no_chains = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), false, false).await.unwrap()).unwrap());
+    let mcp_no_chains = normalize(dispatch(Arc::clone(&db_b), "board_status",
+        &json!({"project_key": "p", "include_chains": false})).await.unwrap());
+    assert_eq!(cli_no_chains, mcp_no_chains, "board_status no chains 동치 실패");
+    assert!(cli_no_chains["blocked_chains"].is_null() || cli_no_chains.get("blocked_chains").is_none());
+
+    let cli_g = normalize(serde_json::to_value(db_a.blocked_issues_graph("p").await.unwrap()).unwrap());
+    let mcp_g = normalize(dispatch(Arc::clone(&db_b), "my_blocked_issues",
         &json!({"project_key": "p"})).await.unwrap());
-    assert_eq!(cli, mcp, "my_blocked_issues 동치 실패");
+    assert_eq!(cli_g, mcp_g, "my_blocked_issues 동치 실패");
 }
 
 #[tokio::test]
@@ -285,7 +311,7 @@ async fn test_parity_full_lifecycle_issue_state_machine() {
         engram_core::models::issue::IssueStatus::Demo, "agent_a", false).await.unwrap();
 
     dispatch(Arc::clone(&db_b), "issue_update",
-        &json!({"id": iid_b, "status": "ready"})).await.unwrap();
+        &json!({"id": iid_b, "status": "ready", "agent_id": "agent_a"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_claim",
         &json!({"id": iid_b, "agent_id": "agent_a"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_release",
@@ -315,7 +341,7 @@ async fn test_parity_link_unlink_roundtrip() {
 
     let link_a = db_a.issue_link(a1, a2, LinkType::Blocks).await.unwrap();
     let link_b = dispatch(Arc::clone(&db_b), "issue_link",
-        &json!({"source_id": b1, "target_id": b2, "link_type": "blocks"})).await.unwrap();
+        &json!({"source_id": b1, "target_id": b2, "link_type": "blocks", "agent_id": "test"})).await.unwrap();
 
     let cli = normalize(serde_json::to_value(&link_a).unwrap());
     let mcp = normalize(link_b.clone());
@@ -324,7 +350,7 @@ async fn test_parity_link_unlink_roundtrip() {
     // unlink
     db_a.issue_unlink(link_a.id).await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_unlink",
-        &json!({"link_id": link_b["id"].as_i64().unwrap()})).await.unwrap();
+        &json!({"link_id": link_b["id"].as_i64().unwrap(), "agent_id": "test"})).await.unwrap();
 
     let cli_links = normalize(serde_json::to_value(
         db_a.issue_links_for(a1).await.unwrap()
@@ -346,7 +372,7 @@ async fn test_parity_task_test_workflow() {
     let list_a = db_a.task_test_list(tid_a).await.unwrap();
     let ids_a: Vec<i64> = list_a.iter().map(|t| t.id).collect();
     db_a.task_test_check_bulk(vec![ids_a[0], ids_a[1]]).await.unwrap();
-    db_a.task_test_uncheck(ids_a[1]).await.unwrap();
+    db_a.task_test_uncheck(ids_a[1], "test").await.unwrap();
     db_a.task_test_remove(ids_a[2]).await.unwrap();
 
     dispatch(Arc::clone(&db_b), "task_test_add_bulk",
@@ -358,7 +384,7 @@ async fn test_parity_task_test_workflow() {
     dispatch(Arc::clone(&db_b), "task_test_check_bulk",
         &json!({"ids": [ids_b[0], ids_b[1]]})).await.unwrap();
     dispatch(Arc::clone(&db_b), "task_test_uncheck",
-        &json!({"id": ids_b[1]})).await.unwrap();
+        &json!({"id": ids_b[1], "agent_id": "test"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "task_test_remove",
         &json!({"id": ids_b[2]})).await.unwrap();
 
@@ -393,7 +419,7 @@ async fn test_parity_note_add_broadcast_and_resolve() {
 
     db_a.note_resolve(n_a.id, "user").await.unwrap();
     dispatch(Arc::clone(&db_b), "note_resolve",
-        &json!({"id": n_b["id"].as_i64().unwrap()})).await.unwrap();
+        &json!({"id": n_b["id"].as_i64().unwrap(), "agent_id": "test"})).await.unwrap();
 
     let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_get",
@@ -549,11 +575,11 @@ async fn test_mission_get_tree_parity() {
         description: None,
     }).await.unwrap();
     db_a.issue_create(CreateIssueInput {
-        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: Some(s_a.id),
+        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: None,
         title: "이슈 1".into(), description: None, goal: None, priority: None,
     }).await.unwrap();
     db_a.issue_create(CreateIssueInput {
-        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: Some(s_a.id),
+        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: None,
         title: "이슈 2".into(), description: None, goal: None, priority: None,
     }).await.unwrap();
 
@@ -562,19 +588,19 @@ async fn test_mission_get_tree_parity() {
         &json!({"name": "GT1"})).await.unwrap();
     let sid_b = s_b["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "sprint_update",
-        &json!({"id": sid_b, "status": "active"})).await.unwrap();
+        &json!({"id": sid_b, "status": "active", "agent_id": "test"})).await.unwrap();
     let m_b = dispatch(Arc::clone(&db_b), "mission_create",
         &json!({"title": "트리 미션", "sprint_id": sid_b})).await.unwrap();
     let mid_b = m_b["id"].as_i64().unwrap();
     let e_b = dispatch(Arc::clone(&db_b), "epic_create",
-        &json!({"sprint_id": sid_b, "project_key": "tp", "title": "에픽 1", "mission_id": mid_b}))
+        &json!({"project_key": "tp", "title": "에픽 1", "mission_id": mid_b}))
         .await.unwrap();
     let eid_b = e_b["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "issue_create",
-        &json!({"epic_id": eid_b, "sprint_id": sid_b, "title": "이슈 1", "mission_id": mid_b}))
+        &json!({"epic_id": eid_b, "title": "이슈 1", "mission_id": mid_b}))
         .await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_create",
-        &json!({"epic_id": eid_b, "sprint_id": sid_b, "title": "이슈 2", "mission_id": mid_b}))
+        &json!({"epic_id": eid_b, "title": "이슈 2", "mission_id": mid_b}))
         .await.unwrap();
 
     // mission_get_tree 동치 검증
@@ -621,3 +647,184 @@ async fn test_parity_history_for_after_changes() {
     );
     assert!(cli.as_array().unwrap().len() >= 1, "최소 1건 history 기록");
 }
+
+#[tokio::test]
+async fn test_parity_issue_finish_and_cancel() {
+    let db_a = fresh_db().await; let (_sid_a, eid_a, iid_a, _) = seed_via_db(&db_a).await;
+    let db_b = fresh_db().await; let (_sid_b, eid_b, iid_b, _) = seed_via_dispatch(&db_b).await;
+    assert_eq!(iid_a, iid_b);
+
+    // 1. ready -> working -> demo 상태로 업데이트
+    db_a.issue_update(iid_a, engram_core::models::issue::UpdateIssueInput {
+        status: Some(engram_core::models::issue::IssueStatus::Ready), ..Default::default()
+    }, "agent_a").await.unwrap();
+    db_a.issue_claim(iid_a, "agent_a").await.unwrap();
+    db_a.issue_release(iid_a, engram_core::models::issue::IssueStatus::Demo, "agent_a", false).await.unwrap();
+
+    dispatch(Arc::clone(&db_b), "issue_update", &json!({"id": iid_b, "status": "ready", "agent_id": "agent_a"})).await.unwrap();
+    dispatch(Arc::clone(&db_b), "issue_claim", &json!({"id": iid_b, "agent_id": "agent_a"})).await.unwrap();
+    dispatch(Arc::clone(&db_b), "issue_release", &json!({"id": iid_b, "agent_id": "agent_a", "transition_to": "demo"})).await.unwrap();
+
+    // 2. issue_finish 호출 및 동치 검증
+    let cli_finish = normalize(serde_json::to_value(db_a.issue_finish(iid_a, "user").await.unwrap()).unwrap());
+    let mcp_finish = normalize(dispatch(Arc::clone(&db_b), "issue_finish", &json!({"id": iid_b, "agent_id": "user"})).await.unwrap());
+    assert_eq!(cli_finish, mcp_finish, "issue_finish 결과 동치 실패");
+    assert_eq!(cli_finish["status"], "finished");
+
+    // 3. cancel 검증을 위해 새로운 이슈 생성
+    let epic_a = db_a.epic_get(eid_a).await.unwrap();
+    let mid_a = epic_a.mission_id;
+    let epic_b = dispatch(Arc::clone(&db_b), "epic_get", &json!({"id": eid_b})).await.unwrap();
+    let mid_b = epic_b["mission_id"].as_i64();
+
+    let iid_a2 = db_a.issue_create(CreateIssueInput {
+        epic_id: eid_a,
+        mission_id: mid_a,
+        sprint_id: None,
+        title: "I2".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap().id;
+    let iid_b2 = dispatch(Arc::clone(&db_b), "issue_create", &json!({"epic_id": eid_b, "mission_id": mid_b, "title": "I2"})).await.unwrap()["id"].as_i64().unwrap();
+    assert_eq!(iid_a2, iid_b2);
+
+    // 4. issue_cancel 호출 및 동치 검증
+    let cli_cancel = normalize(serde_json::to_value(db_a.issue_cancel(iid_a2, "No longer needed", "user").await.unwrap()).unwrap());
+    let mcp_cancel = normalize(dispatch(Arc::clone(&db_b), "issue_cancel", &json!({"id": iid_b2, "reason": "No longer needed", "agent_id": "user"})).await.unwrap());
+    assert_eq!(cli_cancel, mcp_cancel, "issue_cancel 결과 동치 실패");
+    assert_eq!(cli_cancel["status"], "cancelled");
+}
+
+#[tokio::test]
+async fn test_parity_issue_bulk_update() {
+    let db_a = fresh_db().await; let (_, eid_a, iid_a1, _) = seed_via_db(&db_a).await;
+    let db_b = fresh_db().await; let (_, eid_b, iid_b1, _) = seed_via_dispatch(&db_b).await;
+    assert_eq!(iid_a1, iid_b1);
+
+    // 두 번째 이슈 생성
+    let iid_a2 = db_a.issue_create(CreateIssueInput {
+        epic_id: eid_a, mission_id: None, sprint_id: None, title: "I2".into(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap().id;
+
+    let iid_b2 = dispatch(Arc::clone(&db_b), "issue_create", &json!({
+        "epic_id": eid_b, "title": "I2"
+    })).await.unwrap()["id"].as_i64().unwrap();
+    assert_eq!(iid_a2, iid_b2);
+
+    // bulk_update 실행
+    let res_a = db_a.issue_bulk_update(
+        vec![iid_a1, iid_a2],
+        engram_core::models::issue::BulkUpdateInput {
+            status: Some(engram_core::models::issue::IssueStatus::Ready),
+            priority: Some(engram_core::models::issue::IssuePriority::High),
+        },
+        "user"
+    ).await.unwrap();
+
+    let res_b = dispatch(Arc::clone(&db_b), "issue_bulk_update", &json!({
+        "ids": [iid_b1, iid_b2],
+        "status": "ready",
+        "priority": "high",
+        "agent_id": "user"
+    })).await.unwrap();
+
+    let cli = normalize(serde_json::to_value(&res_a).unwrap());
+    let mcp = normalize(res_b);
+    assert_eq!(cli, mcp, "issue_bulk_update 결과 동치 실패");
+    assert_eq!(cli["succeeded"].as_array().unwrap().len(), 2);
+    assert_eq!(cli["succeeded"][0]["status"], "ready");
+    assert_eq!(cli["succeeded"][0]["priority"], "high");
+}
+
+#[tokio::test]
+async fn test_agent_id_required_validation() {
+    let db = fresh_db().await;
+    
+    // agent_id가 누락되었을 때 Validation 에러를 발생시켜야 하는 도구와 최소 파라미터 조합
+    let test_cases = vec![
+        ("issue_update", json!({"id": 1, "status": "ready"})),
+        ("issue_claim", json!({"id": 1})),
+        ("issue_release", json!({"id": 1, "transition_to": "ready"})),
+        ("issue_link", json!({"source_id": 1, "target_id": 2, "link_type": "blocks"})),
+        ("issue_unlink", json!({"link_id": 1})),
+        ("issue_finish", json!({"id": 1})),
+        ("issue_cancel", json!({"id": 1, "reason": "test"})),
+        ("issue_bulk_update", json!({"ids": [1], "status": "ready"})),
+        ("mission_update", json!({"id": 1, "title": "test"})),
+        ("mission_set_sprint", json!({"mission_id": 1, "sprint_id": 1})),
+        ("epic_update", json!({"id": 1, "title": "test"})),
+        ("sprint_update", json!({"id": 1, "status": "active"})),
+        ("task_update", json!({"id": 1, "status": "done"})),
+        ("task_test_check", json!({"id": 1})),
+        ("task_test_uncheck", json!({"id": 1})),
+        ("note_add", json!({"note_type": "context", "summary": "test"})),
+        ("note_resolve", json!({"id": 1})),
+        ("note_add_bulk", json!({"notes": []})),
+    ];
+
+    for (tool_name, args) in test_cases {
+        let res = dispatch(Arc::clone(&db), tool_name, &args).await;
+        assert!(
+            res.is_err(),
+            "도구 '{}'는 agent_id가 누락되었음에도 에러를 반환하지 않았습니다.",
+            tool_name
+        );
+        let err = res.err().unwrap();
+        match err {
+            engram_core::Error::Validation(msg) => {
+                assert!(
+                    msg.contains("agent_id") || msg.contains("required"),
+                    "도구 '{}'의 에러 메시지가 agent_id 누락을 나타내지 않습니다: {}",
+                    tool_name,
+                    msg
+                );
+            }
+            _ => panic!("도구 '{}'가 Validation 에러가 아닌 다른 에러를 반환했습니다: {:?}", tool_name, err),
+        }
+    }
+}
+
+
+
+/// task_test_check / task_test_uncheck 이 history.changed_by 에 agent_id 를 기록하는지 검증.
+/// ADR-0010 컨벤션: 변경 도구는 감사 추적을 위해 history 에 agent_id 를 남겨야 함.
+#[tokio::test]
+async fn test_task_test_check_uncheck_history_recorded() {
+    let db = fresh_db().await;
+    let (_, _, _, tid) = seed_via_db(&db).await;
+
+    // task_test 추가 후 check/uncheck 시나리오
+    let tt = db.task_test_add(tid, "검증 항목".into()).await.unwrap();
+    let agent = "test-agent@sess-001";
+
+    // MCP dispatch 경로로 check
+    dispatch(Arc::clone(&db), "task_test_check",
+        &json!({"id": tt.id, "agent_id": agent})).await
+        .expect("task_test_check should succeed");
+
+    // history 기록 확인
+    let hist = db.history_list(
+        engram_core::models::history::EntityType::Task, tt.id
+    ).await.unwrap();
+    assert!(!hist.is_empty(), "task_test_check 후 history 기록이 있어야 함");
+    let last = &hist[hist.len() - 1];
+    assert_eq!(last.changed_by, agent, "changed_by 가 agent_id 와 일치해야 함");
+    assert_eq!(last.field, "task_test.checked", "field 명 확인");
+    assert_eq!(last.new_value.as_deref(), Some("true"));
+
+    // MCP dispatch 경로로 uncheck
+    dispatch(Arc::clone(&db), "task_test_uncheck",
+        &json!({"id": tt.id, "agent_id": agent})).await
+        .expect("task_test_uncheck should succeed");
+
+    let hist2 = db.history_list(
+        engram_core::models::history::EntityType::Task, tt.id
+    ).await.unwrap();
+    assert_eq!(hist2.len(), 2, "check + uncheck 각각 1건씩 총 2건");
+    let last2 = &hist2[hist2.len() - 1];
+    assert_eq!(last2.changed_by, agent);
+    assert_eq!(last2.new_value.as_deref(), Some("false"));
+}
+

@@ -20,7 +20,7 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "task_update", "description": "태스크 상태/정보를 수정합니다. agent_id 를 명시하면 history.changed_by 로 저장됩니다.",
-            "inputSchema": { "type": "object", "required": ["id"],
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
                 "properties": {
                     "id":       { "type": "integer" },
                     "status":   { "type": "string" },
@@ -77,7 +77,8 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     let status: Option<TaskStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
-    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let input = UpdateTaskInput {
         title:       args["title"].as_str().map(String::from),
         description: args["description"].as_str().map(String::from),
