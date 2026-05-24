@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { getAppVersion } from '../ipc/invoke';
+import { getAppVersion, getActivitySettings, setActivitySettings } from '../ipc/invoke';
 import {
   checkForUpdates,
   downloadAndInstall,
@@ -23,10 +23,26 @@ export function Settings() {
   const [updateInfo, setUpdateInfo] = useState<Update | null>(null);
   const [progress, setProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [warnMin, setWarnMin] = useState(30);
+  const [stallMin, setStallMin] = useState(120);
+  const [activitySaving, setActivitySaving] = useState(false);
 
   useEffect(() => {
     getAppVersion().then(setVersion).catch(() => setVersion('unknown'));
+    getActivitySettings().then(s => { setWarnMin(s.warn_minutes); setStallMin(s.stall_minutes); }).catch(() => {});
   }, []);
+
+  async function handleSaveActivity() {
+    setActivitySaving(true);
+    try {
+      await setActivitySettings(warnMin, stallMin);
+      toast.success('저장됨');
+    } catch {
+      toast.error('저장 실패');
+    } finally {
+      setActivitySaving(false);
+    }
+  }
 
   useEffect(() => {
     const onProgress = (e: Event) => {
@@ -91,6 +107,41 @@ export function Settings() {
           <span className="text-slate-300">버전</span>
           <span className="font-mono text-slate-100">{version ?? '…'}</span>
         </div>
+      </section>
+
+      {/* Activity thresholds */}
+      <section className="rounded-lg border border-slate-700 bg-slate-800 p-4 flex flex-col gap-4">
+        <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide">활동 상태 임계값</h2>
+        <p className="text-xs text-slate-500">working 이슈의 히스토리 갱신 간격으로 상태를 분류합니다.</p>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400">경고 기준 (분) — 작업예상 ⏸</span>
+            <input
+              type="number"
+              min={1}
+              value={warnMin}
+              onChange={(e) => setWarnMin(Number(e.target.value))}
+              className="rounded bg-slate-700 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-slate-400">중단 기준 (분) — 작업중단 ⚠</span>
+            <input
+              type="number"
+              min={1}
+              value={stallMin}
+              onChange={(e) => setStallMin(Number(e.target.value))}
+              className="rounded bg-slate-700 border border-slate-600 px-3 py-1.5 text-sm text-slate-100 focus:outline-none focus:border-blue-500"
+            />
+          </label>
+        </div>
+        <button
+          onClick={handleSaveActivity}
+          disabled={activitySaving}
+          className="self-start rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+        >
+          {activitySaving ? '저장 중…' : '저장'}
+        </button>
       </section>
 
       {/* Update section */}

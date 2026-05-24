@@ -1,4 +1,4 @@
-use engram_core::Db;
+use engram_core::{repository::session::StalledIssueBrief, Db};
 use std::{
     collections::HashMap,
     sync::{
@@ -11,12 +11,21 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct TrayStallEntry {
+    pub id: i64,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct TrayBoardSummary {
     pub inbox: u32,
     pub demo_review: u32,
     pub working: u32,
     /// "active" | "pending" | "stalled" | "none"
     pub working_state: String,
+    /// 작업중단 의심 이슈 최대 3개 (tray 팝오버 표시용)
+    pub stalled_issues: Vec<TrayStallEntry>,
+    pub stalled_total: u32,
 }
 
 struct BoardSnapshot {
@@ -26,6 +35,7 @@ struct BoardSnapshot {
     blockers: u32,
     /// 초 단위 경과 시간. u64::MAX = 히스토리 없음
     last_activity_secs: u64,
+    stalled: Vec<StalledIssueBrief>,
 }
 
 impl Default for BoardSnapshot {
@@ -36,6 +46,7 @@ impl Default for BoardSnapshot {
             working: HashMap::new(),
             blockers: 0,
             last_activity_secs: u64::MAX,
+            stalled: vec![],
         }
     }
 }
@@ -52,12 +63,16 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
     let working_count = Arc::new(AtomicU32::new(0));
     let demo_only = Arc::new(AtomicBool::new(false));
     let last_activity_secs = Arc::new(AtomicU64::new(u64::MAX));
+    let warn_secs_atom = Arc::new(AtomicU64::new(1800));   // 30min default
+    let stall_secs_atom = Arc::new(AtomicU64::new(7200));  // 120min default
 
     {
         let app2 = app.clone();
         let wc = working_count.clone();
         let dc = demo_only.clone();
         let la = last_activity_secs.clone();
+        let ws = warn_secs_atom.clone();
+        let ss = stall_secs_atom.clone();
         tokio::spawn(async move {
             // 브레일 스피너 프레임 — working 상태 시 회전 애니메이션
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -68,9 +83,11 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
                 let w = wc.load(Ordering::Relaxed);
                 let d = dc.load(Ordering::Relaxed);
                 let las = la.load(Ordering::Relaxed);
+                let w_secs = ws.load(Ordering::Relaxed);
+                let s_secs = ss.load(Ordering::Relaxed);
                 if let Some(tray) = app2.tray_by_id("default") {
                     let title = if w > 0 {
-                        match classify_working(las) {
+                        match classify_working(las, w_secs, s_secs) {
                             "active"  => format!("{} 작업중", frames[i]),
                             "pending" => "⏸ 작업예상".to_string(),
                             _         => "⚠ 작업중단".to_string(),
@@ -90,7 +107,13 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         tick = tick.wrapping_add(1);
 
-        let cur = match snapshot(&db).await {
+        let activity = crate::settings::load()
+            .unwrap_or_default()
+            .activity;
+        warn_secs_atom.store((activity.warn_minutes * 60) as u64, Ordering::Relaxed);
+        stall_secs_atom.store((activity.stall_minutes * 60) as u64, Ordering::Relaxed);
+
+        let cur = match snapshot(&db, activity.stall_minutes).await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!("watcher snapshot error: {e}");
@@ -100,12 +123,20 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
 
         // 팝오버용 요약 emit
         let w = cur.working.len() as u32;
-        let state = if w > 0 { classify_working(cur.last_activity_secs) } else { "none" };
+        let w_secs = warn_secs_atom.load(Ordering::Relaxed);
+        let s_secs = stall_secs_atom.load(Ordering::Relaxed);
+        let state = if w > 0 { classify_working(cur.last_activity_secs, w_secs, s_secs) } else { "none" };
+        let stalled_total = cur.stalled.len() as u32;
+        let stalled_issues: Vec<TrayStallEntry> = cur.stalled.iter().take(3)
+            .map(|s| TrayStallEntry { id: s.id, title: s.title.clone() })
+            .collect();
         let summary = TrayBoardSummary {
             inbox: cur.required.len() as u32,
             demo_review: cur.demo.len() as u32,
             working: w,
             working_state: state.to_string(),
+            stalled_issues,
+            stalled_total,
         };
         let _ = app.emit("tray://summary", &summary);
 
@@ -175,8 +206,8 @@ fn send_notification(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
-async fn snapshot(db: &Db) -> engram_core::Result<BoardSnapshot> {
-    let board = db.board_issues_query(None).await?;
+async fn snapshot(db: &Db, stall_minutes: i64) -> engram_core::Result<BoardSnapshot> {
+    let board = db.board_issues_query(None, stall_minutes).await?;
     let status = db.board_status_query(None).await?;
 
     let mut required = HashMap::new();
@@ -207,15 +238,17 @@ async fn snapshot(db: &Db) -> engram_core::Result<BoardSnapshot> {
         }
     };
 
-    Ok(BoardSnapshot { required, demo, working, blockers, last_activity_secs })
+    let stalled = board.stalled_issues;
+
+    Ok(BoardSnapshot { required, demo, working, blockers, last_activity_secs, stalled })
 }
 
 /// 히스토리 경과 시간으로 작업 상태 분류.
 /// u64::MAX = 히스토리 없음 → "pending" (방금 시작 또는 기록 없음)
-fn classify_working(last_secs: u64) -> &'static str {
+fn classify_working(last_secs: u64, warn_secs: u64, stall_secs: u64) -> &'static str {
     if last_secs == u64::MAX { "pending" }
-    else if last_secs <= 1800 { "active" }
-    else if last_secs <= 7200 { "pending" }
+    else if last_secs <= warn_secs { "active" }
+    else if last_secs <= stall_secs { "pending" }
     else { "stalled" }
 }
 
@@ -257,11 +290,12 @@ mod tests {
 
     #[test]
     fn test_classify_working() {
-        assert_eq!(classify_working(u64::MAX), "pending");
-        assert_eq!(classify_working(0), "active");
-        assert_eq!(classify_working(1800), "active");
-        assert_eq!(classify_working(1801), "pending");
-        assert_eq!(classify_working(7200), "pending");
-        assert_eq!(classify_working(7201), "stalled");
+        let (w, s) = (1800u64, 7200u64);
+        assert_eq!(classify_working(u64::MAX, w, s), "pending");
+        assert_eq!(classify_working(0, w, s), "active");
+        assert_eq!(classify_working(1800, w, s), "active");
+        assert_eq!(classify_working(1801, w, s), "pending");
+        assert_eq!(classify_working(7200, w, s), "pending");
+        assert_eq!(classify_working(7201, w, s), "stalled");
     }
 }

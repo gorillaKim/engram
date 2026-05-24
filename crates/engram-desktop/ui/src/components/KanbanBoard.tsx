@@ -5,6 +5,7 @@ import { KanbanColumn } from './KanbanColumn';
 import { IssueCardView } from './IssueCard';
 import { FilterBar } from './FilterBar';
 import { ScopeExpansionBanner } from './ScopeExpansionBanner';
+import { StalledWorkingBanner } from './StalledWorkingBanner';
 import { CreateIssueModal } from './CreateIssueModal';
 import { CreateEpicModal } from './CreateEpicModal';
 import { CreateSprintModal } from './CreateSprintModal';
@@ -53,6 +54,7 @@ export function KanbanBoard() {
   const boards = data?.boards ?? [];
   const warnings = session?.warnings ?? [];
   const expansionIds = new Set<number>(session?.scope_expansion_ids ?? []);
+  const stalledIssues = data?.stalled_issues ?? [];
 
   // Apply client-side filters
   const filteredBoards = applyFilters(boards, boardFilters);
@@ -110,6 +112,12 @@ export function KanbanBoard() {
             onIssueClick={selectIssue}
           />
         )}
+
+        {/* Stalled working banner */}
+        <StalledWorkingBanner
+          issues={stalledIssues}
+          onIssueClick={selectIssue}
+        />
 
         {filteredBoards.length === 0 && (
           <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>

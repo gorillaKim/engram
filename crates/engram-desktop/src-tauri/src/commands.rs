@@ -37,14 +37,16 @@ pub async fn do_session_restore(
     db: &Db,
     project_key: Option<&str>,
 ) -> engram_core::Result<SessionSnapshot> {
-    db.session_restore(project_key, false).await
+    let stall = crate::settings::load().unwrap_or_default().activity.stall_minutes;
+    db.session_restore(project_key, false, stall).await
 }
 
 pub async fn do_board_status(
     db: &Db,
     project_key: Option<&str>,
 ) -> engram_core::Result<IssueBoardStatus> {
-    db.board_issues_query(project_key).await
+    let stall = crate::settings::load().unwrap_or_default().activity.stall_minutes;
+    db.board_issues_query(project_key, stall).await
 }
 
 pub async fn do_issue_list(
@@ -738,6 +740,22 @@ pub async fn mcp_set_autostart(
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_activity_settings() -> Result<crate::settings::ActivitySettings, String> {
+    Ok(settings::load().unwrap_or_default().activity)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_activity_settings(
+    warn_minutes: i64,
+    stall_minutes: i64,
+) -> Result<(), String> {
+    let mut s = settings::load().unwrap_or_default();
+    s.activity.warn_minutes = warn_minutes;
+    s.activity.stall_minutes = stall_minutes;
+    settings::save(&s).map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]

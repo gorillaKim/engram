@@ -152,6 +152,8 @@ fn main() {
             commands::mcp_restart,
             commands::mcp_recent_calls,
             commands::mcp_set_autostart,
+            commands::get_activity_settings,
+            commands::set_activity_settings,
             commands::hide_tray_popover,
             commands::show_main_window,
             commands::get_app_version,

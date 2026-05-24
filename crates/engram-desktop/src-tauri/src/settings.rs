@@ -4,6 +4,8 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesktopSettings {
     pub mcp: McpSettings,
+    #[serde(default)]
+    pub activity: ActivitySettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,10 +14,26 @@ pub struct McpSettings {
     pub port: u16,
 }
 
+/// working 이슈 활동 상태 분류 임계값 (분 단위)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivitySettings {
+    /// 이 시간 초과 시 "작업예상" (경고) 상태로 전환. 기본 30분.
+    pub warn_minutes: i64,
+    /// 이 시간 초과 시 "작업중단" (에러) 상태로 전환. 기본 120분.
+    pub stall_minutes: i64,
+}
+
+impl Default for ActivitySettings {
+    fn default() -> Self {
+        Self { warn_minutes: 30, stall_minutes: 120 }
+    }
+}
+
 impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
             mcp: McpSettings { autostart: true, port: 3456 },
+            activity: ActivitySettings::default(),
         }
     }
 }
@@ -71,6 +89,7 @@ mod tests {
     fn test_settings_toml_roundtrip() {
         let s = DesktopSettings {
             mcp: McpSettings { autostart: false, port: 4000 },
+            activity: Default::default(),
         };
         let toml_str = toml::to_string_pretty(&s).unwrap();
         let loaded: DesktopSettings = toml::from_str(&toml_str).unwrap();

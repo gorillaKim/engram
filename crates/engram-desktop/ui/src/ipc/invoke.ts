@@ -111,6 +111,14 @@ export const mcpRecentCalls = () =>
 export const mcpSetAutostart = (on: boolean) =>
   invoke<void>('mcp_set_autostart', { on });
 
+// ── Activity Settings ─────────────────────────────────────────────────────────
+
+export const getActivitySettings = () =>
+  invoke<import('./types').ActivitySettings>('get_activity_settings');
+
+export const setActivitySettings = (warn_minutes: number, stall_minutes: number) =>
+  invoke<void>('set_activity_settings', { warn_minutes, stall_minutes });
+
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
 
 export const epicCreate = (input: CreateEpicInput) =>

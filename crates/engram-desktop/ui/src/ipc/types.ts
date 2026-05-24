@@ -164,11 +164,19 @@ export interface IssueProjectBoard {
   cancelled: Issue[];
 }
 
+export interface StalledIssueBrief {
+  id: number;
+  title: string;
+  project_key: string;
+  secs_since_activity: number | null;
+}
+
 export interface IssueBoardStatus {
   sprint_id: number;
   sprint_name: string;
   project_key: string | null;
   boards: IssueProjectBoard[];
+  stalled_issues: StalledIssueBrief[];
 }
 
 export interface IssueFilter {
@@ -208,12 +216,24 @@ export interface LogLine {
   ts: string;
 }
 
+export interface TrayStallEntry {
+  id: number;
+  title: string;
+}
+
 export interface TrayBoardSummary {
   inbox: number;
   demo_review: number;
   working: number;
   /** "active" | "pending" | "stalled" | "none" */
   working_state: 'active' | 'pending' | 'stalled' | 'none';
+  stalled_issues: TrayStallEntry[];
+  stalled_total: number;
+}
+
+export interface ActivitySettings {
+  warn_minutes: number;
+  stall_minutes: number;
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
