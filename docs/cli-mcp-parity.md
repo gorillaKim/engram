@@ -34,20 +34,23 @@
 
 → 갭 1건 (#13 처리). M6: `epic_create`에 `--mission` required 추가, `epic_list`에 `--include-completed` 추가.
 
-## 3) issue area (7/13 — claim/release/delete/set-sprint/blocked/stalled 누락)
+## 3) issue area (9/15 — claim/release/delete/set-sprint/blocked/stalled 누락)
 
 | MCP 도구             | 현 CLI                       | 갭                  | 목표 명령형                                                     |
 |----------------------|------------------------------|---------------------|-----------------------------------------------------------------|
-| `issue_create`       | `engram issue create`        | -                   | `engram issue create --epic E [--sprint S] --title T`           |
+| `issue_create`       | `engram issue create`        | -                   | `engram issue create --epic E --title T`           |
 | `issue_get`          | `engram issue get`           | -                   | `engram issue get <id>`                                         |
-| `issue_list`         | `engram issue list`          | `--status`, `--sprint`, `--backlog-only` 인자 미지원; `--mission M` 추가 (M6) | `engram issue list [--project P] [--epic E] [--sprint S] [--status S] [--backlog-only] [--mission M]` |
+| `issue_list`         | `engram issue list`          | `--sprint`, `--backlog-only` 인자 미지원; `--mission M` 추가 (M6) | `engram issue list [--project P] [--epic E] [--sprint S] [--status S ...] [--backlog-only] [--mission M]` |
 | `issue_update`       | `engram issue update`, `engram issue ready` | `ready` 는 편의용 (유지) | `engram issue update <id> [--status S] [--priority P] [--title T]` |
 | `issue_link`         | `engram issue link`          | -                   | `engram issue link --source S --target T [--type blocks]`       |
 | `issue_unlink`       | `engram issue unlink`        | -                   | `engram issue unlink --link-id L`                               |
 | `issue_delete`       | (없음)                       | **CLI 미노출**      | `engram issue delete <id>`                                      |
 | `issue_claim`        | `engram issue claim`         | -                   | `engram [--agent-id A] issue claim <id> [--agent-id A]`         |
 | `issue_release`      | `engram issue release`       | -                   | `engram [--agent-id A] issue release <id> [--agent-id A] --transition-to T [--force]` |
-| `issue_set_sprint`   | (없음)                       | **CLI 미노출**      | `engram issue set-sprint <id> --sprint S`                       |
+| `issue_finish`       | `engram issue finish`        | -                   | `engram issue finish <id>`                                      |
+| `issue_cancel`       | `engram issue cancel`        | -                   | `engram issue cancel <id> --reason R`                           |
+| `issue_bulk_update` | `engram issue bulk-update`   | -                   | `engram issue bulk-update [--ids 1,2,3] [--ids-from-stdin] [--status S] [--priority P]` |
+| `issue_set_sprint`   | `engram issue set-sprint`    | -                   | `engram issue set-sprint <id> --sprint S` (사용 중지 - ValidationError 반환) |
 | `my_blocked_issues`  | (없음)                       | **CLI 미노출**      | `engram blocked list --project P`  *(신규 area, §7)*             |
 | `stalled_issues`     | (없음)                       | **CLI 미노출**      | `engram issue stalled --threshold-minutes 10 [--project P] [--status working]` |
 
@@ -97,9 +100,9 @@
 |-------------------|--------------------------|------------------------------------|---------------------------------------------|
 | `session_restore` | `engram session restore` | `compact` 파라미터 추가됨 (#176)   | `engram session restore [--project P] [--compact]` |
 | `session_end`     | `engram session end`     | -                                  | `engram session end [--project P]`          |
-| `board_status`    | (없음)                   | **CLI 미노출** — `engram board status` 신규 area 로 노출 권장 | `engram board status [--project P]`         |
+| `board_status`    | `engram board status`    | -                                  | `engram board status [--project P] [--compact] [--no-chains]` |
 
-→ 갭 1건 (#14: 신규 `board` area).
+→ 패리티 완성.
 
 ## 8) history area (0/3 — area 자체 없음)
 
@@ -137,7 +140,7 @@
 
 ## 11) 발견사항 / 후속 조치
 
-1. **CLI 의 `issue list` 가 `--status`, `--sprint`, `--backlog-only` 미지원** — IssueFilter 의 일부 필드가 CLI 로 빠짐.
+1. **CLI 의 `issue list` 가 `--sprint`, `--backlog-only` 미지원** — IssueFilter 의 일부 필드가 CLI 로 빠짐.
 2. **CLI 의 `note add` 가 broadcast scope (project/sprint/epic) 미지원** — Phase 2 의 broadcast 노트가 CLI 로 못 만들어짐.
 3. **`engram epic list --status` 인자 미지원** — `epic_list` MCP 는 status 필터 받음.
 
@@ -145,9 +148,9 @@
 
 | 항목                                | 수치  |
 |------------------------------------|-------|
-| MCP tool_definitions               | **52** (기존 45 + M6 mission 7) |
-| MCP dispatch 분기                  | 45+ (tool_definitions 와 동기화됨) |
-| 1:1 CLI 매핑 존재                  | 28    |
+| MCP tool_definitions               | **55** (기존 45 + M6 mission 7 + finished/cancelled 2 + bulk_update 1) |
+| MCP dispatch 분기                  | **57** (tool_definitions 55 + 미등록 2) |
+| 1:1 CLI 매핑 존재                  | 31    |
 | **CLI 미노출 (구현 필요)**         | **24** (기존 17 + mission 7) |
 | 추가 인자 보강 필요 CLI            | 6 (기존 4 + epic_create mission_id, epic_list include_completed) |
 

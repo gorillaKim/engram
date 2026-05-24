@@ -1,29 +1,25 @@
-# ADR-0007: Agent Demo Gate — 코드 강제 없이 규칙·UI 어포던스로 구현
+# ADR-0007: Agent Demo Gate — 서버 사이드 검증 및 도구 분리
 
 ## Status
-Accepted
+Amended (2026-05-24: 서버 사이드 스키마 분리 및 검증 강제 도입)
 
 ## Context
 
-Engram 의 이슈 상태 흐름에서 `finished` 와 `cancelled` 는 사용자만 결정해야 한다. Agent 가 실수로 이슈를 `finished` 처리하면 사용자의 검토 기회가 사라진다. 이를 방지하기 위해 얼마나 강하게 강제할지 결정이 필요했다.
+Engram 의 이슈 상태 흐름에서 `finished` 와 `cancelled` 는 사용자만 결정해야 한다. Agent 가 실수로 이슈를 `finished` 처리하면 사용자의 검토 기회가 사라진다.
+기존에는 클라이언트 측/프롬프트 규칙으로만 강제했으나, 에이전트가 schema에 노출된 `finished`/`cancelled`를 보고 오작동하거나 학습 과정에서 에러를 겪는 등의 문제가 지속되어, 서버 인터페이스 레벨에서 완전히 분리하기로 결정했다.
 
 ## Decision
 
-코드 수준 강제(MCP 서버에서 `finished`/`cancelled` 호출을 거부) 없이 다음 세 가지 레이어로 구현한다:
+인터페이스 및 서버 사이드에서 다음과 같은 규칙을 강제한다:
 
-1. **`.claude/rules/agent-demo-gate.md`** — 에이전트 행동 규칙 (프롬프트 수준)
-2. **`.claude/agents/engram-worker.md`** — 서브에이전트 정의에 금지 사항 명시
-3. **`history.changed_by`** 감사 — `agent` 로 기록된 상태 전이를 사후 탐지
-
-데스크톱 UI 에서는 demo 컬럼 시각적 강조 + `Finished` 버튼을 demo 상태에서만 표시하여 사용자 실수도 방지한다.
+1. **`issue_update` 스키마 수정**: `status` enum에서 `finished`, `cancelled`를 제외하여 에이전트가 이 API를 통해 직접 완료/취소 상태로 전이할 수 없게 차단한다.
+2. **사용자 전용 도구 신설 (`issue_finish` / `issue_cancel`)**: 
+   - `issue_finish`: `demo` 상태의 이슈만 `finished` 상태로 전이할 수 있으며, `changed_by != "user"`인 경우 에러를 반환한다.
+   - `issue_cancel`: `finished`가 아닌 임의 상태의 이슈를 `cancelled` 상태로 전이할 수 있으며, 취소 사유(`reason`)를 필수로 받고 `changed_by != "user"`인 경우 에러를 반환한다.
+3. **감사 이력 연동**: 전이 성공 시 `history` 테이블에 상태 변경 이력 및 `cancel_reason`을 저장한다.
 
 ## Consequences
 
-- 구현 단순: 서버 사이드 검증 로직 없음
-- 단일 사용자 환경에서 코드 게이트는 과공학 — 사용자가 직접 MCP 를 호출하면 어차피 우회 가능
-- 위반 시 즉각 되돌리기 가능 (칸반 DnD 로 상태 복구)
-- `history.changed_by='agent' AND new_value='finished'` 쿼리로 사후 감사 가능
-
-## Trade-offs
-
-코드 강제를 원할 경우: MCP 서버의 `issue_update` 핸들러에 `if args["status"] == "finished" && changed_by == "agent" { return Err(...) }` 추가. 단, 이는 MCP 클라이언트의 능동적 협조(changed_by 전달)를 전제하며, 현재 단계에서는 과잉 복잡성이다.
+- 에이전트의 불필요한 시도 차단: 스키마 단에서 허용 값이 아니므로 에이전트가 완료/취소를 원천적으로 시도하지 않음.
+- 안전성 향상: 비인가 에이전트가 임의로 도구를 호출하더라도 repository 레이어에서 에러(`Error::Validation`)를 내며 차단됨.
+- 히스토리 보강: 취소 시 구체적 사유(`cancel_reason`)를 함께 영구적으로 보존할 수 있음.

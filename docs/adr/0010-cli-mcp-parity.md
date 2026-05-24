@@ -42,3 +42,19 @@ Accepted
 - `--json` 을 모든 명령에 일괄 적용하는 비용이 들지만, `OutputFormat` 헬퍼 한 번에 처리 가능. 대안 (CLI 는 기본 JSON, `--pretty` 만 사람용) 은 기존 `engram retro` / `engram hook` 의 사용자 흐름과 충돌해 폐기.
 - `area` 명명을 MCP 첫 토큰에서 기계적으로 도출하지 않고 `my_blocked_issues` → `blocked`, `board_status` → `board` 처럼 의미 기반으로 재배치한 케이스가 4 개 있다. 일관성 비용이 있지만, 사용자가 외울 표면이 작아져 받아들임.
 - exit code 분류는 hook 통합 시 변별력이 필요하다는 판단. 단순화 (성공 0 / 실패 1) 안은 hook 자동 재시도 정책을 못 짠다는 이유로 폐기.
+
+## 컨벤션 (보강): agent_id 필수성
+
+상태/소유권/노트를 변경하는 모든 MCP 도구는 inputSchema 의 required 에 agent_id 포함.
+대상 도구 (현시점):
+- issue_update, issue_claim, issue_release, issue_link, issue_unlink, issue_finish*, issue_cancel*
+- mission_update, mission_set_sprint
+- epic_update
+- sprint_update
+- task_update, task_test_check, task_test_uncheck
+- note_add, note_resolve, note_add_bulk
+
+* 신규 도구 (에픽 #34) 와 동시 도입
+
+조회 도구 (issue_list, board_status 등) 는 agent_id optional 유지.
+

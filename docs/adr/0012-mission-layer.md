@@ -1,7 +1,7 @@
 # ADR-0012: Mission 레이어 도입 (Sprint → Mission → Epic 계층)
 
 ## Status
-Accepted
+Superseded in part by ADR-0013 (mission-sprint coupling)
 
 ## Context
 Phase 1~2에서 Sprint → Epic → Issue → Task 4단계 계층으로 이슈를 관리했으나,

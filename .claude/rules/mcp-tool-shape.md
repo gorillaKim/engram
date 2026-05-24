@@ -34,6 +34,7 @@
   ```
 
 - 도구 이름은 `<area>_<verb>` snake_case (예: `issue_link`, `task_next`).
+- **agent_id 필수성 (ADR-0010 보강)**: 상태/소유권/노트를 변경하는 모든 MCP 도구는 `inputSchema`의 `required` 배열에 `"agent_id"`를 필수 포함해야 합니다. (조회 도구는 optional 유지)
 
 ## description 작성 규칙
 

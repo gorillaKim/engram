@@ -9,10 +9,11 @@
 Engram 이슈 상태 흐름에서 `demo → finished` 와 `* → cancelled` 는 **사용자 전용** 이다.
 Agent (직접 호출 또는 engram-worker 서브에이전트) 는 다음을 준수한다:
 
-1. **`issue_update(status=finished)` 호출 금지** (작업 완료 시 `status=demo`로 설정 후 확인 대기)
-2. **`issue_update(status=cancelled)` 호출 금지**
-3. demo 진입 직전 반드시 `note_add(type=context, summary, detail)` 으로 검토 가이드 작성
-4. demo 진입 후에는 사용자의 칸반 조작을 기다린다 (`task_next` 가 다른 이슈를 반환할 수 있음)
+1. **`issue_update.status` schema에서 `finished`와 `cancelled`는 제외**되었습니다. 에이전트는 이 상태로 직접 전이할 수 없습니다.
+2. **`issue_finish` 및 `issue_cancel` 호출 금지**: 이 두 도구는 사용자 전용(User-only) 게이트로 작동하며, `agent_id != "user"`인 경우 에러를 반환합니다.
+3. 작업 완료 시에는 반드시 `issue_release(transition_to=demo)`를 호출하고 승인을 기다립니다.
+4. demo 진입 직전 반드시 `note_add(type=context, summary, detail)` 으로 검토 가이드 작성
+5. demo 진입 후에는 사용자의 칸반 조작을 기다린다 (`task_next` 가 다른 이슈를 반환할 수 있음)
 
 ## 위반 시 사후 감사
 
