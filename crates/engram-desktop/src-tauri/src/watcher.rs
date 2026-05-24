@@ -2,7 +2,7 @@ use engram_core::Db;
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -12,17 +12,32 @@ use tauri_plugin_notification::NotificationExt;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct TrayBoardSummary {
-    pub inbox: u32,       // required 전체
-    pub demo_review: u32, // demo 전체
-    pub working: u32,     // 현재 작업중 이슈 수
+    pub inbox: u32,
+    pub demo_review: u32,
+    pub working: u32,
+    /// "active" | "pending" | "stalled" | "none"
+    pub working_state: String,
 }
 
-#[derive(Default)]
 struct BoardSnapshot {
-    required: HashMap<i64, String>, // id → title
+    required: HashMap<i64, String>,
     demo: HashMap<i64, String>,
     working: HashMap<i64, String>,
     blockers: u32,
+    /// 초 단위 경과 시간. u64::MAX = 히스토리 없음
+    last_activity_secs: u64,
+}
+
+impl Default for BoardSnapshot {
+    fn default() -> Self {
+        Self {
+            required: HashMap::new(),
+            demo: HashMap::new(),
+            working: HashMap::new(),
+            blockers: 0,
+            last_activity_secs: u64::MAX,
+        }
+    }
 }
 
 pub async fn run(app: AppHandle, db: Arc<Db>) {
@@ -36,11 +51,13 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
     // 애니메이션 공유 상태
     let working_count = Arc::new(AtomicU32::new(0));
     let demo_only = Arc::new(AtomicBool::new(false));
+    let last_activity_secs = Arc::new(AtomicU64::new(u64::MAX));
 
     {
         let app2 = app.clone();
         let wc = working_count.clone();
         let dc = demo_only.clone();
+        let la = last_activity_secs.clone();
         tokio::spawn(async move {
             // 브레일 스피너 프레임 — working 상태 시 회전 애니메이션
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -50,9 +67,14 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
                 i = (i + 1) % frames.len();
                 let w = wc.load(Ordering::Relaxed);
                 let d = dc.load(Ordering::Relaxed);
+                let las = la.load(Ordering::Relaxed);
                 if let Some(tray) = app2.tray_by_id("default") {
                     let title = if w > 0 {
-                        format!("{} 작업중", frames[i])
+                        match classify_working(las) {
+                            "active"  => format!("{} 작업중", frames[i]),
+                            "pending" => "⏸ 작업예상".to_string(),
+                            _         => "⚠ 작업중단".to_string(),
+                        }
                     } else if d {
                         "👀 검토대기".to_string()
                     } else {
@@ -77,16 +99,20 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
         };
 
         // 팝오버용 요약 emit
+        let w = cur.working.len() as u32;
+        let state = if w > 0 { classify_working(cur.last_activity_secs) } else { "none" };
         let summary = TrayBoardSummary {
             inbox: cur.required.len() as u32,
             demo_review: cur.demo.len() as u32,
-            working: cur.working.len() as u32,
+            working: w,
+            working_state: state.to_string(),
         };
         let _ = app.emit("tray://summary", &summary);
 
         // 애니메이션 상태 갱신
-        working_count.store(summary.working, Ordering::Relaxed);
-        demo_only.store(summary.working == 0 && summary.demo_review > 0, Ordering::Relaxed);
+        working_count.store(w, Ordering::Relaxed);
+        demo_only.store(w == 0 && summary.demo_review > 0, Ordering::Relaxed);
+        last_activity_secs.store(cur.last_activity_secs, Ordering::Relaxed);
 
         // 첫 틱: 기준선만 수립하고 알림 로직은 건너뜀
         if !initialized {
@@ -171,7 +197,26 @@ async fn snapshot(db: &Db) -> engram_core::Result<BoardSnapshot> {
 
     let blockers = status.blocked_chains.len() as u32;
 
-    Ok(BoardSnapshot { required, demo, working, blockers })
+    let working_ids: Vec<i64> = working.keys().copied().collect();
+    let last_activity_secs = match db.history_last_activity_secs_for_issues(&working_ids).await {
+        Ok(Some(secs)) => secs.max(0) as u64,
+        Ok(None) => u64::MAX,
+        Err(e) => {
+            tracing::warn!("history activity query error: {e}");
+            u64::MAX
+        }
+    };
+
+    Ok(BoardSnapshot { required, demo, working, blockers, last_activity_secs })
+}
+
+/// 히스토리 경과 시간으로 작업 상태 분류.
+/// u64::MAX = 히스토리 없음 → "pending" (방금 시작 또는 기록 없음)
+fn classify_working(last_secs: u64) -> &'static str {
+    if last_secs == u64::MAX { "pending" }
+    else if last_secs <= 1800 { "active" }
+    else if last_secs <= 7200 { "pending" }
+    else { "stalled" }
 }
 
 #[cfg(test)]
@@ -207,5 +252,16 @@ mod tests {
         assert_eq!(s.inbox, 0);
         assert_eq!(s.demo_review, 0);
         assert_eq!(s.working, 0);
+        assert_eq!(s.working_state, "");
+    }
+
+    #[test]
+    fn test_classify_working() {
+        assert_eq!(classify_working(u64::MAX), "pending");
+        assert_eq!(classify_working(0), "active");
+        assert_eq!(classify_working(1800), "active");
+        assert_eq!(classify_working(1801), "pending");
+        assert_eq!(classify_working(7200), "pending");
+        assert_eq!(classify_working(7201), "stalled");
     }
 }

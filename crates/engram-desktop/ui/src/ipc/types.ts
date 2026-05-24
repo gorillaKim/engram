@@ -212,6 +212,8 @@ export interface TrayBoardSummary {
   inbox: number;
   demo_review: number;
   working: number;
+  /** "active" | "pending" | "stalled" | "none" */
+  working_state: 'active' | 'pending' | 'stalled' | 'none';
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────

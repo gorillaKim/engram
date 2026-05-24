@@ -51,6 +51,25 @@ impl Db {
         .map_err(Into::into)
     }
 
+    /// working 이슈(및 그 하위 태스크)의 가장 최근 히스토리로부터 경과 초 반환.
+    /// 히스토리가 전혀 없으면 None.
+    pub async fn history_last_activity_secs_for_issues(&self, issue_ids: &[i64]) -> Result<Option<i64>> {
+        if issue_ids.is_empty() {
+            return Ok(None);
+        }
+        let ph = issue_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+        let sql = format!(
+            "SELECT CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', MAX(created_at)) AS INTEGER) \
+             FROM history \
+             WHERE (entity_type = 'issue' AND entity_id IN ({ph})) \
+                OR (entity_type = 'task'  AND entity_id IN (SELECT id FROM tasks WHERE issue_id IN ({ph})))",
+        );
+        let mut q = sqlx::query_scalar::<_, Option<i64>>(&sql);
+        for id in issue_ids { q = q.bind(*id); }
+        for id in issue_ids { q = q.bind(*id); }
+        q.fetch_one(&self.pool).await.map_err(Into::into)
+    }
+
     /// 최근 N분 이내의 모든 변경 이력. since_minutes=None 이면 전체 최근 limit 건.
     /// 멀티 에이전트 활동 모니터링 / 사후 디버깅용.
     pub async fn history_recent(&self, limit: i64, since_minutes: Option<i64>) -> Result<Vec<History>> {

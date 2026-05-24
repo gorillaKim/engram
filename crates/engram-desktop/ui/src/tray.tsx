@@ -42,10 +42,15 @@ function TrayApp() {
 
   const totalAlerts = (summary?.inbox ?? 0) + (summary?.demo_review ?? 0);
   const working = summary?.working ?? 0;
+  const workingState = summary?.working_state ?? 'none';
 
-  // 상단바 표시용 상태 — 작업중 > 검토대기 > 이상없음
+  // 상단바 표시용 상태 — 작업중/예상/중단 > 검토대기 > 이상없음
   const statusLabel = working > 0
-    ? { text: '작업중', cls: 'text-emerald-400' }
+    ? workingState === 'active'
+      ? { text: '작업중', cls: 'text-emerald-400' }
+      : workingState === 'stalled'
+        ? { text: '작업중단', cls: 'text-red-400' }
+        : { text: '작업예상', cls: 'text-sky-400' }
     : totalAlerts > 0
       ? { text: `${totalAlerts}건 주의`, cls: 'text-amber-400' }
       : { text: '이상 없음', cls: 'text-white/30' };
