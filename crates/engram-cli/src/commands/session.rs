@@ -25,7 +25,7 @@ pub enum SessionCommand {
 pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
         SessionCommand::Restore { project, compact } => {
-            let snapshot = db.session_restore(project.as_deref(), compact).await?;
+            let snapshot = db.session_restore(project.as_deref(), compact, 120).await?;
             output::print_value(&snapshot, fmt)?;
         }
         SessionCommand::End { project } => {
@@ -54,7 +54,7 @@ pub async fn snapshot_text(
     project: Option<String>,
     fmt: OutputFormat,
 ) -> anyhow::Result<()> {
-    let snapshot = db.session_restore(project.as_deref(), false).await?;
+    let snapshot = db.session_restore(project.as_deref(), false, 120).await?;
 
     if matches!(fmt, OutputFormat::Json) {
         output::print_value(&snapshot, fmt)?;

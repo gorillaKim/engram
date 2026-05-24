@@ -198,7 +198,7 @@ async fn test_parity_session_restore_and_end() {
     let db_a = fresh_db().await; seed_via_db(&db_a).await;
     let db_b = fresh_db().await; seed_via_dispatch(&db_b).await;
 
-    let cli = normalize(serde_json::to_value(db_a.session_restore(Some("p"), false).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.session_restore(Some("p"), false, 120).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "session_restore",
         &json!({"project_key": "p"})).await.unwrap());
     assert_eq!(cli, mcp, "session_restore 동치 실패");

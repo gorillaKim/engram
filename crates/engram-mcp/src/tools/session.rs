@@ -53,7 +53,8 @@ pub fn tool_definitions() -> Vec<Value> {
 pub async fn restore(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let compact = args["compact"].as_bool().unwrap_or(false);
-    let snapshot = db.session_restore(project_key, compact).await?;
+    let stall_minutes = args["stall_minutes"].as_i64().unwrap_or(120);
+    let snapshot = db.session_restore(project_key, compact, stall_minutes).await?;
     Ok(serde_json::to_value(snapshot).unwrap())
 }
 
