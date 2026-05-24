@@ -51,18 +51,7 @@ export function History() {
     setVisibleCount(30);
   }, [viewMode, selectedId]);
 
-  const filter = useMemo(() => ({
-    status: 'finished' as const,
-    ...(viewMode === 'sprint'
-      ? { sprint_id: selectedId }
-      : viewMode === 'epic'
-      ? { epic_id: selectedId ?? undefined }
-      : {}),
-  }), [viewMode, selectedId]);
-
-  const { data: issues, isLoading } = useIssues(filter);
-
-  // 진척률 계산을 위해 전체 이슈(상태 필터링 없음) 조회
+  // 전체 이슈 조회 (상태 필터 없음) — finished/cancelled 표시 + 진척률 계산에 모두 사용
   const totalFilter = useMemo(() => ({
     ...(viewMode === 'sprint'
       ? { sprint_id: selectedId }
@@ -71,7 +60,7 @@ export function History() {
       : {}),
   }), [viewMode, selectedId]);
 
-  const { data: allIssues } = useIssues(totalFilter);
+  const { data: allIssues, isLoading } = useIssues(totalFilter);
 
   const handleModeChange = (mode: 'sprint' | 'epic' | 'mission') => {
     setViewMode(mode);
@@ -82,12 +71,14 @@ export function History() {
   const debouncedQuery = useDebounce(searchQuery);
 
   const finishedIssues = useMemo(() => {
-    const raw = issues ?? [];
+    const raw = (allIssues ?? []).filter(
+      (i) => i.status === 'finished' || i.status === 'cancelled',
+    );
     if (viewMode === 'mission' && selectedId != null) {
       return raw.filter((i) => i.mission_id === selectedId);
     }
     return raw;
-  }, [issues, viewMode, selectedId]);
+  }, [allIssues, viewMode, selectedId]);
 
   // 통계 계산
   const stats = useMemo(() => calculateHistoryStats(finishedIssues), [finishedIssues]);
@@ -299,11 +290,12 @@ export function History() {
                       제목 {renderSortIndicator('title')}
                     </th>
                     <th className="px-6 py-3 w-48 text-slate-500">에픽</th>
+                    <th className="px-6 py-3 w-20 text-slate-500">상태</th>
                     <th className="px-6 py-3 w-28 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('priority')}>
                       우선순위 {renderSortIndicator('priority')}
                     </th>
                     <th className="px-6 py-3 w-40 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('updated_at')}>
-                      완료일 {renderSortIndicator('updated_at')}
+                      완료/취소일 {renderSortIndicator('updated_at')}
                     </th>
                   </tr>
                 </thead>
@@ -322,6 +314,13 @@ export function History() {
                         </td>
                         <td className="px-6 py-4 text-slate-500 text-xs truncate">
                           {epicTitle}
+                        </td>
+                        <td className="px-6 py-4">
+                          {issue.status === 'cancelled' ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">취소</span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">완료</span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <PriorityBadge priority={issue.priority} />
