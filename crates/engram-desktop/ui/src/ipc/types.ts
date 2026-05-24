@@ -211,7 +211,7 @@ export interface LogLine {
 export interface TrayBoardSummary {
   inbox: number;
   demo_review: number;
-  blockers: number;
+  working: number;
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────

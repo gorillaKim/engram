@@ -40,7 +40,15 @@ function TrayApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const totalAlerts = (summary?.inbox ?? 0) + (summary?.demo_review ?? 0) + (summary?.blockers ?? 0);
+  const totalAlerts = (summary?.inbox ?? 0) + (summary?.demo_review ?? 0);
+  const working = summary?.working ?? 0;
+
+  // 상단바 표시용 상태 — 작업중 > 검토대기 > 이상없음
+  const statusLabel = working > 0
+    ? { text: '작업중', cls: 'text-emerald-400' }
+    : totalAlerts > 0
+      ? { text: `${totalAlerts}건 주의`, cls: 'text-amber-400' }
+      : { text: '이상 없음', cls: 'text-white/30' };
 
   return (
     <div className="select-none h-screen flex flex-col p-1">
@@ -48,10 +56,16 @@ function TrayApp() {
 
         {/* 헤더 - 고정 */}
         <div className="flex-none">
-          <div className="px-4 pt-4 pb-3 flex items-baseline justify-between">
+          <div className="px-4 pt-4 pb-3 flex items-center justify-between">
             <h1 className="text-[15px] font-semibold text-white/90">Engram</h1>
-            <span className={`text-[12px] ${totalAlerts > 0 ? 'text-amber-400' : 'text-white/30'}`}>
-              {totalAlerts > 0 ? `${totalAlerts}건 주의` : '이상 없음'}
+            <span className={`flex items-center gap-1.5 text-[12px] ${statusLabel.cls}`}>
+              {working > 0 && (
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
+                </span>
+              )}
+              {statusLabel.text}
             </span>
           </div>
           <div className="h-px bg-white/[0.08]" />

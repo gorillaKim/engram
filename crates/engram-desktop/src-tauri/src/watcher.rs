@@ -1,7 +1,10 @@
 use engram_core::Db;
 use std::{
     collections::HashMap,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter};
@@ -11,13 +14,14 @@ use tauri_plugin_notification::NotificationExt;
 pub struct TrayBoardSummary {
     pub inbox: u32,       // required 전체
     pub demo_review: u32, // demo 전체
-    pub blockers: u32,    // blocker 전체
+    pub working: u32,     // 현재 작업중 이슈 수
 }
 
 #[derive(Default)]
 struct BoardSnapshot {
     required: HashMap<i64, String>, // id → title
     demo: HashMap<i64, String>,
+    working: HashMap<i64, String>,
     blockers: u32,
 }
 
@@ -26,6 +30,39 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
     let mut cooldown_map: HashMap<String, Instant> = HashMap::new();
     let cooldown = Duration::from_secs(30);
     let mut tick: u32 = 0;
+    // 첫 틱은 기준선 수립만 — 앱 시작 시 기존 이슈를 "새 알림"으로 오발송 방지
+    let mut initialized = false;
+
+    // 애니메이션 공유 상태
+    let working_count = Arc::new(AtomicU32::new(0));
+    let demo_only = Arc::new(AtomicBool::new(false));
+
+    {
+        let app2 = app.clone();
+        let wc = working_count.clone();
+        let dc = demo_only.clone();
+        tokio::spawn(async move {
+            // 브레일 스피너 프레임 — working 상태 시 회전 애니메이션
+            let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let mut i = 0usize;
+            loop {
+                tokio::time::sleep(Duration::from_millis(120)).await;
+                i = (i + 1) % frames.len();
+                let w = wc.load(Ordering::Relaxed);
+                let d = dc.load(Ordering::Relaxed);
+                if let Some(tray) = app2.tray_by_id("default") {
+                    let title = if w > 0 {
+                        format!("{} 작업중", frames[i])
+                    } else if d {
+                        "👀 검토대기".to_string()
+                    } else {
+                        "💤 대기중".to_string()
+                    };
+                    let _ = tray.set_title(Some(&title));
+                }
+            }
+        });
+    }
 
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -39,18 +76,23 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
             }
         };
 
-        // Emit summary for popover
+        // 팝오버용 요약 emit
         let summary = TrayBoardSummary {
             inbox: cur.required.len() as u32,
             demo_review: cur.demo.len() as u32,
-            blockers: cur.blockers,
+            working: cur.working.len() as u32,
         };
         let _ = app.emit("tray://summary", &summary);
 
-        // Update tray title
-        if let Some(tray) = app.tray_by_id("default") {
-            let title = format!("📦 {} · ⚠ {}", summary.inbox, summary.demo_review);
-            let _ = tray.set_title(Some(&title));
+        // 애니메이션 상태 갱신
+        working_count.store(summary.working, Ordering::Relaxed);
+        demo_only.store(summary.working == 0 && summary.demo_review > 0, Ordering::Relaxed);
+
+        // 첫 틱: 기준선만 수립하고 알림 로직은 건너뜀
+        if !initialized {
+            last = cur;
+            initialized = true;
+            continue;
         }
 
         // Detect new_required
@@ -77,7 +119,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
             }
         }
 
-        // Detect new blockers (count-based)
+        // Detect new blockers (count 증가 시만)
         if cur.blockers > last.blockers {
             let key = "blocker:count".to_string();
             if should_notify(&cooldown_map, &key, cooldown) {
@@ -90,7 +132,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
 
         last = cur;
 
-        // Periodic eviction: every ~1 hour (720 ticks × 5s) remove expired cooldown entries
+        // 약 1시간마다 만료된 cooldown 항목 정리
         if tick % 720 == 0 {
             cooldown_map.retain(|_, t| t.elapsed() < cooldown);
         }
@@ -113,6 +155,7 @@ async fn snapshot(db: &Db) -> engram_core::Result<BoardSnapshot> {
 
     let mut required = HashMap::new();
     let mut demo = HashMap::new();
+    let mut working = HashMap::new();
 
     for b in &board.boards {
         for i in &b.required {
@@ -121,16 +164,14 @@ async fn snapshot(db: &Db) -> engram_core::Result<BoardSnapshot> {
         for i in &b.demo {
             demo.insert(i.id, i.title.clone());
         }
+        for i in &b.working {
+            working.insert(i.id, i.title.clone());
+        }
     }
 
-    // blockers come from blocked_chains count in BoardStatus
     let blockers = status.blocked_chains.len() as u32;
 
-    Ok(BoardSnapshot {
-        required,
-        demo,
-        blockers,
-    })
+    Ok(BoardSnapshot { required, demo, working, blockers })
 }
 
 #[cfg(test)]
@@ -153,7 +194,6 @@ mod tests {
     #[test]
     fn test_should_notify_after_cooldown() {
         let mut map = HashMap::new();
-        // Insert with time far in the past using a zero-duration cooldown check
         map.insert(
             "key1".to_string(),
             Instant::now() - Duration::from_secs(60),
@@ -166,6 +206,6 @@ mod tests {
         let s = TrayBoardSummary::default();
         assert_eq!(s.inbox, 0);
         assert_eq!(s.demo_review, 0);
-        assert_eq!(s.blockers, 0);
+        assert_eq!(s.working, 0);
     }
 }
