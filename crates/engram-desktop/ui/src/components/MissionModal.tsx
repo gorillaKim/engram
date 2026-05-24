@@ -20,6 +20,7 @@ export function MissionModal({ open, onClose, mission }: Props) {
   const [jiraKey, setJiraKey] = useState('');
   const [status, setStatus] = useState<MissionStatus>('active');
   const [sprintId, setSprintId] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: sprints = [] } = useQuery({
     queryKey: ['sprintList'],
@@ -28,7 +29,10 @@ export function MissionModal({ open, onClose, mission }: Props) {
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setConfirmDelete(false);
+      return;
+    }
     if (mission) {
       setTitle(mission.title);
       setDescription(mission.description ?? '');
@@ -90,11 +94,11 @@ export function MissionModal({ open, onClose, mission }: Props) {
 
   const handleDelete = () => {
     if (!mission) return;
-    const ok = window.confirm(
-      `정말 미션 "${mission.title}" 을 삭제하시겠습니까?\n` +
-      `하위 에픽/이슈 연결이 모두 해제되며 되돌릴 수 없습니다.`,
-    );
-    if (ok) remove.mutate();
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    remove.mutate();
   };
 
   const isPending = create.isPending || update.isPending || remove.isPending;
@@ -192,14 +196,35 @@ export function MissionModal({ open, onClose, mission }: Props) {
 
           <div className="flex items-center justify-between pt-1 border-t border-slate-100">
             {isEdit ? (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={remove.isPending}
-                className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                {remove.isPending ? '삭제 중…' : '미션 삭제'}
-              </button>
+              confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-red-600 font-medium">정말 삭제하시겠습니까?</span>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={remove.isPending}
+                    className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {remove.isPending ? '삭제 중…' : '확인'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-3 py-1.5 text-xs rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={remove.isPending}
+                  className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                >
+                  미션 삭제
+                </button>
+              )
             ) : <span />}
             <div className="flex gap-2">
               <button
