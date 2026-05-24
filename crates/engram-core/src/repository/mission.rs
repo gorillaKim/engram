@@ -6,8 +6,10 @@ use crate::{Db, Error, Result};
 
 impl Db {
     pub async fn mission_create(&self, input: CreateMissionInput) -> Result<Mission> {
-        let id = sqlx::query_scalar::<_, i64>(
-            "INSERT INTO missions (jira_key, title, description, sprint_id) VALUES (?, ?, ?, ?) RETURNING id",
+        // RETURNING * — INSERT 후 별도 SELECT 시 WAL 풀의 가시성 지연으로 NotFound 발생 가능.
+        sqlx::query_as::<_, Mission>(
+            "INSERT INTO missions (jira_key, title, description, sprint_id) VALUES (?, ?, ?, ?) \
+             RETURNING id, jira_key, title, description, status, sprint_id, created_at, updated_at",
         )
         .bind(&input.jira_key)
         .bind(&input.title)
@@ -24,8 +26,7 @@ impl Db {
             } else {
                 Error::Db(e)
             }
-        })?;
-        self.mission_get(id).await
+        })
     }
 
     pub async fn mission_get(&self, id: i64) -> Result<Mission> {
