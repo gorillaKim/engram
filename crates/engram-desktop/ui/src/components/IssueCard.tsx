@@ -9,24 +9,11 @@ interface Props {
   onClick?: (id: number) => void;
 }
 
-export function IssueCard({ issue, epicTitle, scopeExpanded, onClick }: Props) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: issue.id,
-    data: { issue },
-  });
+const cardClass = "bg-white rounded-lg shadow-sm hover:shadow-md border border-slate-200 p-4 space-y-2.5 transition-all hover:-translate-y-0.5 touch-none";
 
+function CardContent({ issue, epicTitle, scopeExpanded }: Pick<Props, 'issue' | 'epicTitle' | 'scopeExpanded'>) {
   return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      style={{ opacity: isDragging ? 0.4 : 1 }}
-      className="bg-white rounded-lg shadow-sm hover:shadow-md border border-slate-200 p-4 cursor-grab active:cursor-grabbing space-y-2.5 transition-all hover:-translate-y-0.5 touch-none"
-      onClick={(e) => {
-        if (!isDragging) onClick?.(issue.id);
-        e.stopPropagation();
-      }}
-    >
+    <>
       <div className="flex items-start justify-between gap-2">
         <span className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2">
           {issue.title}
@@ -50,6 +37,37 @@ export function IssueCard({ issue, epicTitle, scopeExpanded, onClick }: Props) {
           </span>
         )}
       </div>
+    </>
+  );
+}
+
+export function IssueCardView({ issue, epicTitle, scopeExpanded }: Omit<Props, 'onClick'>) {
+  return (
+    <div className={cardClass}>
+      <CardContent issue={issue} epicTitle={epicTitle} scopeExpanded={scopeExpanded} />
+    </div>
+  );
+}
+
+export function IssueCard({ issue, epicTitle, scopeExpanded, onClick }: Props) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: issue.id,
+    data: { issue },
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+      className={`${cardClass} cursor-grab active:cursor-grabbing`}
+      onClick={(e) => {
+        if (!isDragging) onClick?.(issue.id);
+        e.stopPropagation();
+      }}
+    >
+      <CardContent issue={issue} epicTitle={epicTitle} scopeExpanded={scopeExpanded} />
     </div>
   );
 }

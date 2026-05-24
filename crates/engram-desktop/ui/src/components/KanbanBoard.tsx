@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, pointerWithin, rectIntersection, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
-import { IssueCard } from './IssueCard';
+import { IssueCardView } from './IssueCard';
 import { FilterBar } from './FilterBar';
 import { ScopeExpansionBanner } from './ScopeExpansionBanner';
 import { CreateIssueModal } from './CreateIssueModal';
@@ -82,10 +82,7 @@ export function KanbanBoard() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={(args) => {
-          const hits = pointerWithin(args);
-          return hits.length > 0 ? hits : rectIntersection(args);
-        }}
+      collisionDetection={closestCenter}
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={(e) => setActiveIssue((e.active.data.current as { issue: Issue })?.issue ?? null)}
       onDragEnd={handleDragEnd}
@@ -185,7 +182,7 @@ export function KanbanBoard() {
       <DragOverlay>
         {activeIssue && (
           <div className="rotate-2 scale-105">
-            <IssueCard issue={activeIssue} scopeExpanded={expansionIds.has(activeIssue.id)} />
+            <IssueCardView issue={activeIssue} scopeExpanded={expansionIds.has(activeIssue.id)} />
           </div>
         )}
       </DragOverlay>
