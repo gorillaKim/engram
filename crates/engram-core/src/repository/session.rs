@@ -26,6 +26,10 @@ pub struct SessionSnapshot {
     /// project_key 지정 시 해당 프로젝트의 에픽을 가진 미션만 포함.
     #[serde(default)]
     pub active_missions: Vec<MissionSummary>,
+    /// working 상태이지만 히스토리 갱신이 stall_minutes 초과한 이슈 목록.
+    /// 에이전트는 이 목록을 확인해 재개 여부를 결정한다.
+    #[serde(default)]
+    pub stalled_working: Vec<StalledIssueBrief>,
 }
 
 /// `assigned_agent` 가 NULL 이 아닌 working 이슈의 점유 정보.
@@ -128,6 +132,16 @@ pub struct BlockedChain {
     pub blocked_title: String,
 }
 
+/// 작업중단 의심 이슈 요약 — tray, kanban 배너, session_restore 응답에 공통 사용
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StalledIssueBrief {
+    pub id: i64,
+    pub title: String,
+    pub project_key: String,
+    /// 마지막 히스토리로부터 경과 초. None 이면 히스토리 없음 (stalled 판단 대상 제외).
+    pub secs_since_activity: Option<i64>,
+}
+
 /// Kanban UI 용 — 상태별 Issue 배열 (board_status_query 의 카운트와 별도)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueBoardStatus {
@@ -135,6 +149,9 @@ pub struct IssueBoardStatus {
     pub sprint_name: String,
     pub project_key: Option<String>,
     pub boards: Vec<IssueProjectBoard>,
+    /// 작업중단 의심 이슈 목록 (히스토리 경과 > stall_minutes). 비어있으면 정상.
+    #[serde(default)]
+    pub stalled_issues: Vec<StalledIssueBrief>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +174,7 @@ impl Db {
         &self,
         project_key: Option<&str>,
         compact: bool,
+        stall_minutes: i64,
     ) -> Result<SessionSnapshot> {
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
@@ -173,6 +191,7 @@ impl Db {
                 active_missions: vec![],
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
                 scope_expansion_ids: vec![],
+                stalled_working: vec![],
             });
         };
 
@@ -459,6 +478,8 @@ impl Db {
             }).collect()
         };
 
+        let stalled_working = self.stalled_working_issues(project_key, stall_minutes).await.unwrap_or_default();
+
         Ok(SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
@@ -472,6 +493,7 @@ impl Db {
             active_workers,
             active_caveats,
             active_missions,
+            stalled_working,
         })
     }
 
@@ -647,6 +669,7 @@ impl Db {
     pub async fn board_issues_query(
         &self,
         project_key: Option<&str>,
+        stall_minutes: i64,
     ) -> Result<IssueBoardStatus> {
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
@@ -655,6 +678,7 @@ impl Db {
                 sprint_name: "활성 스프린트 없음".to_string(),
                 project_key: project_key.map(String::from),
                 boards: vec![],
+                stalled_issues: vec![],
             });
         };
 
@@ -737,11 +761,70 @@ impl Db {
             }
         }
 
+        let stalled_issues = self.stalled_working_issues(project_key, stall_minutes).await.unwrap_or_default();
+
         Ok(IssueBoardStatus {
             sprint_id: sprint.id,
             sprint_name: sprint.name.clone(),
             project_key: project_key.map(String::from),
             boards,
+            stalled_issues,
         })
+    }
+
+    /// working 이슈 중 마지막 히스토리(이슈+태스크)가 stall_minutes 를 초과한 이슈 목록.
+    /// 히스토리가 없는 이슈(방금 시작)는 제외한다.
+    pub async fn stalled_working_issues(
+        &self,
+        project_key: Option<&str>,
+        stall_minutes: i64,
+    ) -> Result<Vec<StalledIssueBrief>> {
+        let sprint = self.sprint_current().await?;
+        let Some(sprint) = sprint else { return Ok(vec![]); };
+
+        let mut sql = r#"
+            SELECT i.id, i.title, e.project_key,
+                CAST(strftime('%s', 'now') AS INTEGER) -
+                CAST(strftime('%s', MAX(h.created_at)) AS INTEGER) AS secs_since_activity
+            FROM issues i
+            JOIN epics e ON i.epic_id = e.id
+            LEFT JOIN history h ON (
+                (h.entity_type = 'issue' AND h.entity_id = i.id)
+                OR (h.entity_type = 'task' AND h.entity_id IN (
+                    SELECT t.id FROM tasks t WHERE t.issue_id = i.id
+                ))
+            )
+            WHERE i.sprint_id = ?
+              AND i.status = 'working'
+        "#.to_string();
+        if project_key.is_some() {
+            sql.push_str(" AND e.project_key = ?");
+        }
+        sql.push_str(
+            " GROUP BY i.id, i.title, e.project_key
+              HAVING MAX(h.created_at) IS NOT NULL
+                 AND secs_since_activity > ?
+              ORDER BY secs_since_activity DESC",
+        );
+
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            id: i64,
+            title: String,
+            project_key: String,
+            secs_since_activity: Option<i64>,
+        }
+
+        let mut q = sqlx::query_as::<_, Row>(&sql).bind(sprint.id);
+        if let Some(pk) = project_key { q = q.bind(pk); }
+        q = q.bind(stall_minutes * 60);
+
+        let rows = q.fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(|r| StalledIssueBrief {
+            id: r.id,
+            title: r.title,
+            project_key: r.project_key,
+            secs_since_activity: r.secs_since_activity,
+        }).collect())
     }
 }
