@@ -33,6 +33,8 @@ pub enum IssueStatus {
 }
 
 impl IssueStatus {
+    pub const ALL: &'static [&'static str] = &["required", "ready", "working", "demo", "finished", "cancelled"];
+
     /// 사용자 / Agent 모두 임의의 상태로 자유롭게 전이할 수 있다.
     /// 권장 흐름은 required → ready → working → (demo →) finished 지만
     /// 칸반 UX 에서 카드를 양방향으로 옮길 수 있어야 하기 때문에 여기서는 가드를 두지 않는다.
@@ -119,6 +121,7 @@ pub struct IssueFilter {
     pub backlog_only: bool,
     pub project_key: Option<String>,
     pub status: Option<IssueStatus>,
+    pub statuses: Option<Vec<IssueStatus>>,
     pub priority: Option<IssuePriority>,
 }
 
@@ -154,5 +157,38 @@ pub struct IssuePlanningItem {
     pub blockers: Vec<i64>,
     pub existing_context_note_count: i64,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkUpdateInput {
+    pub status: Option<IssueStatus>,
+    pub priority: Option<IssuePriority>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkUpdateFailedItem {
+    pub id: i64,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkUpdateResult {
+    pub succeeded: Vec<Issue>,
+    pub failed: Vec<BulkUpdateFailedItem>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issue_status_all_match() {
+        for &s in IssueStatus::ALL {
+            let status: IssueStatus = serde_json::from_str(&format!("\"{}\"", s))
+                .expect(&format!("failed to deserialize status: {}", s));
+            let serialized = serde_json::to_string(&status).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", s));
+        }
+    }
 }
 

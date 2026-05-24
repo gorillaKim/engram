@@ -38,3 +38,22 @@ pub struct UpdateSprintInput {
     pub start_date: Option<String>,
     pub end_date: Option<String>,
 }
+
+impl SprintStatus {
+    pub const ALL: &'static [&'static str] = &["planning", "active", "completed", "cancelled"];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sprint_status_all_match() {
+        for &s in SprintStatus::ALL {
+            let status: SprintStatus = serde_json::from_str(&format!("\"{}\"", s))
+                .expect(&format!("failed to deserialize status: {}", s));
+            let serialized = serde_json::to_string(&status).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", s));
+        }
+    }
+}

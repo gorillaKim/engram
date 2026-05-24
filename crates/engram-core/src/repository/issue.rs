@@ -6,6 +6,11 @@ const DESCRIPTION_EXCERPT_CHARS: usize = 100;
 
 impl Db {
     pub async fn issue_create(&self, input: CreateIssueInput) -> Result<Issue> {
+        if input.sprint_id.is_some() {
+            return Err(Error::Validation(
+                "sprint_id 는 더 이상 직접 지정할 수 없습니다. 이슈의 스프린트는 소속 미션을 통해 결정됩니다.".to_string()
+            ));
+        }
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
 
@@ -23,14 +28,13 @@ impl Db {
             .flatten()
         };
 
-        // RETURNING * 단일 쿼리 — sprint/epic_create 와 동일 패턴.
+        // RETURNING 절에서 (SELECT sprint_id FROM missions WHERE id = mission_id) 로 derived sprint_id 반환
         sqlx::query_as::<_, Issue>(
-            "INSERT INTO issues (epic_id, mission_id, sprint_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
+            "INSERT INTO issues (epic_id, mission_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?)
+             RETURNING id, epic_id, mission_id, (SELECT sprint_id FROM missions WHERE id = mission_id) AS sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
         )
         .bind(input.epic_id)
         .bind(mission_id)
-        .bind(input.sprint_id)
         .bind(&input.title)
         .bind(&input.description)
         .bind(&input.goal)
@@ -42,12 +46,12 @@ impl Db {
 
     pub async fn issue_get(&self, id: i64, compact: bool) -> Result<Issue> {
         let select_fields = if compact {
-            "id, epic_id, mission_id, sprint_id, title, NULL AS description, NULL AS goal, status, priority, assigned_agent, created_at, updated_at"
+            "i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, NULL AS description, NULL AS goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at"
         } else {
-            "id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at"
+            "i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at"
         };
         sqlx::query_as::<_, Issue>(&format!(
-            "SELECT {} FROM issues WHERE id = ?", select_fields
+            "SELECT {} FROM issues i LEFT JOIN missions m ON i.mission_id = m.id WHERE i.id = ?", select_fields
         ))
         .bind(id)
         .fetch_optional(&self.pool)
@@ -56,15 +60,31 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at FROM issues i WHERE 1=1".to_string();
+        let mut sql = "SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at FROM issues i LEFT JOIN missions m ON i.mission_id = m.id WHERE 1=1".to_string();
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
         if filter.mission_id.is_some()  { sql.push_str(" AND i.mission_id = ?"); }
-        if filter.sprint_id.is_some()   { sql.push_str(" AND i.sprint_id = ?"); }
-        if filter.backlog_only           { sql.push_str(" AND i.sprint_id IS NULL"); }
+        if filter.sprint_id.is_some()   { sql.push_str(" AND m.sprint_id = ?"); }
+        if filter.backlog_only           { sql.push_str(" AND (i.mission_id IS NULL OR m.sprint_id IS NULL)"); }
         if filter.project_key.is_some() {
             sql.push_str(" AND EXISTS (SELECT 1 FROM epics e WHERE e.id = i.epic_id AND e.project_key = ?)");
         }
-        if filter.status.is_some() { sql.push_str(" AND i.status = ?"); }
+        
+        let mut target_statuses = Vec::new();
+        if let Some(s) = filter.status {
+            target_statuses.push(s);
+        }
+        if let Some(ss) = filter.statuses {
+            for s in ss {
+                if !target_statuses.contains(&s) {
+                    target_statuses.push(s);
+                }
+            }
+        }
+
+        if !target_statuses.is_empty() {
+            let placeholders = target_statuses.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            sql.push_str(&format!(" AND i.status IN ({})", placeholders));
+        }
         sql.push_str(" ORDER BY i.id DESC");
 
         let mut q = sqlx::query_as::<_, Issue>(&sql);
@@ -72,30 +92,19 @@ impl Db {
         if let Some(m) = filter.mission_id  { q = q.bind(m); }
         if let Some(s) = filter.sprint_id   { q = q.bind(s); }
         if let Some(p) = filter.project_key { q = q.bind(p); }
-        if let Some(s) = filter.status {
+        for s in target_statuses {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
             q = q.bind(sv);
         }
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
+
     /// 이슈의 스프린트 소속을 변경한다. None 을 넘기면 백로그로 이동.
-    pub async fn issue_set_sprint(&self, id: i64, sprint_id: Option<i64>, changed_by: &str) -> Result<Issue> {
-        let current = self.issue_get(id, false).await?;
-        sqlx::query("UPDATE issues SET sprint_id = ?, updated_at = datetime('now') WHERE id = ?")
-            .bind(sprint_id)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        let _ = self.history_record(CreateHistoryInput {
-            entity_type: EntityType::Issue,
-            entity_id: id,
-            field: "sprint_id".to_string(),
-            old_value: Some(current.sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())),
-            new_value: Some(sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string())),
-            changed_by: changed_by.to_string(),
-        }).await;
-        self.issue_get(id, false).await
+    pub async fn issue_set_sprint(&self, _id: i64, _sprint_id: Option<i64>, _changed_by: &str) -> Result<Issue> {
+        Err(Error::Validation(
+            "issue_set_sprint 는 deprecated 입니다. mission_set_sprint 또는 issue_update(mission_id=...) 를 사용하세요. ADR-0013 참조".to_string()
+        ))
     }
 
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
@@ -317,6 +326,76 @@ impl Db {
         self.issue_get(id, false).await
     }
 
+    /// demo 상태의 이슈를 finished 로 전이한다 (사용자 전용).
+    pub async fn issue_finish(&self, id: i64, changed_by: &str) -> Result<Issue> {
+        if changed_by != "user" {
+            return Err(Error::Validation("issue_finish 는 사용자 전용입니다".to_string()));
+        }
+
+        let current = self.issue_get(id, false).await?;
+        if current.status != IssueStatus::Demo {
+            return Err(Error::Conflict(format!(
+                "demo 상태의 이슈만 finished 로 전이할 수 있습니다 (현재 상태: {:?})",
+                current.status
+            )));
+        }
+
+        sqlx::query("UPDATE issues SET status = 'finished', assigned_agent = NULL, updated_at = datetime('now') WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Issue,
+            entity_id: id,
+            field: "status".to_string(),
+            old_value: Some("demo".to_string()),
+            new_value: Some("finished".to_string()),
+            changed_by: changed_by.to_string(),
+        }).await;
+
+        self.issue_get(id, false).await
+    }
+
+    /// 임의 상태의 이슈를 cancelled 로 전이한다 (사용자 전용).
+    pub async fn issue_cancel(&self, id: i64, reason: &str, changed_by: &str) -> Result<Issue> {
+        if changed_by != "user" {
+            return Err(Error::Validation("issue_cancel 은 사용자 전용입니다".to_string()));
+        }
+
+        let current = self.issue_get(id, false).await?;
+        if current.status == IssueStatus::Finished {
+            return Err(Error::Conflict("이미 finished 로 종결된 이슈는 cancelled 로 전이할 수 없습니다".to_string()));
+        }
+
+        let old_status_str = serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string();
+
+        sqlx::query("UPDATE issues SET status = 'cancelled', assigned_agent = NULL, updated_at = datetime('now') WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Issue,
+            entity_id: id,
+            field: "status".to_string(),
+            old_value: Some(old_status_str),
+            new_value: Some("cancelled".to_string()),
+            changed_by: changed_by.to_string(),
+        }).await;
+
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Issue,
+            entity_id: id,
+            field: "cancel_reason".to_string(),
+            old_value: None,
+            new_value: Some(reason.to_string()),
+            changed_by: changed_by.to_string(),
+        }).await;
+
+        self.issue_get(id, false).await
+    }
+
     /// 이슈를 삭제한다. 하위 태스크/노트/링크/태스크테스트도 함께 cascade 삭제.
     ///
     /// 스키마상 `tasks.issue_id ON DELETE RESTRICT` 라서 단순 DELETE 는 막힌다.
@@ -473,16 +552,17 @@ impl Db {
         let sname = sprint.as_ref().map(|s| s.name.clone());
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.mission_id, i.sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
+            SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
+            LEFT JOIN missions m ON i.mission_id = m.id
             WHERE e.project_key = ?
         "#.to_string();
 
         if sid.is_some() {
-            sql.push_str(" AND i.sprint_id = ?");
+            sql.push_str(" AND m.sprint_id = ?");
         } else {
-            sql.push_str(" AND i.sprint_id IS NULL");
+            sql.push_str(" AND (i.mission_id IS NULL OR m.sprint_id IS NULL)");
         }
 
         sql.push_str(" ORDER BY i.id DESC");
@@ -543,6 +623,35 @@ impl Db {
             sprint_name: sname,
             issues: items,
         })
+    }
+
+    pub async fn issue_bulk_update(
+        &self,
+        ids: Vec<i64>,
+        input: BulkUpdateInput,
+        changed_by: &str,
+    ) -> Result<BulkUpdateResult> {
+        let mut succeeded = Vec::new();
+        let mut failed = Vec::new();
+
+        for id in ids {
+            let update_input = UpdateIssueInput {
+                status: input.status.clone(),
+                priority: input.priority.clone(),
+                title: None,
+                description: None,
+                goal: None,
+            };
+            match self.issue_update(id, update_input, changed_by).await {
+                Ok(issue) => succeeded.push(issue),
+                Err(e) => failed.push(BulkUpdateFailedItem {
+                    id,
+                    error: e.to_string(),
+                }),
+            }
+        }
+
+        Ok(BulkUpdateResult { succeeded, failed })
     }
 }
 

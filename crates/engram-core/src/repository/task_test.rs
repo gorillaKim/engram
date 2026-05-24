@@ -1,3 +1,4 @@
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::task_test::TaskTest;
 use crate::{Db, Error, Result};
 
@@ -46,13 +47,21 @@ impl Db {
         .map_err(Into::into)
     }
 
-    pub async fn task_test_check(&self, id: i64) -> Result<TaskTest> {
+    pub async fn task_test_check(&self, id: i64, changed_by: &str) -> Result<TaskTest> {
         sqlx::query(
             "UPDATE task_tests SET checked = 1, checked_at = datetime('now') WHERE id = ?",
         )
         .bind(id)
         .execute(&self.pool)
         .await?;
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Task,
+            entity_id:   id,
+            field:        "task_test.checked".to_string(),
+            old_value:    Some("false".to_string()),
+            new_value:    Some("true".to_string()),
+            changed_by:   changed_by.to_string(),
+        }).await;
         self.task_test_get(id).await
     }
 
@@ -78,13 +87,21 @@ impl Db {
         Ok(result)
     }
 
-    pub async fn task_test_uncheck(&self, id: i64) -> Result<TaskTest> {
+    pub async fn task_test_uncheck(&self, id: i64, changed_by: &str) -> Result<TaskTest> {
         sqlx::query(
             "UPDATE task_tests SET checked = 0, checked_at = NULL WHERE id = ?",
         )
         .bind(id)
         .execute(&self.pool)
         .await?;
+        let _ = self.history_record(CreateHistoryInput {
+            entity_type: EntityType::Task,
+            entity_id:   id,
+            field:        "task_test.checked".to_string(),
+            old_value:    Some("true".to_string()),
+            new_value:    Some("false".to_string()),
+            changed_by:   changed_by.to_string(),
+        }).await;
         self.task_test_get(id).await
     }
 

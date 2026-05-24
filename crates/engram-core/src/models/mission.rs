@@ -99,3 +99,22 @@ pub struct MissionProgress {
     /// finished / total. 분모가 0이면 0.0
     pub progress_rate: f64,
 }
+
+impl MissionStatus {
+    pub const ALL: &'static [&'static str] = &["active", "completed", "cancelled"];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mission_status_all_match() {
+        for &s in MissionStatus::ALL {
+            let status: MissionStatus = serde_json::from_str(&format!("\"{}\"", s))
+                .expect(&format!("failed to deserialize status: {}", s));
+            let serialized = serde_json::to_string(&status).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", s));
+        }
+    }
+}

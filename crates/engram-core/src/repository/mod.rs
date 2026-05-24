@@ -46,19 +46,24 @@ impl Db {
 
     /// 테스트용 인메모리 DB — WAL 없이 migration만 실행
     pub async fn open_in_memory() -> crate::Result<Self> {
-        use sqlx::sqlite::SqliteConnectOptions;
-        use std::str::FromStr;
+      use sqlx::sqlite::SqliteConnectOptions;
+      use std::str::FromStr;
 
-        let options = SqliteConnectOptions::from_str("sqlite::memory:")
-            .map_err(crate::Error::Db)?
-            .foreign_keys(true);
+      let options = SqliteConnectOptions::from_str("sqlite::memory:")
+          .map_err(crate::Error::Db)?
+          .foreign_keys(true);
 
-        let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect_with(options)
-            .await?;
-        sqlx::migrate!("./migrations").run(&pool).await?;
+      let pool = sqlx::sqlite::SqlitePoolOptions::new()
+          .max_connections(5)
+          .connect_with(options)
+          .await?;
+      sqlx::migrate!("./migrations").run(&pool).await?;
 
-        Ok(Self { pool })
+      Ok(Self { pool })
+    }
+
+    /// 내부 커넥션 풀을 반환 (주로 통합 테스트용)
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
     }
 }

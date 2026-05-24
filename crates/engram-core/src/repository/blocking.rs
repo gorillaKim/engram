@@ -85,23 +85,26 @@ mod tests {
         Db::open_in_memory().await.unwrap()
     }
 
-    async fn seed(db: &Db) -> (i64, i64) { // sprint_id, epic_id
+    async fn seed(db: &Db) -> (i64, i64, i64) { // sprint_id, epic_id, mission_id
         let sprint = db.sprint_create(CreateSprintInput { name: "S".to_string(), goal: None, start_date: None, end_date: None }).await.unwrap();
         db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }, "agent").await.unwrap();
-        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), mission_id: None, title: "E".to_string(), description: None }).await.unwrap();
-        (sprint.id, epic.id)
+        let mission = db.mission_create(crate::models::mission::CreateMissionInput {
+            title: "M".to_string(), description: None, jira_key: None, sprint_id: Some(sprint.id)
+        }).await.unwrap();
+        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), mission_id: Some(mission.id), title: "E".to_string(), description: None }).await.unwrap();
+        (sprint.id, epic.id, mission.id)
     }
 
-    async fn make_issue(db: &Db, sprint_id: i64, epic_id: i64, title: &str) -> i64 {
-        db.issue_create(CreateIssueInput { epic_id, mission_id: None, sprint_id: Some(sprint_id), title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
+    async fn make_issue(db: &Db, mission_id: i64, epic_id: i64, title: &str) -> i64 {
+        db.issue_create(CreateIssueInput { epic_id, mission_id: Some(mission_id), sprint_id: None, title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
     }
 
     #[tokio::test]
     async fn test_simple_block() {
         let db = setup().await;
-        let (sprint_id, epic_id) = seed(&db).await;
-        let a = make_issue(&db, sprint_id, epic_id, "A").await;
-        let b = make_issue(&db, sprint_id, epic_id, "B").await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        let a = make_issue(&db, mission_id, epic_id, "A").await;
+        let b = make_issue(&db, mission_id, epic_id, "B").await;
         db.issue_link(a, b, LinkType::Blocks).await.unwrap(); // A blocks B
 
         let graph = db.blocked_issues_graph("p").await.unwrap();
@@ -113,10 +116,10 @@ mod tests {
     #[tokio::test]
     async fn test_chain_block() {
         let db = setup().await;
-        let (sprint_id, epic_id) = seed(&db).await;
-        let a = make_issue(&db, sprint_id, epic_id, "A").await;
-        let b = make_issue(&db, sprint_id, epic_id, "B").await;
-        let c = make_issue(&db, sprint_id, epic_id, "C").await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        let a = make_issue(&db, mission_id, epic_id, "A").await;
+        let b = make_issue(&db, mission_id, epic_id, "B").await;
+        let c = make_issue(&db, mission_id, epic_id, "C").await;
         db.issue_link(a, b, LinkType::Blocks).await.unwrap(); // A → B
         db.issue_link(b, c, LinkType::Blocks).await.unwrap(); // B → C
 
@@ -129,8 +132,8 @@ mod tests {
     #[tokio::test]
     async fn test_no_blocks() {
         let db = setup().await;
-        let (sprint_id, epic_id) = seed(&db).await;
-        make_issue(&db, sprint_id, epic_id, "A").await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        make_issue(&db, mission_id, epic_id, "A").await;
 
         let graph = db.blocked_issues_graph("p").await.unwrap();
         assert!(graph.chains.is_empty());
@@ -141,9 +144,9 @@ mod tests {
     #[tokio::test]
     async fn test_finished_blocker_excluded() {
         let db = setup().await;
-        let (sprint_id, epic_id) = seed(&db).await;
-        let a = make_issue(&db, sprint_id, epic_id, "A").await;
-        let b = make_issue(&db, sprint_id, epic_id, "B").await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        let a = make_issue(&db, mission_id, epic_id, "A").await;
+        let b = make_issue(&db, mission_id, epic_id, "B").await;
         db.issue_link(a, b, LinkType::Blocks).await.unwrap();
 
         // A를 finished로 전환 (required → ready → working → finished, 사용자 권한으로)

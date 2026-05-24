@@ -268,11 +268,13 @@ impl Db {
         .fetch_all(&self.pool)
         .await?;
 
-        // mission_id로 이슈 전체 조회
+        // mission_id로 이슈 전체 조회 (derived sprint_id)
         let all_issues = sqlx::query_as::<_, Issue>(
-            "SELECT id, epic_id, mission_id, sprint_id, title, description, goal, status, priority, \
-             assigned_agent, created_at, updated_at \
-             FROM issues WHERE mission_id = ? ORDER BY id ASC",
+            "SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, \
+             i.assigned_agent, i.created_at, i.updated_at \
+             FROM issues i \
+             LEFT JOIN missions m ON i.mission_id = m.id \
+             WHERE i.mission_id = ? ORDER BY i.id ASC",
         )
         .bind(id)
         .fetch_all(&self.pool)

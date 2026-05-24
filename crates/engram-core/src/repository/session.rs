@@ -109,7 +109,8 @@ pub struct BoardStatus {
     pub sprint_name: String,
     pub project_key: Option<String>,
     pub projects: Vec<ProjectBoard>,
-    pub blocked_chains: Vec<BlockedChain>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_chains: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -396,8 +397,9 @@ impl Db {
                     i.updated_at AS since \
              FROM issues i \
              JOIN epics e ON e.id = i.epic_id \
+             JOIN missions m ON i.mission_id = m.id \
              WHERE i.status='working' AND i.assigned_agent IS NOT NULL \
-               AND i.sprint_id = ?",
+               AND m.sprint_id = ?",
         );
         if project_key.is_some() {
             workers_sql.push_str(" AND e.project_key = ?");
@@ -558,7 +560,12 @@ impl Db {
     }
 
     /// 보드 전체 현황 — 프로젝트별 이슈 상태 집계 + 블로킹 체인
-    pub async fn board_status_query(&self, project_key: Option<&str>) -> Result<BoardStatus> {
+    pub async fn board_status_query(
+        &self,
+        project_key: Option<&str>,
+        compact: bool,
+        include_chains: bool,
+    ) -> Result<BoardStatus> {
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
             return Ok(BoardStatus {
@@ -566,7 +573,7 @@ impl Db {
                 sprint_name: "활성 스프린트 없음".to_string(),
                 project_key: project_key.map(String::from),
                 projects: vec![],
-                blocked_chains: vec![],
+                blocked_chains: None,
             });
         };
 
@@ -582,7 +589,8 @@ impl Db {
                 COUNT(*) as total
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            WHERE i.sprint_id = ?
+            JOIN missions m ON i.mission_id = m.id
+            WHERE m.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -627,8 +635,9 @@ impl Db {
             JOIN issues ti ON il.target_id = ti.id
             JOIN epics be ON bi.epic_id = be.id
             JOIN epics te ON ti.epic_id = te.id
+            JOIN missions bm ON bi.mission_id = bm.id
             WHERE il.link_type = 'blocks'
-              AND bi.sprint_id = ?
+              AND bm.sprint_id = ?
               AND bi.status NOT IN ('finished', 'cancelled')
         "#.to_string();
         if project_key.is_some() {
@@ -649,12 +658,28 @@ impl Db {
         }
         let chain_rows = bq.fetch_all(&self.pool).await?;
 
-        let blocked_chains = chain_rows.into_iter().map(|r| BlockedChain {
-            blocker_id: r.blocker_id,
-            blocker_title: r.blocker_title,
-            blocked_id: r.blocked_id,
-            blocked_title: r.blocked_title,
-        }).collect();
+        let blocked_chains = if !include_chains {
+            None
+        } else if compact {
+            let mut map = serde_json::Map::new();
+            for r in chain_rows {
+                let key = r.blocker_id.to_string();
+                if let Some(arr) = map.get_mut(&key).and_then(|v| v.as_array_mut()) {
+                    arr.push(serde_json::Value::Number(r.blocked_id.into()));
+                } else {
+                    map.insert(key, serde_json::Value::Array(vec![serde_json::Value::Number(r.blocked_id.into())]));
+                }
+            }
+            Some(serde_json::Value::Object(map))
+        } else {
+            let list: Vec<BlockedChain> = chain_rows.into_iter().map(|r| BlockedChain {
+                blocker_id: r.blocker_id,
+                blocker_title: r.blocker_title,
+                blocked_id: r.blocked_id,
+                blocked_title: r.blocked_title,
+            }).collect();
+            Some(serde_json::to_value(list).unwrap())
+        };
 
         Ok(BoardStatus {
             sprint_id: sprint.id,
@@ -683,12 +708,13 @@ impl Db {
         };
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.mission_id, i.sprint_id, i.title, i.description, i.goal,
+            SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal,
                    i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at,
                    e.project_key as proj
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            WHERE i.sprint_id = ?
+            JOIN missions m ON i.mission_id = m.id
+            WHERE m.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -788,13 +814,14 @@ impl Db {
                 CAST(strftime('%s', MAX(h.created_at)) AS INTEGER) AS secs_since_activity
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
+            JOIN missions m ON i.mission_id = m.id
             LEFT JOIN history h ON (
                 (h.entity_type = 'issue' AND h.entity_id = i.id)
                 OR (h.entity_type = 'task' AND h.entity_id IN (
                     SELECT t.id FROM tasks t WHERE t.issue_id = i.id
                 ))
             )
-            WHERE i.sprint_id = ?
+            WHERE m.sprint_id = ?
               AND i.status = 'working'
         "#.to_string();
         if project_key.is_some() {
