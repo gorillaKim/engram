@@ -17,6 +17,7 @@ export function BulkActionBar({
 }: BulkActionBarProps) {
   const qc = useQueryClient();
   const [isPending, setIsPending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // 스프린트 일괄 변경
   const handleBulkSprintChange = async (sprintIdStr: string) => {
@@ -60,8 +61,7 @@ export function BulkActionBar({
   // 일괄 삭제
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    const ok = window.confirm(`선택한 ${selectedIds.length}개의 이슈를 정말로 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`);
-    if (!ok) return;
+    if (!confirmDelete) { setConfirmDelete(true); return; }
 
     setIsPending(true);
     try {
@@ -71,6 +71,7 @@ export function BulkActionBar({
       qc.invalidateQueries({ queryKey: ['boardStatus'] });
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
       toast.success(`${selectedIds.length}개 이슈를 삭제했습니다.`);
+      setConfirmDelete(false);
       onClearSelection();
     } catch (err) {
       toast.error(`일괄 삭제 중 오류가 발생했습니다: ${err}`);
@@ -145,14 +146,35 @@ export function BulkActionBar({
         </div>
 
         {/* 일괄 삭제 버튼 */}
-        <button
-          type="button"
-          onClick={handleBulkDelete}
-          disabled={isPending}
-          className="text-xs px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold rounded transition-colors disabled:opacity-50"
-        >
-          {isPending ? '삭제 중…' : '일괄 삭제'}
-        </button>
+        {confirmDelete ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-red-600 font-medium">{selectedIds.length}개 삭제?</span>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={isPending}
+              className="text-xs px-3 py-1 bg-red-600 text-white font-semibold rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              {isPending ? '삭제 중…' : '확인'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="text-xs px-3 py-1 border border-slate-200 text-slate-600 rounded hover:bg-slate-50"
+            >
+              취소
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleBulkDelete}
+            disabled={isPending}
+            className="text-xs px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-semibold rounded transition-colors disabled:opacity-50"
+          >
+            일괄 삭제
+          </button>
+        )}
       </div>
     </div>
   );

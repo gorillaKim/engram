@@ -20,12 +20,14 @@ export function EditEpicModal({ epic, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<EpicStatus>('active');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (epic) {
       setTitle(epic.title);
       setDescription(epic.description ?? '');
       setStatus(epic.status);
+      setConfirmDelete(false);
     }
   }, [epic]);
 
@@ -70,11 +72,8 @@ export function EditEpicModal({ epic, onClose }: Props) {
 
   const handleDelete = () => {
     if (!epic) return;
-    const ok = window.confirm(
-      `정말 에픽 "${epic.title}" 을 삭제하시겠습니까?\n` +
-      `하위 이슈/태스크/노트/링크가 모두 함께 삭제되며 되돌릴 수 없습니다.`,
-    );
-    if (ok) remove.mutate();
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    remove.mutate();
   };
 
   if (!epic) return null;
@@ -140,14 +139,35 @@ export function EditEpicModal({ epic, onClose }: Props) {
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={remove.isPending}
-            className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            {remove.isPending ? '삭제 중…' : '에픽 삭제'}
-          </button>
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-600 font-medium">정말 삭제하시겠습니까?</span>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={remove.isPending}
+                className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {remove.isPending ? '삭제 중…' : '확인'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 text-xs rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                취소
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={remove.isPending}
+              className="px-3 py-2 text-xs rounded-md border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              에픽 삭제
+            </button>
+          )}
           <div className="flex gap-2">
             <button
               type="button"

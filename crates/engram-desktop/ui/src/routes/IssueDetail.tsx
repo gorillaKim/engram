@@ -38,6 +38,7 @@ export function IssueDetail() {
     staleTime: 30_000,
   });
   const [draftValue, setDraftValue] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: graphData } = useQuery({
     queryKey: ['blockingGraph', selectedProjectKey],
@@ -108,11 +109,8 @@ export function IssueDetail() {
 
   const handleDelete = () => {
     if (!issue) return;
-    const ok = window.confirm(
-      `정말 이슈 "#${issue.id} ${issue.title}" 를 삭제하시겠습니까?\n` +
-      `하위 태스크/노트/링크가 모두 함께 삭제되며 되돌릴 수 없습니다.`,
-    );
-    if (ok) remove.mutate();
+    if (!confirmDelete) { setConfirmDelete(true); return; }
+    remove.mutate();
   };
 
   if (!selectedIssueId) return null;
@@ -411,13 +409,32 @@ export function IssueDetail() {
               >
                 취소 (Cancelled)
               </button>
-              <button
-                onClick={handleDelete}
-                disabled={remove.isPending}
-                className="w-full py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {remove.isPending ? '삭제 중…' : '영구 삭제'}
-              </button>
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-red-600 font-medium flex-1">정말 영구 삭제하시겠습니까?</span>
+                  <button
+                    onClick={handleDelete}
+                    disabled={remove.isPending}
+                    className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {remove.isPending ? '삭제 중…' : '확인'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    className="px-3 py-1.5 text-xs rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleDelete}
+                  disabled={remove.isPending}
+                  className="w-full py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  영구 삭제
+                </button>
+              )}
             </div>
           </div>
         )}
