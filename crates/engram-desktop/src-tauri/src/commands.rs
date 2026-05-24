@@ -808,13 +808,22 @@ mod tests {
         db.sprint_update(sprint.id, UpdateSprintInput {
             status: Some(SprintStatus::Active), ..Default::default()
         }, "agent").await.unwrap();
+        
+        let mission = db.mission_create(engram_core::models::mission::CreateMissionInput {
+            title: "M1".to_string(),
+            description: None,
+            jira_key: None,
+            sprint_id: Some(sprint.id),
+        }).await.unwrap();
+
         let epic = db.epic_create(CreateEpicInput {
             project_key: "proj".to_string(),
-            mission_id: None,
+            mission_id: Some(mission.id),
             title: "E1".to_string(), description: None,
         }).await.unwrap();
+
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, mission_id: None, sprint_id: Some(sprint.id), title: "I1".to_string(),
+            epic_id: epic.id, mission_id: Some(mission.id), sprint_id: None, title: "I1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
         (epic.id, issue.id)

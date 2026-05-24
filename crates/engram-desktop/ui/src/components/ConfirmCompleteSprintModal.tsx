@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { Sprint, Issue } from '../ipc/types';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { issueSetSprint, sprintUpdate, issueList } from '../ipc/invoke';
-import { getUnfinishedIssues } from '../utils/sprintCompleteHelper';
+import { missionSetSprint, sprintUpdate, issueList } from '../ipc/invoke';
+import { getUnfinishedIssues, getUnfinishedMissions } from '../utils/sprintCompleteHelper';
 import { toast } from 'sonner';
 
 interface ConfirmCompleteSprintModalProps {
@@ -39,7 +39,7 @@ export function ConfirmCompleteSprintModal({
   // 일괄 이관 및 스프린트 완료 뮤테이션
   const completeMutation = useMutation({
     mutationFn: async () => {
-      // 1. 미완료 이슈 이관
+      // 1. 미완료 이슈 이관 (미션 단위)
       if (unfinishedIssues.length > 0) {
         const targetSprintId =
           transferTarget === 'backlog'
@@ -48,8 +48,9 @@ export function ConfirmCompleteSprintModal({
             ? null
             : selectedTargetSprintId;
 
-        const promises = unfinishedIssues.map((issue) =>
-          issueSetSprint(issue.id, targetSprintId)
+        const missionIds = getUnfinishedMissions(issues);
+        const promises = missionIds.map((missionId) =>
+          missionSetSprint(missionId, targetSprintId)
         );
         await Promise.all(promises);
       }

@@ -208,7 +208,7 @@ fn send_notification(app: &AppHandle, title: &str, body: &str) {
 
 async fn snapshot(db: &Db, stall_minutes: i64) -> engram_core::Result<BoardSnapshot> {
     let board = db.board_issues_query(None, stall_minutes).await?;
-    let status = db.board_status_query(None).await?;
+    let status = db.board_status_query(None, false, true).await?;
 
     let mut required = HashMap::new();
     let mut demo = HashMap::new();
@@ -226,7 +226,11 @@ async fn snapshot(db: &Db, stall_minutes: i64) -> engram_core::Result<BoardSnaps
         }
     }
 
-    let blockers = status.blocked_chains.len() as u32;
+    let blockers = match &status.blocked_chains {
+        Some(serde_json::Value::Array(arr)) => arr.len() as u32,
+        Some(serde_json::Value::Object(map)) => map.len() as u32,
+        _ => 0,
+    };
 
     let working_ids: Vec<i64> = working.keys().copied().collect();
     let last_activity_secs = match db.history_last_activity_secs_for_issues(&working_ids).await {

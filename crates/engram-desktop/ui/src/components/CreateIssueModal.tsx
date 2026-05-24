@@ -1,16 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicList, issueCreate, missionList, sprintList } from '../ipc/invoke';
-import type { Epic, IssuePriority, Mission, Sprint } from '../ipc/types';
+import { epicList, issueCreate, missionList } from '../ipc/invoke';
+import type { Epic, IssuePriority, Mission } from '../ipc/types';
 
 interface Props {
   open: boolean;
   onClose: () => void;
   projectKey?: string;
   defaultEpicId?: number;
-  /** 기본 선택 스프린트. null 이면 백로그로 기본 선택 */
-  defaultSprintId?: number | null;
 }
 
 const PRIORITIES: { value: IssuePriority; label: string }[] = [
@@ -21,7 +19,7 @@ const PRIORITIES: { value: IssuePriority; label: string }[] = [
 ];
 
 export function CreateIssueModal({
-  open, onClose, projectKey, defaultEpicId, defaultSprintId,
+  open, onClose, projectKey, defaultEpicId,
 }: Props) {
   const qc = useQueryClient();
 
@@ -31,11 +29,7 @@ export function CreateIssueModal({
     enabled: open,
   });
 
-  const { data: sprints = [] } = useQuery<Sprint[]>({
-    queryKey: ['sprintList'],
-    queryFn: sprintList,
-    enabled: open,
-  });
+
 
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
@@ -47,7 +41,6 @@ export function CreateIssueModal({
 
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
   const [epicId, setEpicId] = useState<number | ''>('');
-  const [sprintId, setSprintId] = useState<number | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<IssuePriority>('medium');
@@ -65,18 +58,16 @@ export function CreateIssueModal({
     if (open) {
       setSelectedMissionId(null);
       setEpicId(defaultEpicId ?? (allEpics[0]?.id ?? ''));
-      setSprintId(defaultSprintId ?? null);
       setTitle('');
       setDescription('');
       setPriority('medium');
     }
-  }, [open, defaultEpicId, defaultSprintId, allEpics]);
+  }, [open, defaultEpicId, allEpics]);
 
   const create = useMutation({
     mutationFn: () =>
       issueCreate({
         epic_id: epicId as number,
-        sprint_id: sprintId,
         mission_id: selectedMissionId,
         title: title.trim(),
         description: description.trim() || undefined,
@@ -87,7 +78,7 @@ export function CreateIssueModal({
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
       qc.invalidateQueries({ queryKey: ['issueList'] });
       qc.invalidateQueries({ queryKey: ['issueListBacklog'] });
-      toast.success(sprintId == null ? '이슈가 백로그에 추가되었습니다' : '이슈가 생성되었습니다');
+      toast.success('이슈가 생성되었습니다');
       onClose();
     },
     onError: (err) => toast.error(`이슈 생성 실패: ${err}`),
@@ -96,7 +87,6 @@ export function CreateIssueModal({
   if (!open) return null;
 
   const canSubmit = title.trim().length > 0 && typeof epicId === 'number';
-  const selectableSprints = sprints.filter((s) => s.status !== 'cancelled');
   const inputCls = 'w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400';
 
   return (
@@ -141,20 +131,8 @@ export function CreateIssueModal({
             </select>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">스프린트</label>
-            <select
-              value={sprintId ?? ''}
-              onChange={(e) => setSprintId(e.target.value === '' ? null : Number(e.target.value))}
-              className={inputCls}
-            >
-              <option value="">백로그 (스프린트 미지정)</option>
-              {selectableSprints.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}{s.status === 'active' ? ' · 활성' : s.status === 'completed' ? ' · 완료' : ' · 계획'}
-                </option>
-              ))}
-            </select>
+          <div className="text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-md p-2 flex items-center justify-between">
+            <span>ℹ️ 스프린트는 미션 결합에 따라 결정됩니다.</span>
           </div>
 
           <div className="flex flex-col gap-1">

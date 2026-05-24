@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import {
   sprintList, sprintUpdate, sprintDelete,
   epicList, epicDelete,
-  issueList, issueSetSprint, issueCreate,
+  issueList, issueCreate,
   missionList,
 } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
@@ -213,17 +213,7 @@ function EpicRow({
     return () => clearTimeout(t);
   }, [confirmDeleteEpic]);
 
-  const moveIssueSprint = useMutation({
-    mutationFn: ({ issueId, sprintId }: { issueId: number; sprintId: number | null }) =>
-      issueSetSprint(issueId, sprintId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['issueList'] });
-      qc.invalidateQueries({ queryKey: ['boardStatus'] });
-      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
-      toast.success('이슈 스프린트가 변경되었습니다');
-    },
-    onError: (e) => toast.error(`변경 실패: ${e}`),
-  });
+
 
   const deleteEpic = useMutation({
     mutationFn: () => epicDelete(epic.id),
@@ -364,24 +354,16 @@ function EpicRow({
               <PriorityBadge priority={issue.priority} />
               <span className="text-sm text-slate-700 flex-1 truncate">{issue.title}</span>
 
-              {/* Sprint move dropdown (per-issue) */}
-              <select
-                value={issue.sprint_id ?? ''}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  const newId = v === '' ? null : Number(v);
-                  if (newId !== issue.sprint_id) {
-                    moveIssueSprint.mutate({ issueId: issue.id, sprintId: newId });
-                  }
-                }}
-                className="text-xs px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-600"
-              >
-                <option value="">백로그</option>
-                {sprints.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              {/* Sprint Badge (read-only) */}
+              {issue.sprint_id ? (
+                <span className="text-[11px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded font-medium">
+                  {sprints.find((s) => s.id === issue.sprint_id)?.name ?? `Sprint #${issue.sprint_id}`}
+                </span>
+              ) : (
+                <span className="text-[11px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded font-medium">
+                  백로그
+                </span>
+              )}
 
               <span className="text-xs text-slate-400">#{issue.id}</span>
             </div>
@@ -1038,7 +1020,6 @@ export function IssueManager() {
         open={issueModalEpicId != null}
         onClose={() => setIssueModalEpicId(null)}
         defaultEpicId={issueModalEpicId ?? undefined}
-        defaultSprintId={isBacklog ? null : (selectedSprintId ?? null)}
       />
       <EditEpicModal
         epic={editEpic}
