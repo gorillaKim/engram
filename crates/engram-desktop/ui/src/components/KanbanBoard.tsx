@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCorners, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, pointerWithin, rectIntersection, useSensor, useSensors } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueCard } from './IssueCard';
 import { FilterBar } from './FilterBar';
@@ -82,7 +82,10 @@ export function KanbanBoard() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={(args) => {
+          const hits = pointerWithin(args);
+          return hits.length > 0 ? hits : rectIntersection(args);
+        }}
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={(e) => setActiveIssue((e.active.data.current as { issue: Issue })?.issue ?? null)}
       onDragEnd={handleDragEnd}
