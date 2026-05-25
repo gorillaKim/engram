@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { missionCreate, missionUpdate, missionDelete, sprintList } from '../ipc/invoke';
+import { missionCreate, missionUpdate, missionDelete } from '../ipc/invoke';
 import type { Mission, MissionStatus } from '../ipc/types';
 
 interface Props {
@@ -19,14 +19,7 @@ export function MissionModal({ open, onClose, mission }: Props) {
   const [description, setDescription] = useState('');
   const [jiraKey, setJiraKey] = useState('');
   const [status, setStatus] = useState<MissionStatus>('active');
-  const [sprintId, setSprintId] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const { data: sprints = [] } = useQuery({
-    queryKey: ['sprintList'],
-    queryFn: sprintList,
-    enabled: open,
-  });
 
   useEffect(() => {
     if (!open) {
@@ -38,13 +31,11 @@ export function MissionModal({ open, onClose, mission }: Props) {
       setDescription(mission.description ?? '');
       setJiraKey(mission.jira_key ?? '');
       setStatus(mission.status);
-      setSprintId(mission.sprint_id ?? null);
     } else {
       setTitle('');
       setDescription('');
       setJiraKey('');
       setStatus('active');
-      setSprintId(null);
     }
   }, [open, mission]);
 
@@ -54,7 +45,6 @@ export function MissionModal({ open, onClose, mission }: Props) {
         title: title.trim(),
         description: description.trim() || null,
         jira_key: jiraKey.trim() || null,
-        sprint_id: sprintId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['missionList'] });
@@ -71,7 +61,6 @@ export function MissionModal({ open, onClose, mission }: Props) {
         description: description.trim() || null,
         jira_key: jiraKey.trim() || null,
         status,
-        sprint_id: sprintId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['missionList'] });
@@ -151,20 +140,7 @@ export function MissionModal({ open, onClose, mission }: Props) {
             />
           </div>
 
-          {/* Sprint */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">스프린트</label>
-            <select
-              value={sprintId ?? ''}
-              onChange={(e) => setSprintId(e.target.value ? Number(e.target.value) : null)}
-              className="text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400"
-            >
-              <option value="">백로그 (스프린트 미배정)</option>
-              {sprints.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
+
 
           {/* Status (edit only) */}
           {isEdit && (

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicCreate, missionList } from '../ipc/invoke';
-import type { Mission } from '../ipc/types';
+import { epicCreate, missionList, sprintList } from '../ipc/invoke';
+import type { Mission, Sprint } from '../ipc/types';
 
 interface Props {
   open: boolean;
@@ -17,10 +17,17 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
+  const [selectedSprintId, setSelectedSprintId] = useState<number | null>(null);
 
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(null, false),
+    queryFn: () => missionList(false),
+    enabled: open,
+  });
+
+  const { data: sprints = [] } = useQuery<Sprint[]>({
+    queryKey: ['sprintList'],
+    queryFn: sprintList,
     enabled: open,
   });
 
@@ -32,6 +39,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
       setTitle('');
       setDescription('');
       setSelectedMissionId(null);
+      setSelectedSprintId(null);
     }
   }, [open, defaultProjectKey]);
 
@@ -42,6 +50,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
         title: title.trim(),
         description: description.trim() || undefined,
         mission_id: selectedMissionId,
+        sprint_id: selectedSprintId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['boardStatus'] });
@@ -85,6 +94,20 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
           </div>
 
           <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">스프린트</label>
+            <select
+              value={selectedSprintId ?? ''}
+              onChange={(e) => setSelectedSprintId(e.target.value ? Number(e.target.value) : null)}
+              className={inputCls}
+            >
+              <option value="">백로그 (스프린트 미지정)</option>
+              {sprints.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-600">
               프로젝트 키 <span className="text-red-400">*</span>
             </label>
@@ -94,7 +117,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
               placeholder="예: engram, xpert-da-web"
               className={inputCls}
             />
-            <p className="text-xs text-slate-400">에픽은 sprint-agnostic 카테고리입니다.</p>
+            <p className="text-xs text-slate-400">에픽이 sprint 를 보유합니다 (ADR-0014).</p>
           </div>
 
           <div className="flex flex-col gap-1">

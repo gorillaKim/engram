@@ -48,13 +48,14 @@ async fn seed_via_db(db: &Arc<Db>) -> (i64, i64, i64, i64) {
         goal: None, start_date: None, end_date: None,
     }, "test").await.unwrap();
     let m = db.mission_create(CreateMissionInput {
-        title: "M".into(), description: None, jira_key: None, sprint_id: Some(s.id),
+        title: "M".into(), description: None, jira_key: None,
     }).await.unwrap();
     let e = db.epic_create(CreateEpicInput {
-        project_key: "p".into(), mission_id: Some(m.id), title: "E".into(), description: None,
+        project_key: "p".into(), mission_id: Some(m.id), sprint_id: Some(s.id),
+            title: "E".into(), description: None,
     }).await.unwrap();
     let i = db.issue_create(CreateIssueInput {
-        epic_id: e.id, mission_id: Some(m.id), sprint_id: None, title: "I".into(),
+        epic_id: e.id, title: "I".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap();
     let t = db.task_create(CreateTaskInput {
@@ -70,13 +71,13 @@ async fn seed_via_dispatch(db: &Arc<Db>) -> (i64, i64, i64, i64) {
     dispatch(Arc::clone(db), "sprint_update", &json!({"id": sid, "status": "active", "agent_id": "test"}))
         .await.unwrap();
     let m = dispatch(Arc::clone(db), "mission_create",
-        &json!({"title": "M", "sprint_id": sid, "project_key": "p"})).await.unwrap();
+        &json!({"title": "M", "project_key": "p"})).await.unwrap();
     let mid = m["id"].as_i64().unwrap();
     let e = dispatch(Arc::clone(db), "epic_create",
-        &json!({"project_key": "p", "title": "E", "mission_id": mid})).await.unwrap();
+        &json!({"project_key": "p", "title": "E", "mission_id": mid, "sprint_id": sid})).await.unwrap();
     let eid = e["id"].as_i64().unwrap();
     let i = dispatch(Arc::clone(db), "issue_create",
-        &json!({"epic_id": eid, "mission_id": mid, "title": "I"})).await.unwrap();
+        &json!({"epic_id": eid, "title": "I"})).await.unwrap();
     let iid = i["id"].as_i64().unwrap();
     let t = dispatch(Arc::clone(db), "task_create",
         &json!({"issue_id": iid, "title": "T"})).await.unwrap();
@@ -332,7 +333,7 @@ async fn test_parity_link_unlink_roundtrip() {
 
     // 두 번째 이슈 추가
     let a2 = db_a.issue_create(CreateIssueInput {
-        epic_id: eid_a, mission_id: None, sprint_id: None, title: "I2".into(),
+        epic_id: eid_a, title: "I2".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap().id;
     let b2 = dispatch(Arc::clone(&db_b), "issue_create",
@@ -474,7 +475,6 @@ async fn test_mission_crud_parity() {
         title: "테스트 미션".into(),
         description: Some("미션 설명".into()),
         jira_key: Some("PROJ-42".into()),
-        sprint_id: Some(s_a.id),
     }).await.unwrap();
 
     // MCP 쪽: dispatch로 동일 시퀀스
@@ -484,8 +484,7 @@ async fn test_mission_crud_parity() {
     let m_b = dispatch(Arc::clone(&db_b), "mission_create", &json!({
         "title": "테스트 미션",
         "description": "미션 설명",
-        "jira_key": "PROJ-42",
-        "sprint_id": sid_b
+        "jira_key": "PROJ-42"
     })).await.unwrap();
     let mid_b = m_b["id"].as_i64().unwrap();
 
@@ -514,11 +513,9 @@ async fn test_mission_list_parity() {
     }).await.unwrap();
     db_a.mission_create(CreateMissionInput {
         title: "미션 A".into(), description: None, jira_key: None,
-        sprint_id: Some(s_a.id),
     }).await.unwrap();
     db_a.mission_create(CreateMissionInput {
         title: "미션 B".into(), description: None, jira_key: None,
-        sprint_id: Some(s_a.id),
     }).await.unwrap();
 
     // MCP 쪽: dispatch로 동일 시퀀스
@@ -526,9 +523,9 @@ async fn test_mission_list_parity() {
         &json!({"name": "ML1"})).await.unwrap();
     let sid_b = s_b["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "mission_create",
-        &json!({"title": "미션 A", "sprint_id": sid_b})).await.unwrap();
+        &json!({"title": "미션 A"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "mission_create",
-        &json!({"title": "미션 B", "sprint_id": sid_b})).await.unwrap();
+        &json!({"title": "미션 B"})).await.unwrap();
 
     // 필터 없이 전체 목록 동치 (active only 기본값)
     let cli_all = normalize(serde_json::to_value(
@@ -542,12 +539,11 @@ async fn test_mission_list_parity() {
     // sprint_id 필터 동치
     let cli_filtered = normalize(serde_json::to_value(
         db_a.mission_list(engram_core::models::mission::MissionFilter {
-            sprint_id: Some(s_a.id),
             ..Default::default()
         }).await.unwrap()
     ).unwrap());
     let mcp_filtered = normalize(dispatch(Arc::clone(&db_b), "mission_list",
-        &json!({"sprint_id": sid_b})).await.unwrap());
+        &json!({})).await.unwrap());
     assert_eq!(cli_filtered, mcp_filtered, "mission_list (sprint_id 필터) 동치 실패");
 }
 
@@ -568,19 +564,17 @@ async fn test_mission_get_tree_parity() {
     }, "test").await.unwrap();
     let m_a = db_a.mission_create(CreateMissionInput {
         title: "트리 미션".into(), description: None, jira_key: None,
-        sprint_id: Some(s_a.id),
     }).await.unwrap();
     let e_a = db_a.epic_create(CreateEpicInput {
-        project_key: "tp".into(), mission_id: Some(m_a.id), title: "에픽 1".into(),
+        project_key: "tp".into(), mission_id: Some(m_a.id), sprint_id: Some(s_a.id),
+            title: "에픽 1".into(),
         description: None,
     }).await.unwrap();
     db_a.issue_create(CreateIssueInput {
-        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: None,
-        title: "이슈 1".into(), description: None, goal: None, priority: None,
+        epic_id: e_a.id, title: "이슈 1".into(), description: None, goal: None, priority: None,
     }).await.unwrap();
     db_a.issue_create(CreateIssueInput {
-        epic_id: e_a.id, mission_id: Some(m_a.id), sprint_id: None,
-        title: "이슈 2".into(), description: None, goal: None, priority: None,
+        epic_id: e_a.id, title: "이슈 2".into(), description: None, goal: None, priority: None,
     }).await.unwrap();
 
     // MCP 쪽: dispatch로 동일 계층 구성
@@ -590,17 +584,17 @@ async fn test_mission_get_tree_parity() {
     dispatch(Arc::clone(&db_b), "sprint_update",
         &json!({"id": sid_b, "status": "active", "agent_id": "test"})).await.unwrap();
     let m_b = dispatch(Arc::clone(&db_b), "mission_create",
-        &json!({"title": "트리 미션", "sprint_id": sid_b})).await.unwrap();
+        &json!({"title": "트리 미션"})).await.unwrap();
     let mid_b = m_b["id"].as_i64().unwrap();
     let e_b = dispatch(Arc::clone(&db_b), "epic_create",
-        &json!({"project_key": "tp", "title": "에픽 1", "mission_id": mid_b}))
+        &json!({"project_key": "tp", "title": "에픽 1", "mission_id": mid_b, "sprint_id": sid_b}))
         .await.unwrap();
     let eid_b = e_b["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "issue_create",
-        &json!({"epic_id": eid_b, "title": "이슈 1", "mission_id": mid_b}))
+        &json!({"epic_id": eid_b, "title": "이슈 1"}))
         .await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_create",
-        &json!({"epic_id": eid_b, "title": "이슈 2", "mission_id": mid_b}))
+        &json!({"epic_id": eid_b, "title": "이슈 2"}))
         .await.unwrap();
 
     // mission_get_tree 동치 검증
@@ -679,14 +673,12 @@ async fn test_parity_issue_finish_and_cancel() {
 
     let iid_a2 = db_a.issue_create(CreateIssueInput {
         epic_id: eid_a,
-        mission_id: mid_a,
-        sprint_id: None,
         title: "I2".into(),
         description: None,
         goal: None,
         priority: None,
     }).await.unwrap().id;
-    let iid_b2 = dispatch(Arc::clone(&db_b), "issue_create", &json!({"epic_id": eid_b, "mission_id": mid_b, "title": "I2"})).await.unwrap()["id"].as_i64().unwrap();
+    let iid_b2 = dispatch(Arc::clone(&db_b), "issue_create", &json!({"epic_id": eid_b, "title": "I2"})).await.unwrap()["id"].as_i64().unwrap();
     assert_eq!(iid_a2, iid_b2);
 
     // 4. issue_cancel 호출 및 동치 검증
@@ -704,7 +696,7 @@ async fn test_parity_issue_bulk_update() {
 
     // 두 번째 이슈 생성
     let iid_a2 = db_a.issue_create(CreateIssueInput {
-        epic_id: eid_a, mission_id: None, sprint_id: None, title: "I2".into(),
+        epic_id: eid_a, title: "I2".into(),
         description: None, goal: None, priority: None,
     }).await.unwrap().id;
 
@@ -753,7 +745,7 @@ async fn test_agent_id_required_validation() {
         ("issue_cancel", json!({"id": 1, "reason": "test"})),
         ("issue_bulk_update", json!({"ids": [1], "status": "ready"})),
         ("mission_update", json!({"id": 1, "title": "test"})),
-        ("mission_set_sprint", json!({"mission_id": 1, "sprint_id": 1})),
+        ("epic_set_sprint", json!({"epic_id": 1, "sprint_id": 1})),
         ("epic_update", json!({"id": 1, "title": "test"})),
         ("sprint_update", json!({"id": 1, "status": "active"})),
         ("task_update", json!({"id": 1, "status": "done"})),

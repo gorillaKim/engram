@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Mission, MissionTree, EpicWithIssues, Issue, Epic, Sprint } from '../ipc/types';
-import { missionList, missionGetTree, sprintCurrent, sprintList, missionSetSprint } from '../ipc/invoke';
+import { missionList, missionGetTree, sprintCurrent, sprintList, epicList } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
 import { EditEpicModal } from '../components/EditEpicModal';
@@ -49,8 +49,6 @@ type MissionNodeData = {
   progress_rate: number;
   status: string;
   missionData: Mission;
-  sprints: Sprint[];
-  onChangeSprint: (missionId: number, sprintId: number | null) => void;
   onDoubleClickMission: (mission: Mission) => void;
   [key: string]: unknown;
 };
@@ -60,6 +58,7 @@ type EpicNodeData = {
   status: string;
   project_key: string;
   epicData: Epic;
+  sprints: Sprint[];
   onDoubleClickEpic: (epic: Epic) => void;
   [key: string]: unknown;
 };
@@ -94,31 +93,6 @@ function MissionNodeComponent({ data }: NodeProps<MissionFlowNode>) {
       <p className="text-sm font-semibold text-slate-800 leading-tight line-clamp-2">
         {data.label}
       </p>
-      
-      {/* 스프린트 변경 UI */}
-      <div 
-        className="flex flex-col gap-1 mt-1 border-t border-slate-100 pt-2"
-        onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <span className="text-[9px] text-slate-400 font-medium">Sprint</span>
-        <select
-          value={data.missionData.sprint_id ?? ''}
-          onChange={(e) => {
-            const val = e.target.value;
-            const sprintId = val === '' ? null : Number(val);
-            data.onChangeSprint(data.missionData.id, sprintId);
-          }}
-          className="text-[10px] font-semibold bg-indigo-50/50 border border-indigo-100 hover:border-indigo-300 text-indigo-700 px-1.5 py-1 rounded cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 w-full transition-colors"
-        >
-          <option value="">백로그</option>
-          {data.sprints.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
 
       <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
         <div className="flex justify-between text-[10px] text-slate-500">
@@ -137,6 +111,12 @@ function MissionNodeComponent({ data }: NodeProps<MissionFlowNode>) {
 }
 
 function EpicNodeComponent({ data }: NodeProps<EpicFlowNode>) {
+  const epic = data.epicData;
+  const sprints = (data.sprints as Sprint[]) ?? [];
+  const sprintName = epic.sprint_id
+    ? (sprints.find((s) => s.id === epic.sprint_id)?.name ?? `Sprint #${epic.sprint_id}`)
+    : '백로그';
+
   return (
     <div
       className="relative w-44 rounded-lg border border-violet-300 bg-violet-50 shadow p-2.5 flex flex-col gap-1.5 cursor-pointer hover:border-violet-500 hover:shadow-md transition-all"
@@ -152,7 +132,12 @@ function EpicNodeComponent({ data }: NodeProps<EpicFlowNode>) {
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">
         {data.label}
       </p>
-      <span className="text-[10px] text-slate-400 font-mono">{data.project_key}</span>
+      <div className="flex items-center justify-between gap-2 mt-1">
+        <span className="text-[10px] text-slate-400 font-mono">{data.project_key}</span>
+        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${epic.sprint_id ? 'bg-indigo-100 text-indigo-700 border border-indigo-200/30' : 'bg-slate-200 text-slate-600'}`}>
+          {sprintName}
+        </span>
+      </div>
     </div>
   );
 }
@@ -202,7 +187,6 @@ const MISSION_H = 110; // approximate mission card height
 function buildGraph(
   tree: MissionTree,
   sprints: Sprint[],
-  onChangeSprint: (missionId: number, sprintId: number | null) => void,
   onDoubleClickIssue: (issueId: number) => void,
   onDoubleClickEpic: (epic: Epic) => void,
   onDoubleClickMission: (mission: Mission) => void,
@@ -246,8 +230,6 @@ function buildGraph(
       progress_rate: progressRate,
       status: tree.mission.status,
       missionData: tree.mission,
-      sprints,
-      onChangeSprint,
       onDoubleClickMission,
     },
     sourcePosition: Position.Right,
@@ -269,6 +251,7 @@ function buildGraph(
         status: ew.epic.status,
         project_key: ew.epic.project_key,
         epicData: ew.epic,
+        sprints,
         onDoubleClickEpic,
       },
       sourcePosition: Position.Right,
@@ -321,14 +304,12 @@ function buildGraph(
 function FlowCanvas({
   tree,
   sprints,
-  onChangeSprint,
   onIssueDoubleClick,
   onEpicDoubleClick,
   onMissionDoubleClick,
 }: {
   tree: MissionTree;
   sprints: Sprint[];
-  onChangeSprint: (missionId: number, sprintId: number | null) => void;
   onIssueDoubleClick: (issueId: number) => void;
   onEpicDoubleClick: (epic: Epic) => void;
   onMissionDoubleClick: (mission: Mission) => void;
@@ -338,7 +319,6 @@ function FlowCanvas({
       buildGraph(
         tree,
         sprints,
-        onChangeSprint,
         onIssueDoubleClick,
         onEpicDoubleClick,
         onMissionDoubleClick,
@@ -385,7 +365,8 @@ export function MissionsBoard() {
   // 추가 상태
   const [sprints, setSprints] = useState<Sprint[]>([]);
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
-  const [includeBacklog, setIncludeBacklog] = useState(false);
+  const [epics, setEpics] = useState<Epic[]>([]);
+  const [selectedFilterSprintId, setSelectedFilterSprintId] = useState<number | 'all' | 'backlog'>('all');
 
   const { selectIssue, selectProject } = useUIStore();
 
@@ -416,7 +397,7 @@ export function MissionsBoard() {
     setModalOpen(true);
   }, []);
 
-  // 스프린트 목록 및 활성 스프린트 로드
+  // 스프린트 목록, 활성 스프린트 및 에픽 목록 로드
   useEffect(() => {
     sprintList()
       .then(setSprints)
@@ -425,6 +406,10 @@ export function MissionsBoard() {
     sprintCurrent()
       .then(setActiveSprint)
       .catch((e: unknown) => console.error("활성 스프린트 로드 실패:", e));
+
+    epicList()
+      .then(setEpics)
+      .catch((e: unknown) => console.error("에픽 목록 로드 실패:", e));
   }, []);
 
   const loadTree = useCallback((id: number) => {
@@ -440,35 +425,8 @@ export function MissionsBoard() {
     setLoading(true);
     
     const fetchMissions = async () => {
-      let targetSprintId: number | null = null;
-      
-      if (!includeBacklog) {
-        // 활성 스프린트 조회
-        const current = await sprintCurrent().catch(() => null);
-        setActiveSprint(current);
-        if (current) {
-          targetSprintId = current.id;
-        } else {
-          // 활성 스프린트가 없으면 빈 배열 처리
-          setMissions([]);
-          setSelectedId(null);
-          setTree(null);
-          setLoading(false);
-          return;
-        }
-      }
-      
-      const list = await missionList(targetSprintId, true);
+      const list = await missionList(false);
       setMissions(list);
-      
-      if (list.length > 0) {
-        if (!selectedId || !list.some((m) => m.id === selectedId)) {
-          setSelectedId(list[0].id);
-        }
-      } else {
-        setSelectedId(null);
-        setTree(null);
-      }
       setLoading(false);
     };
 
@@ -476,22 +434,43 @@ export function MissionsBoard() {
       setError(String(e));
       setLoading(false);
     });
-  }, [selectedId, includeBacklog]);
+  }, []);
+
+  const filteredMissions = useMemo(() => {
+    if (selectedFilterSprintId === 'all') return missions;
+
+    const targetEpics = epics.filter((epic) => {
+      if (selectedFilterSprintId === 'backlog') {
+        return epic.sprint_id === null;
+      }
+      return epic.sprint_id === selectedFilterSprintId;
+    });
+
+    const validMissionIds = new Set(
+      targetEpics
+        .map((epic) => epic.mission_id)
+        .filter((id): id is number => id !== null)
+    );
+
+    return missions.filter((m) => validMissionIds.has(m.id));
+  }, [missions, epics, selectedFilterSprintId]);
+
+  useEffect(() => {
+    if (filteredMissions.length > 0) {
+      if (selectedId === null || !filteredMissions.some((m) => m.id === selectedId)) {
+        setSelectedId(filteredMissions[0].id);
+      }
+    } else {
+      setSelectedId(null);
+      setTree(null);
+    }
+  }, [filteredMissions, selectedId]);
 
   useEffect(() => {
     reloadMissions();
-  }, [includeBacklog]); // includeBacklog 변경 시 리로드
+  }, [reloadMissions]);
 
-  const handleSprintChange = useCallback((missionId: number, sprintId: number | null) => {
-    missionSetSprint(missionId, sprintId)
-      .then(() => {
-        reloadMissions();
-        if (selectedId === missionId) {
-          loadTree(missionId);
-        }
-      })
-      .catch((e: unknown) => alert(`스프린트 변경 실패: ${String(e)}`));
-  }, [reloadMissions, selectedId, loadTree]);
+
 
   const handleModalClose = useCallback(() => {
     setModalOpen(false);
@@ -556,21 +535,31 @@ export function MissionsBoard() {
           </button>
         </div>
         
-        {/* 백로그 포함 토글 */}
-        <div className="px-4 py-2 border-b border-slate-100 flex items-center">
-          <label className="flex items-center gap-2 text-[11px] text-slate-500 font-medium cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={includeBacklog}
-              onChange={(e) => setIncludeBacklog(e.target.checked)}
-              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
-            />
-            <span>백로그/전체 포함</span>
-          </label>
+        {/* 스프린트 필터 */}
+        <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50">
+          <label className="text-[10px] font-bold text-slate-400 block mb-1">스프린트 필터</label>
+          <select
+            value={selectedFilterSprintId}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === 'all' || val === 'backlog') {
+                setSelectedFilterSprintId(val);
+              } else {
+                setSelectedFilterSprintId(Number(val));
+              }
+            }}
+            className="w-full text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-700"
+          >
+            <option value="all">전체 스프린트</option>
+            <option value="backlog">백로그 (스프린트 미지정)</option>
+            {sprints.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
         </div>
 
         <ul className="flex-1 py-2">
-          {missions.map((m) => (
+          {filteredMissions.map((m) => (
             <li key={m.id} className="group relative">
               <button
                 onClick={() => setSelectedId(m.id)}
@@ -613,7 +602,6 @@ export function MissionsBoard() {
               key={tree.mission.id}
               tree={tree}
               sprints={sprints}
-              onChangeSprint={handleSprintChange}
               onIssueDoubleClick={handleIssueDoubleClick}
               onEpicDoubleClick={handleEpicDoubleClick}
               onMissionDoubleClick={handleMissionDoubleClick}
@@ -622,13 +610,13 @@ export function MissionsBoard() {
         )}
         {!tree && !treeLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400 text-sm">
-            {!includeBacklog && !activeSprint ? (
+            {!activeSprint ? (
               <>
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
                 <p className="font-medium text-slate-500">진행 중인 스프린트가 없습니다.</p>
-                <p className="text-[11px] text-slate-400">"백로그/전체 포함"을 켜거나 스프린트를 새로 시작하세요.</p>
+                <p className="text-[11px] text-slate-400">스프린트를 새로 시작하세요.</p>
               </>
             ) : missions.length === 0 ? (
               <p>표시할 미션이 없습니다.</p>

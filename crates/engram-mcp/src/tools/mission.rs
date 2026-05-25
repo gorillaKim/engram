@@ -7,15 +7,14 @@ pub fn tool_definitions() -> Vec<Value> {
     vec![
         json!({
             "name": "mission_create",
-            "description": "새 미션을 생성합니다. Sprint → Mission → Epic 계층에서 미션은 여러 에픽을 묶는 출시 목표 단위입니다.",
+            "description": "새 미션을 생성합니다. 미션은 sprint-agnostic 한 전략 목표(initiative)이며, 산하 에픽이 sprint 를 소유합니다 (ADR-0014).",
             "inputSchema": {
                 "type": "object",
                 "required": ["title"],
                 "properties": {
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
-                    "jira_key":    { "type": "string", "description": "Jira 이슈 키 (UNIQUE nullable)" },
-                    "sprint_id":   { "type": "integer", "description": "NULL이면 백로그" }
+                    "jira_key":    { "type": "string", "description": "Jira 이슈 키 (UNIQUE nullable)" }
                 }
             }
         }),
@@ -36,7 +35,6 @@ pub fn tool_definitions() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "sprint_id":          { "type": "integer" },
                     "status":             { "type": "string", "enum": MissionStatus::ALL },
                     "include_completed":  { "type": "boolean", "description": "true면 completed/cancelled 포함" }
                 }
@@ -54,7 +52,6 @@ pub fn tool_definitions() -> Vec<Value> {
                     "description": { "type": "string" },
                     "jira_key":    { "type": "string" },
                     "status":      { "type": "string", "enum": MissionStatus::ALL },
-                    "sprint_id":   { "type": "integer" },
                     "agent_id":    { "type": "string" }
                 }
             }
@@ -72,25 +69,12 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "mission_get_tree",
-            "description": "미션의 계층 트리를 반환합니다. Mission → Epics → Issues 구조. 세션 시작 시 현재 미션의 전체 맥락 파악에 사용하세요. id 또는 jira_key 중 하나 필수.",
+            "description": "미션의 계층 트리를 반환합니다. Mission → Epics → Issues 구조. 같은 미션 산하의 에픽이 서로 다른 sprint 에 속할 수 있습니다. id 또는 jira_key 중 하나 필수.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "id":       { "type": "integer" },
                     "jira_key": { "type": "string", "description": "Jira 키로 미션 조회" }
-                }
-            }
-        }),
-        json!({
-            "name": "mission_set_sprint",
-            "description": "미션을 지정한 스프린트로 이동하거나 백로그(sprint_id 생략)로 내립니다. completed 미션에는 적용 불가.",
-            "inputSchema": {
-                "type": "object",
-                "required": ["mission_id", "agent_id"],
-                "properties": {
-                    "mission_id": { "type": "integer" },
-                    "sprint_id":  { "type": "integer", "description": "생략 시 백로그(NULL)" },
-                    "agent_id":   { "type": "string" }
                 }
             }
         }),
@@ -105,7 +89,6 @@ pub async fn mission_create(db: Arc<Db>, args: &Value) -> Result<Value> {
         title: title.to_string(),
         description: args["description"].as_str().map(|s| s.to_string()),
         jira_key: args["jira_key"].as_str().map(|s| s.to_string()),
-        sprint_id: args["sprint_id"].as_i64(),
     };
     let m = db.mission_create(input).await?;
     Ok(serde_json::to_value(&m).unwrap())
@@ -121,7 +104,6 @@ pub async fn mission_get(db: Arc<Db>, args: &Value) -> Result<Value> {
 
 pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
     let filter = MissionFilter {
-        sprint_id: args["sprint_id"].as_i64(),
         status: args["status"]
             .as_str()
             .and_then(|s| serde_json::from_value(json!(s)).ok()),
@@ -142,7 +124,6 @@ pub async fn mission_update(db: Arc<Db>, args: &Value) -> Result<Value> {
         status: args["status"]
             .as_str()
             .and_then(|s| serde_json::from_value(json!(s)).ok()),
-        sprint_id: args["sprint_id"].as_i64(),
     };
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| Error::Validation("agent_id required".into()))?;
@@ -169,15 +150,4 @@ pub async fn mission_get_tree(db: Arc<Db>, args: &Value) -> Result<Value> {
 
     let tree = db.mission_get_tree(id).await?;
     Ok(serde_json::to_value(&tree).unwrap())
-}
-
-pub async fn mission_set_sprint(db: Arc<Db>, args: &Value) -> Result<Value> {
-    let mission_id = args["mission_id"]
-        .as_i64()
-        .ok_or_else(|| Error::Validation("mission_id required".into()))?;
-    let sprint_id = args["sprint_id"].as_i64();
-    let agent_id = args["agent_id"].as_str()
-        .ok_or_else(|| Error::Validation("agent_id required".into()))?;
-    let m = db.mission_set_sprint(mission_id, sprint_id, agent_id).await?;
-    Ok(serde_json::to_value(&m).unwrap())
 }

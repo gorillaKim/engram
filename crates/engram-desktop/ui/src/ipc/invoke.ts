@@ -33,8 +33,7 @@ export const issueUpdate = (
     title?: string;
     description?: string | null;
     goal?: string | null;
-    mission_id?: number | null;
-    update_mission_id?: boolean;
+    epic_id?: number | null;
   },
 ) =>
   invoke<Issue>('issue_update', {
@@ -42,16 +41,18 @@ export const issueUpdate = (
     title: input.title ?? null,
     description: input.description ?? null,
     goal: input.goal ?? null,
-    mission_id: input.mission_id ?? null,
-    update_mission_id: input.update_mission_id ?? null,
+    epic_id: input.epic_id ?? null,
   });
 
-export const epicList = (project_key?: string) =>
-  invoke<Epic[]>('epic_list', { project_key: project_key ?? null });
+export const epicList = (project_key?: string, include_completed?: boolean) =>
+  invoke<Epic[]>('epic_list', {
+    project_key: project_key ?? null,
+    include_completed: include_completed ?? null,
+  });
 
-/** 이슈의 sprint_id 를 변경. null 을 넘기면 백로그로 이동. */
-export const issueSetSprint = (id: number, sprint_id: number | null) =>
-  invoke<Issue>('issue_set_sprint', { id, sprint_id });
+/** 에픽의 sprint_id 를 변경. null 을 넘기면 백로그로 이동. 산하 이슈가 자동 상속 (ADR-0014). */
+export const epicSetSprint = (epic_id: number, sprint_id: number | null) =>
+  invoke<Epic>('epic_set_sprint', { epic_id, sprint_id });
 
 export const sprintCurrent = () =>
   invoke<Sprint | null>('sprint_current');
@@ -135,13 +136,12 @@ export const epicCreate = (input: CreateEpicInput) =>
     title: input.title,
     description: input.description ?? null,
     mission_id: input.mission_id ?? null,
+    sprint_id: input.sprint_id ?? null,
   });
 
 export const issueCreate = (input: CreateIssueInput) =>
   invoke<Issue>('issue_create', {
     epic_id: input.epic_id,
-    sprint_id: input.sprint_id ?? null,
-    mission_id: input.mission_id ?? null,
     title: input.title,
     description: input.description ?? null,
     goal: input.goal ?? null,
@@ -168,13 +168,23 @@ export const epicSetStatus = (id: number, status: EpicStatus) =>
 
 export const epicUpdate = (
   id: number,
-  input: { title?: string; description?: string | null; status?: EpicStatus },
+  input: {
+    title?: string;
+    description?: string | null;
+    status?: EpicStatus;
+    mission_id?: number | null;
+    sprint_id?: number | null;
+    update_sprint_id?: boolean;
+  },
 ) =>
   invoke<Epic>('epic_update', {
     id,
     title: input.title ?? null,
     description: input.description ?? null,
     status: input.status ?? null,
+    mission_id: input.mission_id !== undefined ? input.mission_id : null,
+    sprint_id: input.sprint_id !== undefined ? input.sprint_id : null,
+    update_sprint_id: input.update_sprint_id ?? null,
   });
 
 export const epicDelete = (id: number) =>
@@ -188,9 +198,8 @@ export const historyList = (entity_type: string, entity_id: number) =>
 
 // ── Mission IPC ───────────────────────────────────────────────────────────────
 
-export const missionList = (sprint_id?: number | null, include_completed?: boolean) =>
+export const missionList = (include_completed?: boolean) =>
   invoke<Mission[]>('mission_list', {
-    sprint_id: sprint_id ?? null,
     include_completed: include_completed ?? null,
   });
 
@@ -199,7 +208,6 @@ export const missionCreate = (input: CreateMissionInput) =>
     title: input.title,
     description: input.description ?? null,
     jira_key: input.jira_key ?? null,
-    sprint_id: input.sprint_id ?? null,
   });
 
 export const missionGet = (id: number) =>
@@ -212,7 +220,6 @@ export const missionUpdate = (id: number, input: UpdateMissionInput) =>
     description: input.description ?? null,
     jira_key: input.jira_key ?? null,
     status: input.status ?? null,
-    sprint_id: input.sprint_id ?? null,
   });
 
 export const missionDelete = (id: number) =>
@@ -223,10 +230,6 @@ export const missionGetProgress = (id: number) =>
 
 export const missionGetTree = (id: number) =>
   invoke<MissionTree>('mission_get_tree', { id });
-
-/** sprint_id=null 로 백로그 이동은 현재 Core가 미지원. sprint_id 에 유효한 id 만 전달. */
-export const missionSetSprint = (mission_id: number, sprint_id: number | null) =>
-  invoke<Mission>('mission_set_sprint', { mission_id, sprint_id });
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 

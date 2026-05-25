@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 pub fn tool_definitions() -> Vec<Value> {
     vec![
-        json!({ "name": "epic_create", "description": "새 에픽을 생성합니다. mission_id 로 소속 미션을 지정하세요 (필수). 에픽은 프로젝트(project_key) 단위 카테고리 — sprint 와 무관합니다.",
+        json!({ "name": "epic_create",
+            "description": "새 에픽을 생성합니다. mission_id 로 상위 미션을, sprint_id 로 실행 스프린트를 지정합니다 (ADR-0014: sprint SSOT 는 에픽).",
             "inputSchema": { "type": "object", "required": ["project_key", "title", "mission_id"],
                 "properties": {
                     "project_key":  { "type": "string",  "description": "프로젝트 식별자 (예: 'xpert-da-web')" },
-                    "mission_id":   { "type": "integer", "description": "소속 미션 ID. 지정하면 이 에픽 하위 이슈가 mission_id 를 자동 상속합니다." },
+                    "mission_id":   { "type": "integer", "description": "소속 미션 ID" },
+                    "sprint_id":    { "type": "integer", "description": "실행 스프린트 (생략 시 백로그)" },
                     "title":        { "type": "string" },
                     "description":  { "type": "string" }
                 }
@@ -19,32 +21,47 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": { "id": { "type": "integer" } }
             }
         }),
-        json!({ "name": "epic_list", "description": "에픽 목록을 조회합니다. 기본값은 completed 상태를 제외한 active/cancelled 에픽만 반환합니다. 완료 에픽 포함 시 include_completed=true 를 사용하세요.",
+        json!({ "name": "epic_list",
+            "description": "에픽 목록을 조회합니다. project_key / sprint_id / backlog_only / include_completed 로 필터합니다.",
             "inputSchema": { "type": "object",
                 "properties": {
                     "project_key":       { "type": "string" },
-                    "include_completed": { "type": "boolean", "description": "기본 false. true 시 completed 에픽도 포함하여 반환" }
+                    "sprint_id":         { "type": "integer", "description": "특정 스프린트의 에픽만" },
+                    "backlog_only":      { "type": "boolean", "description": "sprint_id IS NULL 만. 기본 false" },
+                    "include_completed": { "type": "boolean", "description": "기본 false. true 시 completed 에픽도 포함" }
                 }
             }
         }),
-        json!({ "name": "epic_update", "description": "에픽 정보(제목/설명/상태/미션) 를 수정합니다. mission_id 변경 시 cascade_issues=true(기본)이면 하위 이슈 mission_id 도 함께 갱신됩니다.",
+        json!({ "name": "epic_update",
+            "description": "에픽 정보(제목/설명/상태/미션/스프린트) 를 수정합니다. sprint_id 변경 시 update_sprint_id=true 를 함께 보내야 적용됩니다 (None 으로 명시 백로그 이동 가능).",
             "inputSchema": { "type": "object", "required": ["id", "agent_id"],
                 "properties": {
-                    "id":              { "type": "integer" },
-                    "title":           { "type": "string" },
-                    "description":     { "type": "string" },
-                    "status":          { "type": "string" },
-                    "mission_id":      { "type": "integer", "description": "미션 변경 (cascade_issues=true이면 하위 이슈도 함께 변경)" },
-                    "cascade_issues":  { "type": "boolean", "description": "true(기본): 하위 이슈 mission_id도 함께 변경" },
-                    "agent_id":        { "type": "string" }
+                    "id":               { "type": "integer" },
+                    "title":            { "type": "string" },
+                    "description":      { "type": "string" },
+                    "status":           { "type": "string" },
+                    "mission_id":       { "type": "integer", "description": "미션 변경" },
+                    "sprint_id":        { "type": "integer", "description": "스프린트 변경 — update_sprint_id=true 일 때만 적용. null 보내면 백로그" },
+                    "update_sprint_id": { "type": "boolean", "description": "sprint_id 필드를 적용할지 여부. 기본 false" },
+                    "agent_id":         { "type": "string" }
                 }
             }
         }),
-        json!({ "name": "epic_delete", "description": "에픽을 삭제합니다. 하위 이슈/태스크/노트/링크가 함께 cascade 삭제됩니다 — 비가역 작업이므로 신중하게 호출하세요.",
+        json!({ "name": "epic_set_sprint",
+            "description": "에픽의 소속 스프린트를 변경합니다. sprint_id 생략 시 백로그(NULL) 로 이동. 산하 모든 이슈가 자동으로 따라 옵니다 (Issue 는 epic.sprint_id 를 derive).",
+            "inputSchema": { "type": "object", "required": ["epic_id", "agent_id"],
+                "properties": {
+                    "epic_id":   { "type": "integer" },
+                    "sprint_id": { "type": "integer", "description": "생략하거나 null 이면 백로그" },
+                    "agent_id":  { "type": "string" }
+                }
+            }
+        }),
+        json!({ "name": "epic_delete", "description": "에픽을 삭제합니다. 하위 이슈/태스크/노트/링크가 함께 cascade 삭제됩니다 — 비가역.",
             "inputSchema": { "type": "object", "required": ["id"],
                 "properties": {
                     "id":       { "type": "integer" },
-                    "agent_id": { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc'). 생략 시 'agent'." }
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자. 생략 시 'agent'." }
                 }
             }
         }),
@@ -57,6 +74,7 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let input = CreateEpicInput {
         project_key: args["project_key"].as_str().unwrap_or("").to_string(),
         mission_id:  Some(mission_id),
+        sprint_id:   args["sprint_id"].as_i64(),
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
     };
@@ -79,7 +97,11 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let include_completed = args["include_completed"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.epic_list(project_key, include_completed).await?).unwrap())
+    let sprint_id = args["sprint_id"].as_i64();
+    let backlog_only = args["backlog_only"].as_bool().unwrap_or(false);
+    Ok(serde_json::to_value(
+        db.epic_list_filtered(project_key, include_completed, sprint_id, backlog_only).await?
+    ).unwrap())
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -88,23 +110,24 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let has_cascade = args["mission_id"].as_i64().is_some()
-        && args["cascade_issues"].as_bool().unwrap_or(true);
     let input = UpdateEpicInput {
-        title:           args["title"].as_str().map(String::from),
-        description:     args["description"].as_str().map(String::from),
+        title:            args["title"].as_str().map(String::from),
+        description:      args["description"].as_str().map(String::from),
         status,
-        mission_id:      args["mission_id"].as_i64(),
-        cascade_issues:  args["cascade_issues"].as_bool().unwrap_or(true),
+        mission_id:       args["mission_id"].as_i64(),
+        sprint_id:        args["sprint_id"].as_i64(),
+        update_sprint_id: args["update_sprint_id"].as_bool().unwrap_or(false),
     };
-    let (epic, cascade_updated, cascade_skipped) = db.epic_update(id, input, agent_id).await?;
-    let mut result = serde_json::to_value(&epic).unwrap();
-    if has_cascade {
-        result = json!({
-            "epic": epic,
-            "cascade_updated": cascade_updated,
-            "cascade_skipped": cascade_skipped,
-        });
-    }
-    Ok(result)
+    let epic = db.epic_update(id, input, agent_id).await?;
+    Ok(serde_json::to_value(&epic).unwrap())
+}
+
+pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let epic_id = args["epic_id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("epic_id is required".to_string()))?;
+    let sprint_id = args["sprint_id"].as_i64(); // None = 백로그
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
+    let epic = db.epic_set_sprint(epic_id, sprint_id, agent_id).await?;
+    Ok(serde_json::to_value(&epic).unwrap())
 }

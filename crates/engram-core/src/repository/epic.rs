@@ -1,15 +1,20 @@
-use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::epic::*;
+use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::{Db, Error, Result};
+
+const EPIC_COLS: &str = "id, project_key, mission_id, sprint_id, title, description, status, created_at, updated_at";
 
 impl Db {
     pub async fn epic_create(&self, input: CreateEpicInput) -> Result<Epic> {
         sqlx::query_as::<_, Epic>(
-            "INSERT INTO epics (project_key, mission_id, title, description) VALUES (?, ?, ?, ?)
-             RETURNING id, project_key, mission_id, title, description, status, created_at, updated_at",
+            &format!(
+                "INSERT INTO epics (project_key, mission_id, sprint_id, title, description) VALUES (?, ?, ?, ?, ?) \
+                 RETURNING {EPIC_COLS}"
+            ),
         )
         .bind(&input.project_key)
         .bind(input.mission_id)
+        .bind(input.sprint_id)
         .bind(&input.title)
         .bind(&input.description)
         .fetch_one(&self.pool)
@@ -18,45 +23,56 @@ impl Db {
     }
 
     pub async fn epic_get(&self, id: i64) -> Result<Epic> {
-        sqlx::query_as::<_, Epic>(
-            "SELECT id, project_key, mission_id, title, description, status, created_at, updated_at FROM epics WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| Error::NotFound(format!("epic:{id}")))
+        sqlx::query_as::<_, Epic>(&format!("SELECT {EPIC_COLS} FROM epics WHERE id = ?"))
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("epic:{id}")))
     }
 
-    /// 에픽 목록. 에픽은 sprint-agnostic 이므로 project_key 와 status 로만 필터한다.
-    ///
-    /// `include_completed = false` (기본): status != 'completed' 인 에픽만 반환.
-    /// `include_completed = true`: 전체 반환.
+    /// 에픽 목록. project_key, status, sprint_id 로 필터.
     pub async fn epic_list(
         &self,
         project_key: Option<&str>,
         include_completed: bool,
     ) -> Result<Vec<Epic>> {
-        let mut sql = "SELECT id, project_key, mission_id, title, description, status, created_at, updated_at FROM epics WHERE 1=1".to_string();
+        self.epic_list_filtered(project_key, include_completed, None, false).await
+    }
+
+    /// 에픽 목록 (sprint 필터 포함).
+    ///
+    /// - `sprint_id = Some(id)`: 해당 sprint 의 에픽만.
+    /// - `backlog_only = true`: sprint_id IS NULL 인 에픽만 (백로그). `sprint_id` 와 동시 지정 시 backlog_only 우선.
+    pub async fn epic_list_filtered(
+        &self,
+        project_key: Option<&str>,
+        include_completed: bool,
+        sprint_id: Option<i64>,
+        backlog_only: bool,
+    ) -> Result<Vec<Epic>> {
+        let mut sql = format!("SELECT {EPIC_COLS} FROM epics WHERE 1=1");
         if project_key.is_some() { sql.push_str(" AND project_key = ?"); }
         if !include_completed { sql.push_str(" AND status != 'completed'"); }
+        if backlog_only {
+            sql.push_str(" AND sprint_id IS NULL");
+        } else if sprint_id.is_some() {
+            sql.push_str(" AND sprint_id = ?");
+        }
         sql.push_str(" ORDER BY id DESC");
 
         let mut q = sqlx::query_as::<_, Epic>(&sql);
         if let Some(p) = project_key { q = q.bind(p); }
+        if !backlog_only {
+            if let Some(s) = sprint_id { q = q.bind(s); }
+        }
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    /// 에픽을 삭제한다. 하위 이슈/태스크/노트/링크까지 모두 cascade 삭제한다.
-    ///
-    /// 스키마상 `issues.epic_id ON DELETE RESTRICT`, `tasks.issue_id ON DELETE RESTRICT`
-    /// 라서 단순 DELETE 는 막힌다. 트랜잭션 내에서 task_tests → tasks → notes/links → issues → epic
-    /// 순으로 명시 삭제한다.
+    /// 에픽을 삭제한다. 하위 이슈/태스크/노트/링크까지 cascade 삭제.
     pub async fn epic_delete(&self, id: i64, changed_by: &str) -> Result<()> {
-        let epic = self.epic_get(id).await?; // 존재 확인
-
+        let epic = self.epic_get(id).await?;
         let mut tx = self.pool.begin().await?;
 
-        // 1) 하위 이슈들의 task_tests
         sqlx::query(
             "DELETE FROM task_tests WHERE task_id IN (\
                  SELECT t.id FROM tasks t \
@@ -68,7 +84,6 @@ impl Db {
         .execute(&mut *tx)
         .await?;
 
-        // 2) 하위 이슈들의 태스크
         sqlx::query(
             "DELETE FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?)",
         )
@@ -76,7 +91,6 @@ impl Db {
         .execute(&mut *tx)
         .await?;
 
-        // 3) 하위 이슈들의 노트
         sqlx::query(
             "DELETE FROM notes WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?)",
         )
@@ -84,7 +98,6 @@ impl Db {
         .execute(&mut *tx)
         .await?;
 
-        // 4) 하위 이슈들의 링크 (source 또는 target 어느 쪽이든)
         sqlx::query(
             "DELETE FROM issue_links \
              WHERE source_id IN (SELECT id FROM issues WHERE epic_id = ?) \
@@ -95,19 +108,16 @@ impl Db {
         .execute(&mut *tx)
         .await?;
 
-        // 5) 하위 이슈 삭제
         sqlx::query("DELETE FROM issues WHERE epic_id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 6) 에픽 자체 삭제
         sqlx::query("DELETE FROM epics WHERE id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 7) history 기록 (deletion marker)
         sqlx::query(
             "INSERT INTO history (entity_type, entity_id, field, old_value, new_value, changed_by) VALUES ('epic', ?, 'deleted', ?, NULL, ?)",
         )
@@ -121,13 +131,9 @@ impl Db {
         Ok(())
     }
 
-    /// 에픽을 수정한다.
-    ///
-    /// 반환값: `(Epic, cascade_updated, cascade_skipped)`
-    /// - `cascade_updated`: mission_id cascade 시 실제 업데이트된 이슈 수
-    /// - `cascade_skipped`: working/demo 상태로 보호되어 cascade 에서 제외된 이슈 수
-    /// cascade 가 발생하지 않으면 둘 다 0.
-    pub async fn epic_update(&self, id: i64, input: UpdateEpicInput, changed_by: &str) -> Result<(Epic, i64, i64)> {
+    pub async fn epic_update(&self, id: i64, input: UpdateEpicInput, changed_by: &str) -> Result<Epic> {
+        let _current = self.epic_get(id).await?;
+
         if let Some(title) = &input.title {
             sqlx::query("UPDATE epics SET title = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(title).bind(id).execute(&self.pool).await?;
@@ -166,62 +172,14 @@ impl Db {
             }).await;
         }
 
-        let mut cascade_updated: i64 = 0;
-        let mut cascade_skipped: i64 = 0;
-
         if let Some(mid) = input.mission_id {
-            let mut tx = self.pool.begin().await?;
-
-            // 에픽 mission_id 업데이트
             sqlx::query(
                 "UPDATE epics SET mission_id = ?, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(mid)
             .bind(id)
-            .execute(&mut *tx)
+            .execute(&self.pool)
             .await?;
-
-            // cascade: 하위 이슈 mission_id 일괄 갱신 (기본 true)
-            // working/demo 상태 이슈는 에이전트 컨텍스트 충돌 방지를 위해 제외
-            if input.cascade_issues {
-                let affected = sqlx::query(
-                    "UPDATE issues SET mission_id = ?, updated_at = datetime('now') \
-                     WHERE epic_id = ? AND status NOT IN ('working', 'demo')",
-                )
-                .bind(mid)
-                .bind(id)
-                .execute(&mut *tx)
-                .await?
-                .rows_affected() as i64;
-
-                // working/demo 이슈 수 — 보호된 이슈
-                let skipped = sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM issues WHERE epic_id = ? AND status IN ('working', 'demo')",
-                )
-                .bind(id)
-                .fetch_one(&mut *tx)
-                .await?;
-
-                cascade_updated = affected;
-                cascade_skipped = skipped;
-
-                if affected > 0 || skipped > 0 {
-                    // cascade 감사 기록 (updated/skipped 포함)
-                    sqlx::query(
-                        "INSERT INTO history (entity_type, entity_id, field, old_value, new_value, changed_by) \
-                         VALUES ('epic', ?, 'mission_id_cascade', NULL, ?, ?)",
-                    )
-                    .bind(id)
-                    .bind(format!("{}:updated={},skipped={}", mid, affected, skipped))
-                    .bind("cascade")
-                    .execute(&mut *tx)
-                    .await?;
-                }
-            }
-
-            tx.commit().await?;
-
-            // epic history 기록 (트랜잭션 외부에서 개별 기록)
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Epic,
                 entity_id: id,
@@ -232,8 +190,60 @@ impl Db {
             }).await;
         }
 
-        let epic = self.epic_get(id).await?;
-        Ok((epic, cascade_updated, cascade_skipped))
+        if input.update_sprint_id {
+            self.epic_set_sprint_internal(id, input.sprint_id, changed_by).await?;
+        }
+
+        self.epic_get(id).await
+    }
+
+    /// 에픽의 스프린트 소속을 변경한다. None 이면 백로그.
+    ///
+    /// 산하 모든 이슈는 epic.sprint_id 를 derive 하므로 자동으로 따라온다.
+    /// history 에 sprint_id 변경 기록.
+    pub async fn epic_set_sprint(
+        &self,
+        epic_id: i64,
+        sprint_id: Option<i64>,
+        changed_by: &str,
+    ) -> Result<Epic> {
+        let _current = self.epic_get(epic_id).await?;
+        self.epic_set_sprint_internal(epic_id, sprint_id, changed_by).await?;
+        self.epic_get(epic_id).await
+    }
+
+    async fn epic_set_sprint_internal(
+        &self,
+        epic_id: i64,
+        sprint_id: Option<i64>,
+        changed_by: &str,
+    ) -> Result<()> {
+        let current_sid: Option<i64> = sqlx::query_scalar("SELECT sprint_id FROM epics WHERE id = ?")
+            .bind(epic_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        sqlx::query(
+            "UPDATE epics SET sprint_id = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(sprint_id)
+        .bind(epic_id)
+        .execute(&self.pool)
+        .await?;
+
+        if current_sid != sprint_id {
+            let old_v = current_sid.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string());
+            let new_v = sprint_id.map(|s| s.to_string()).unwrap_or_else(|| "null".to_string());
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Epic,
+                entity_id: epic_id,
+                field: "sprint_id".to_string(),
+                old_value: Some(old_v),
+                new_value: Some(new_v),
+                changed_by: changed_by.to_string(),
+            }).await;
+        }
+        Ok(())
     }
 }
 
@@ -243,8 +253,9 @@ mod tests {
         Db,
         models::{
             epic::{CreateEpicInput, EpicStatus, UpdateEpicInput},
-            issue::{CreateIssueInput, UpdateIssueInput, IssueStatus},
+            issue::{CreateIssueInput, IssueStatus, UpdateIssueInput},
             mission::CreateMissionInput,
+            sprint::CreateSprintInput,
         },
     };
 
@@ -252,230 +263,107 @@ mod tests {
         Db::open_in_memory().await.unwrap()
     }
 
+    fn mission_input(title: &str) -> CreateMissionInput {
+        CreateMissionInput { title: title.to_string(), description: None, jira_key: None }
+    }
+
+    fn epic_input(project: &str, mission_id: Option<i64>, sprint_id: Option<i64>, title: &str) -> CreateEpicInput {
+        CreateEpicInput {
+            project_key: project.to_string(),
+            mission_id,
+            sprint_id,
+            title: title.to_string(),
+            description: None,
+        }
+    }
+
+    fn issue_input(epic_id: i64, title: &str) -> CreateIssueInput {
+        CreateIssueInput {
+            epic_id,
+            title: title.to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_epic_list_excludes_completed_by_default() {
         let db = setup().await;
 
-        let mission = db.mission_create(CreateMissionInput {
-            title: "M".to_string(), description: None, jira_key: None, sprint_id: None,
-        }).await.unwrap();
+        let mission = db.mission_create(mission_input("M")).await.unwrap();
 
-        let e1 = db.epic_create(CreateEpicInput {
-            project_key: "p".to_string(), mission_id: Some(mission.id),
-            title: "Active Epic".to_string(), description: None,
-        }).await.unwrap();
-        let e2 = db.epic_create(CreateEpicInput {
-            project_key: "p".to_string(), mission_id: Some(mission.id),
-            title: "Completed Epic".to_string(), description: None,
-        }).await.unwrap();
+        let e1 = db.epic_create(epic_input("p", Some(mission.id), None, "Active Epic")).await.unwrap();
+        let e2 = db.epic_create(epic_input("p", Some(mission.id), None, "Completed Epic")).await.unwrap();
 
-        // e2를 completed 상태로 변경
         db.epic_update(e2.id, UpdateEpicInput {
             status: Some(EpicStatus::Completed), ..Default::default()
         }, "test").await.unwrap();
 
-        // 기본(include_completed=false): completed 제외
         let default_list = db.epic_list(None, false).await.unwrap();
-        assert_eq!(default_list.len(), 1, "기본값은 completed 제외, 1건이어야 함");
-        assert_eq!(default_list[0].id, e1.id, "active 에픽만 반환");
+        assert_eq!(default_list.len(), 1);
+        assert_eq!(default_list[0].id, e1.id);
 
-        // include_completed=true: 전체 반환
         let full_list = db.epic_list(None, true).await.unwrap();
-        assert_eq!(full_list.len(), 2, "include_completed=true이면 2건 반환");
+        assert_eq!(full_list.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_epic_list_include_completed_with_project_filter() {
+    async fn test_epic_set_sprint_moves_and_records_history() {
         let db = setup().await;
 
-        let mission = db.mission_create(CreateMissionInput {
-            title: "M".to_string(), description: None, jira_key: None, sprint_id: None,
+        let mission = db.mission_create(mission_input("M")).await.unwrap();
+        let sprint_a = db.sprint_create(CreateSprintInput {
+            name: "A".to_string(), goal: None, start_date: None, end_date: None,
+        }).await.unwrap();
+        let sprint_b = db.sprint_create(CreateSprintInput {
+            name: "B".to_string(), goal: None, start_date: None, end_date: None,
         }).await.unwrap();
 
-        db.epic_create(CreateEpicInput {
-            project_key: "proj-a".to_string(), mission_id: Some(mission.id),
-            title: "A Active".to_string(), description: None,
-        }).await.unwrap();
-        let e2 = db.epic_create(CreateEpicInput {
-            project_key: "proj-a".to_string(), mission_id: Some(mission.id),
-            title: "A Completed".to_string(), description: None,
-        }).await.unwrap();
-        db.epic_create(CreateEpicInput {
-            project_key: "proj-b".to_string(), mission_id: Some(mission.id),
-            title: "B Active".to_string(), description: None,
-        }).await.unwrap();
+        let epic = db.epic_create(epic_input("p", Some(mission.id), Some(sprint_a.id), "E")).await.unwrap();
+        assert_eq!(epic.sprint_id, Some(sprint_a.id));
 
-        db.epic_update(e2.id, UpdateEpicInput {
-            status: Some(EpicStatus::Completed), ..Default::default()
-        }, "test").await.unwrap();
+        let moved = db.epic_set_sprint(epic.id, Some(sprint_b.id), "test-agent").await.unwrap();
+        assert_eq!(moved.sprint_id, Some(sprint_b.id));
 
-        // proj-a, include_completed=false → 1건
-        let filtered = db.epic_list(Some("proj-a"), false).await.unwrap();
-        assert_eq!(filtered.len(), 1, "proj-a active만 1건");
-
-        // proj-a, include_completed=true → 2건
-        let all = db.epic_list(Some("proj-a"), true).await.unwrap();
-        assert_eq!(all.len(), 2, "proj-a 전체 2건");
+        let history = db.history_list(crate::models::EntityType::Epic, epic.id).await.unwrap();
+        assert!(history.iter().any(|h| h.field == "sprint_id"));
     }
 
     #[tokio::test]
-    async fn test_epic_cascade_skips_working_issues() {
+    async fn test_epic_set_sprint_to_backlog() {
         let db = setup().await;
-
-        // mission A, B 생성
-        let mission_a = db.mission_create(CreateMissionInput {
-            title: "Mission A".to_string(),
-            description: None,
-            jira_key: None,
-            sprint_id: None,
+        let mission = db.mission_create(mission_input("M")).await.unwrap();
+        let sprint = db.sprint_create(CreateSprintInput {
+            name: "S".to_string(), goal: None, start_date: None, end_date: None,
         }).await.unwrap();
+        let epic = db.epic_create(epic_input("p", Some(mission.id), Some(sprint.id), "E")).await.unwrap();
 
-        let mission_b = db.mission_create(CreateMissionInput {
-            title: "Mission B".to_string(),
-            description: None,
-            jira_key: None,
-            sprint_id: None,
+        let moved = db.epic_set_sprint(epic.id, None, "test-agent").await.unwrap();
+        assert!(moved.sprint_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_epic_sprint_propagates_to_issues() {
+        let db = setup().await;
+        let mission = db.mission_create(mission_input("M")).await.unwrap();
+        let sprint = db.sprint_create(CreateSprintInput {
+            name: "S".to_string(), goal: None, start_date: None, end_date: None,
         }).await.unwrap();
+        let epic = db.epic_create(epic_input("p", Some(mission.id), Some(sprint.id), "E")).await.unwrap();
+        let issue = db.issue_create(issue_input(epic.id, "I")).await.unwrap();
 
-        // epic 생성 (mission_id = A)
-        let epic = db.epic_create(CreateEpicInput {
-            project_key: "test-proj".to_string(),
-            mission_id: Some(mission_a.id),
-            title: "Test Epic".to_string(),
-            description: None,
-        }).await.unwrap();
+        assert_eq!(issue.sprint_id, Some(sprint.id), "이슈는 epic.sprint_id 를 상속");
+        assert_eq!(issue.mission_id, Some(mission.id), "이슈는 epic.mission_id 를 상속");
 
-        // issue 1 생성 (mission_id = A)
-        let issue1 = db.issue_create(CreateIssueInput {
-            epic_id: epic.id,
-            sprint_id: None,
-            mission_id: Some(mission_a.id),
-            title: "Issue 1 (will be working)".to_string(),
-            description: None,
-            goal: None,
-            priority: None,
-        }).await.unwrap();
+        // Epic 을 백로그로 이동 → 이슈 sprint_id 도 자동 변경
+        db.epic_set_sprint(epic.id, None, "agent").await.unwrap();
+        let i2 = db.issue_get(issue.id, false).await.unwrap();
+        assert!(i2.sprint_id.is_none(), "epic.sprint_id 변경이 이슈에 즉시 반영");
 
-        // issue 2 생성 (mission_id = A)
-        let issue2 = db.issue_create(CreateIssueInput {
-            epic_id: epic.id,
-            sprint_id: None,
-            mission_id: Some(mission_a.id),
-            title: "Issue 2 (will be cascaded)".to_string(),
-            description: None,
-            goal: None,
-            priority: None,
-        }).await.unwrap();
-
-        // issue 3: demo 상태 (cascade 제외 확인용)
-        let issue3 = db.issue_create(CreateIssueInput {
-            epic_id: epic.id,
-            sprint_id: None,
-            mission_id: Some(mission_a.id),
-            title: "Issue 3 (will be demo)".to_string(),
-            description: None,
-            goal: None,
-            priority: None,
-        }).await.unwrap();
-
-        // issue 1 → working 상태로 전환 (ready → working은 issue_claim 경유)
-        db.issue_update(issue1.id, UpdateIssueInput {
-            status: Some(IssueStatus::Ready),
-            ..Default::default()
+        // UpdateIssueInput.status 변경은 sprint 상속과 무관
+        db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(IssueStatus::Ready), ..Default::default()
         }, "agent").await.unwrap();
-        db.issue_claim(issue1.id, "test-agent").await.unwrap();
-
-        // issue 3 → demo 상태로 전환
-        db.issue_update(issue3.id, UpdateIssueInput {
-            status: Some(IssueStatus::Ready),
-            ..Default::default()
-        }, "agent").await.unwrap();
-        db.issue_claim(issue3.id, "test-agent").await.unwrap();
-        db.issue_release(issue3.id, IssueStatus::Demo, "test-agent", false).await.unwrap();
-
-        // epic_update(mission_id = B, cascade_issues = true)
-        let (updated_epic, cascade_updated, cascade_skipped) = db.epic_update(
-            epic.id,
-            UpdateEpicInput {
-                mission_id: Some(mission_b.id),
-                cascade_issues: true,
-                ..Default::default()
-            },
-            "agent",
-        ).await.unwrap();
-
-        // epic 자체는 mission B로 변경
-        assert_eq!(updated_epic.mission_id, Some(mission_b.id), "epic mission_id는 B여야 함");
-
-        // cascade 카운트 검증
-        assert_eq!(cascade_updated, 1, "issue 2만 cascade 업데이트 되어야 함");
-        assert_eq!(cascade_skipped, 2, "issue 1(working), issue 3(demo) 2건이 보호되어야 함");
-
-        // issue 1 (working): mission_id = A 유지
-        let i1 = db.issue_get(issue1.id, false).await.unwrap();
-        assert_eq!(i1.mission_id, Some(mission_a.id), "working 이슈는 mission_id A 유지");
-
-        // issue 2 (required): mission_id = B 로 변경
-        let i2 = db.issue_get(issue2.id, false).await.unwrap();
-        assert_eq!(i2.mission_id, Some(mission_b.id), "required 이슈는 mission_id B로 변경");
-
-        // issue 3 (demo): mission_id = A 유지
-        let i3 = db.issue_get(issue3.id, false).await.unwrap();
-        assert_eq!(i3.mission_id, Some(mission_a.id), "demo 이슈는 mission_id A 유지");
-    }
-
-    #[tokio::test]
-    async fn test_epic_cascade_false_skips_all() {
-        let db = setup().await;
-
-        let mission_a = db.mission_create(CreateMissionInput {
-            title: "Mission A".to_string(),
-            description: None,
-            jira_key: None,
-            sprint_id: None,
-        }).await.unwrap();
-
-        let mission_b = db.mission_create(CreateMissionInput {
-            title: "Mission B".to_string(),
-            description: None,
-            jira_key: None,
-            sprint_id: None,
-        }).await.unwrap();
-
-        let epic = db.epic_create(CreateEpicInput {
-            project_key: "test-proj".to_string(),
-            mission_id: Some(mission_a.id),
-            title: "Test Epic".to_string(),
-            description: None,
-        }).await.unwrap();
-
-        let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id,
-            sprint_id: None,
-            mission_id: Some(mission_a.id),
-            title: "Issue 1".to_string(),
-            description: None,
-            goal: None,
-            priority: None,
-        }).await.unwrap();
-
-        // cascade_issues = false: 하위 이슈 mission_id 변경 없음
-        let (updated_epic, cascade_updated, cascade_skipped) = db.epic_update(
-            epic.id,
-            UpdateEpicInput {
-                mission_id: Some(mission_b.id),
-                cascade_issues: false,
-                ..Default::default()
-            },
-            "agent",
-        ).await.unwrap();
-
-        assert_eq!(updated_epic.mission_id, Some(mission_b.id));
-        assert_eq!(cascade_updated, 0, "cascade=false이므로 0");
-        assert_eq!(cascade_skipped, 0, "cascade=false이므로 0");
-
-        // 이슈 mission_id는 A 유지
-        let i = db.issue_get(issue.id, false).await.unwrap();
-        assert_eq!(i.mission_id, Some(mission_a.id), "cascade=false이면 이슈 mission_id 유지");
     }
 }

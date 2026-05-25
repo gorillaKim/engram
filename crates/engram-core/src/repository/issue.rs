@@ -4,37 +4,33 @@ use crate::{Db, Error, Result};
 
 const DESCRIPTION_EXCERPT_CHARS: usize = 100;
 
+/// Issue 조회용 공통 SELECT 컬럼 — mission_id 와 sprint_id 는 Epic JOIN 으로 derive.
+fn issue_select_columns(compact: bool) -> &'static str {
+    if compact {
+        "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
+         i.title, NULL AS description, NULL AS goal, i.status, i.priority, \
+         i.assigned_agent, i.created_at, i.updated_at"
+    } else {
+        "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
+         i.title, i.description, i.goal, i.status, i.priority, \
+         i.assigned_agent, i.created_at, i.updated_at"
+    }
+}
+
 impl Db {
     pub async fn issue_create(&self, input: CreateIssueInput) -> Result<Issue> {
-        if input.sprint_id.is_some() {
-            return Err(Error::Validation(
-                "sprint_id 는 더 이상 직접 지정할 수 없습니다. 이슈의 스프린트는 소속 미션을 통해 결정됩니다.".to_string()
-            ));
-        }
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
 
-        // mission_id: 명시 전달이 없으면 부모 epic 에서 자동 상속.
-        // epic 에도 mission_id 가 없으면 NULL 저장 (에러 없음).
-        let mission_id = if input.mission_id.is_some() {
-            input.mission_id
-        } else {
-            sqlx::query_scalar::<_, Option<i64>>(
-                "SELECT mission_id FROM epics WHERE id = ?",
-            )
-            .bind(input.epic_id)
-            .fetch_optional(&self.pool)
-            .await?
-            .flatten()
-        };
-
-        // RETURNING 절에서 (SELECT sprint_id FROM missions WHERE id = mission_id) 로 derived sprint_id 반환
+        // epic 존재 확인 + Sprint/Mission derive 는 RETURNING 절의 JOIN 으로 처리.
         sqlx::query_as::<_, Issue>(
-            "INSERT INTO issues (epic_id, mission_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?, ?)
-             RETURNING id, epic_id, mission_id, (SELECT sprint_id FROM missions WHERE id = mission_id) AS sprint_id, title, description, goal, status, priority, assigned_agent, created_at, updated_at",
+            "INSERT INTO issues (epic_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?) \
+             RETURNING id, epic_id, \
+                       (SELECT mission_id FROM epics WHERE id = epic_id) AS mission_id, \
+                       (SELECT sprint_id  FROM epics WHERE id = epic_id) AS sprint_id, \
+                       title, description, goal, status, priority, assigned_agent, created_at, updated_at",
         )
         .bind(input.epic_id)
-        .bind(mission_id)
         .bind(&input.title)
         .bind(&input.description)
         .bind(&input.goal)
@@ -45,13 +41,9 @@ impl Db {
     }
 
     pub async fn issue_get(&self, id: i64, compact: bool) -> Result<Issue> {
-        let select_fields = if compact {
-            "i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, NULL AS description, NULL AS goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at"
-        } else {
-            "i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at"
-        };
+        let cols = issue_select_columns(compact);
         sqlx::query_as::<_, Issue>(&format!(
-            "SELECT {} FROM issues i LEFT JOIN missions m ON i.mission_id = m.id WHERE i.id = ?", select_fields
+            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE i.id = ?"
         ))
         .bind(id)
         .fetch_optional(&self.pool)
@@ -60,15 +52,21 @@ impl Db {
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let mut sql = "SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at FROM issues i LEFT JOIN missions m ON i.mission_id = m.id WHERE 1=1".to_string();
+        let cols = issue_select_columns(false);
+        let mut sql = format!(
+            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE 1=1"
+        );
         if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
-        if filter.mission_id.is_some()  { sql.push_str(" AND i.mission_id = ?"); }
-        if filter.sprint_id.is_some()   { sql.push_str(" AND m.sprint_id = ?"); }
-        if filter.backlog_only           { sql.push_str(" AND (i.mission_id IS NULL OR m.sprint_id IS NULL)"); }
-        if filter.project_key.is_some() {
-            sql.push_str(" AND EXISTS (SELECT 1 FROM epics e WHERE e.id = i.epic_id AND e.project_key = ?)");
+        if filter.mission_id.is_some()  { sql.push_str(" AND e.mission_id = ?"); }
+        if filter.backlog_only {
+            sql.push_str(" AND e.sprint_id IS NULL");
+        } else if filter.sprint_id.is_some() {
+            sql.push_str(" AND e.sprint_id = ?");
         }
-        
+        if filter.project_key.is_some() {
+            sql.push_str(" AND e.project_key = ?");
+        }
+
         let mut target_statuses = Vec::new();
         if let Some(s) = filter.status {
             target_statuses.push(s);
@@ -90,7 +88,9 @@ impl Db {
         let mut q = sqlx::query_as::<_, Issue>(&sql);
         if let Some(e) = filter.epic_id     { q = q.bind(e); }
         if let Some(m) = filter.mission_id  { q = q.bind(m); }
-        if let Some(s) = filter.sprint_id   { q = q.bind(s); }
+        if !filter.backlog_only {
+            if let Some(s) = filter.sprint_id { q = q.bind(s); }
+        }
         if let Some(p) = filter.project_key { q = q.bind(p); }
         for s in target_statuses {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
@@ -99,17 +99,7 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-
-    /// 이슈의 스프린트 소속을 변경한다. None 을 넘기면 백로그로 이동.
-    pub async fn issue_set_sprint(&self, _id: i64, _sprint_id: Option<i64>, _changed_by: &str) -> Result<Issue> {
-        Err(Error::Validation(
-            "issue_set_sprint 는 deprecated 입니다. mission_set_sprint 또는 issue_update(mission_id=...) 를 사용하세요. ADR-0013 참조".to_string()
-        ))
-    }
-
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
-        // Demo gate: finished/cancelled 전이는 사용자(agent_id="user")만 가능하다.
-        // 에이전트가 규칙 파일 없이 호출하더라도 repository layer에서 코드 레벨로 막힌다.
         if matches!(input.status.as_ref(), Some(IssueStatus::Finished) | Some(IssueStatus::Cancelled))
             && changed_by != "user"
         {
@@ -125,7 +115,6 @@ impl Db {
                     format!("{:?} → {:?}", current.status, new_status)
                 ));
             }
-            // blocked 이슈 전환 검증 — working/demo/finished 로 진입 시 활성 블로커 확인
             if matches!(new_status, IssueStatus::Working | IssueStatus::Demo | IssueStatus::Finished) {
                 let blockers = self.active_blockers_for(id).await?;
                 if !blockers.is_empty() {
@@ -138,8 +127,6 @@ impl Db {
             }
             let old_v = serde_json::to_value(&current.status).unwrap().as_str().unwrap().to_string();
             let new_v = serde_json::to_value(new_status).unwrap().as_str().unwrap().to_string();
-            // working 을 벗어나는 모든 전이에서 assigned_agent 를 정리한다
-            // (release 도구를 거치지 않는 사용자/agent 의 자유로운 칸반 이동에도 동작하도록).
             let clear_assignment = current.status == IssueStatus::Working && new_status != &IssueStatus::Working;
             if clear_assignment {
                 sqlx::query("UPDATE issues SET status = ?, assigned_agent = NULL, updated_at = datetime('now') WHERE id = ?")
@@ -206,18 +193,16 @@ impl Db {
                 changed_by: changed_by.to_string(),
             }).await;
         }
-        if input.update_mission_id == Some(true) {
-            sqlx::query("UPDATE issues SET mission_id = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(input.mission_id)
-                .bind(id)
-                .execute(&self.pool)
-                .await?;
+        // 이슈를 다른 epic 으로 이동 — mission/sprint 는 자동으로 epic 의 값에 따라온다.
+        if let Some(new_epic_id) = input.epic_id {
+            sqlx::query("UPDATE issues SET epic_id = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(new_epic_id).bind(id).execute(&self.pool).await?;
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
                 entity_id: id,
-                field: "mission_id".to_string(),
+                field: "epic_id".to_string(),
                 old_value: None,
-                new_value: input.mission_id.map(|m| m.to_string()),
+                new_value: Some(new_epic_id.to_string()),
                 changed_by: changed_by.to_string(),
             }).await;
         }
@@ -226,7 +211,6 @@ impl Db {
 
     pub async fn issue_link(&self, source_id: i64, target_id: i64, link_type: LinkType) -> Result<IssueLink> {
         let lt = serde_json::to_value(&link_type).unwrap().as_str().unwrap().to_string();
-        // RETURNING * — WAL 가시성 회피.
         sqlx::query_as::<_, IssueLink>(
             "INSERT INTO issue_links (source_id, target_id, link_type) VALUES (?, ?, ?)
              RETURNING id, source_id, target_id, link_type, created_at",
@@ -243,17 +227,9 @@ impl Db {
         Ok(())
     }
 
-    /// 이슈를 CAS(Compare-And-Set) 방식으로 점유한다 (멀티 에이전트 race 방지).
-    ///
-    /// 한 SQL 안에서 `status ∈ {ready, working}` 이고 `assigned_agent` 가 NULL 이거나
-    /// 자기 자신일 때만 `working` + `assigned_agent=agent_id` 로 전이한다.
-    /// 다른 에이전트가 잡고 있으면 `rows_affected=0` 으로 빠지므로 `Validation` 에러를 던진다.
-    ///
-    /// 같은 agent_id 가 재호출하면 idempotent (이미 자기가 잡은 working 이슈를 그대로 반환).
     pub async fn issue_claim(&self, id: i64, agent_id: &str) -> Result<Issue> {
-        let current = self.issue_get(id, false).await?; // 존재 확인 + 디버그용 컨텍스트
+        let current = self.issue_get(id, false).await?;
 
-        // claim = working 전환과 동치이므로 활성 블로커 확인
         let blockers = self.active_blockers_for(id).await?;
         if !blockers.is_empty() {
             let list = blockers.iter().map(|b| format!("#{}", b)).collect::<Vec<_>>().join(", ");
@@ -283,7 +259,6 @@ impl Db {
             )));
         }
 
-        // history 기록 (status 변화가 있었을 때만 기록 — 동일 agent 의 idempotent 재호출은 noise)
         if current.status != IssueStatus::Working {
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
@@ -298,16 +273,9 @@ impl Db {
         self.issue_get(id, false).await
     }
 
-    /// 이슈 점유를 해제하고 지정 상태로 전이한다. 보통 `ready` (다른 agent 가 픽업 가능)
-    /// 또는 `demo` (사용자 검토 대기) 로 전이한다.
-    ///
-    /// `force=false` 면 ownership 검증 — `agent_id` 가 현재 `assigned_agent` 와 다르면 거부.
-    /// `force=true` 면 검증 우회 — 좀비 lease 회수, 사용자 또는 리더가 강제 ready 환원할 때 사용.
-    /// history.changed_by 에는 항상 호출자의 `agent_id` 가 기록되므로 force 회수도 감사 가능.
     pub async fn issue_release(&self, id: i64, transition_to: IssueStatus, agent_id: &str, force: bool) -> Result<Issue> {
         let current = self.issue_get(id, false).await?;
 
-        // ownership 검증 (force=false 일 때만)
         if !force {
             if let Some(holder) = current.assigned_agent.as_deref() {
                 if holder != agent_id {
@@ -341,7 +309,6 @@ impl Db {
         self.issue_get(id, false).await
     }
 
-    /// demo 상태의 이슈를 finished 로 전이한다 (사용자 전용).
     pub async fn issue_finish(&self, id: i64, changed_by: &str) -> Result<Issue> {
         if changed_by != "user" {
             return Err(Error::Validation("issue_finish 는 사용자 전용입니다".to_string()));
@@ -372,7 +339,6 @@ impl Db {
         self.issue_get(id, false).await
     }
 
-    /// 임의 상태의 이슈를 cancelled 로 전이한다 (사용자 전용).
     pub async fn issue_cancel(&self, id: i64, reason: &str, changed_by: &str) -> Result<Issue> {
         if changed_by != "user" {
             return Err(Error::Validation("issue_cancel 은 사용자 전용입니다".to_string()));
@@ -411,17 +377,10 @@ impl Db {
         self.issue_get(id, false).await
     }
 
-    /// 이슈를 삭제한다. 하위 태스크/노트/링크/태스크테스트도 함께 cascade 삭제.
-    ///
-    /// 스키마상 `tasks.issue_id ON DELETE RESTRICT` 라서 단순 DELETE 는 막힌다.
-    /// 트랜잭션 내에서 task_tests → tasks → notes/links → issues 순으로 명시 삭제한다.
-    /// (`notes`, `issue_links` 는 FK CASCADE 이지만 트랜잭션 일관성을 위해 명시적으로 처리)
     pub async fn issue_delete(&self, id: i64, changed_by: &str) -> Result<()> {
-        let issue = self.issue_get(id, false).await?; // 존재 확인
-
+        let issue = self.issue_get(id, false).await?;
         let mut tx = self.pool.begin().await?;
 
-        // 1) 하위 태스크의 task_tests 먼저 제거 (task_tests.task_id CASCADE 지만 명시)
         sqlx::query(
             "DELETE FROM task_tests WHERE task_id IN (SELECT id FROM tasks WHERE issue_id = ?)",
         )
@@ -429,32 +388,27 @@ impl Db {
         .execute(&mut *tx)
         .await?;
 
-        // 2) 태스크 제거 (RESTRICT 우회를 위해 트랜잭션 내 명시 삭제)
         sqlx::query("DELETE FROM tasks WHERE issue_id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 3) 노트 제거 (FK CASCADE 지만 명시)
         sqlx::query("DELETE FROM notes WHERE issue_id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 4) 이슈 링크 제거 (양방향)
         sqlx::query("DELETE FROM issue_links WHERE source_id = ? OR target_id = ?")
             .bind(id)
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 5) 이슈 자체 삭제
         sqlx::query("DELETE FROM issues WHERE id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
 
-        // 6) history 기록 (entity 가 사라졌으므로 entity_id 만 남는 deletion marker)
         sqlx::query(
             "INSERT INTO history (entity_type, entity_id, field, old_value, new_value, changed_by) VALUES ('issue', ?, 'deleted', ?, NULL, ?)",
         )
@@ -478,12 +432,6 @@ impl Db {
         .map_err(Into::into)
     }
 
-    /// 특정 상태에서 `threshold_minutes` 이상 머문 이슈 목록을 반환한다.
-    ///
-    /// 진입 시각은 `history` 의 `field='status' AND new_value=<status>` 중 가장 최근 레코드의
-    /// `created_at` 으로 정의한다. history 가 없으면 `issues.updated_at` 으로 폴백한다.
-    ///
-    /// 리더 에이전트가 working 상태에서 정체된 이슈를 발견할 때 사용한다.
     pub async fn stalled_issues(
         &self,
         project_key: Option<&str>,
@@ -516,8 +464,8 @@ impl Db {
         sql.push_str(" ORDER BY minutes_in_status DESC");
 
         let mut q = sqlx::query_as::<_, StalledIssue>(&sql)
-            .bind(&status_v) // h.new_value = ?
-            .bind(&status_v); // i.status = ?
+            .bind(&status_v)
+            .bind(&status_v);
         if let Some(pk) = project_key {
             q = q.bind(pk);
         }
@@ -525,7 +473,6 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
-    /// 이슈가 source 또는 target 인 모든 링크 반환 (이슈 상세 UI 용).
     pub async fn issue_links_for(&self, issue_id: i64) -> Result<Vec<IssueLink>> {
         sqlx::query_as::<_, IssueLink>(
             "SELECT id, source_id, target_id, link_type, created_at FROM issue_links WHERE source_id = ? OR target_id = ? ORDER BY id ASC",
@@ -537,11 +484,6 @@ impl Db {
         .map_err(Into::into)
     }
 
-    /// 아직 해소되지 않은 블로커 이슈 ID 목록을 반환한다.
-    ///
-    ///  에서  이고  인 source 를 조회하되,
-    /// source 이슈의 status 가  또는  가 아닌 것만 반환한다.
-    /// (demo/finished 에 도달한 블로커는 "해소된 것"으로 간주)
     async fn active_blockers_for(&self, issue_id: i64) -> Result<Vec<i64>> {
         sqlx::query_scalar::<_, i64>(
             "SELECT il.source_id              FROM issue_links il              JOIN issues i ON il.source_id = i.id              WHERE il.target_id = ?                AND il.link_type = 'blocks'                AND i.status NOT IN ('demo', 'finished', 'cancelled')",
@@ -566,18 +508,15 @@ impl Db {
         let sid = sprint.as_ref().map(|s| s.id);
         let sname = sprint.as_ref().map(|s| s.name.clone());
 
-        let mut sql = r#"
-            SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
-            FROM issues i
-            JOIN epics e ON i.epic_id = e.id
-            LEFT JOIN missions m ON i.mission_id = m.id
-            WHERE e.project_key = ?
-        "#.to_string();
+        let cols = issue_select_columns(false);
+        let mut sql = format!(
+            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE e.project_key = ?"
+        );
 
         if sid.is_some() {
-            sql.push_str(" AND m.sprint_id = ?");
+            sql.push_str(" AND e.sprint_id = ?");
         } else {
-            sql.push_str(" AND (i.mission_id IS NULL OR m.sprint_id IS NULL)");
+            sql.push_str(" AND e.sprint_id IS NULL");
         }
 
         sql.push_str(" ORDER BY i.id DESC");
@@ -656,8 +595,7 @@ impl Db {
                 title: None,
                 description: None,
                 goal: None,
-                mission_id: None,
-                update_mission_id: None,
+                epic_id: None,
             };
             match self.issue_update(id, update_input, changed_by).await {
                 Ok(issue) => succeeded.push(issue),
@@ -695,39 +633,34 @@ mod tests {
             end_date: None,
         }).await.unwrap();
 
-        // 미션 A, B 생성
         let mission_a = db.mission_create(CreateMissionInput {
             title: "Mission A".to_string(),
             description: None,
             jira_key: None,
-            sprint_id: Some(sprint.id),
         }).await.unwrap();
         let mission_b = db.mission_create(CreateMissionInput {
             title: "Mission B".to_string(),
             description: None,
             jira_key: None,
-            sprint_id: Some(sprint.id),
         }).await.unwrap();
 
-        // 에픽 A (mission_id=A), 에픽 B (mission_id=B)
         let epic_a = db.epic_create(CreateEpicInput {
             mission_id: Some(mission_a.id),
+            sprint_id: Some(sprint.id),
             project_key: "proj".to_string(),
             title: "Epic A".to_string(),
             description: None,
         }).await.unwrap();
         let epic_b = db.epic_create(CreateEpicInput {
             mission_id: Some(mission_b.id),
+            sprint_id: Some(sprint.id),
             project_key: "proj".to_string(),
             title: "Epic B".to_string(),
             description: None,
         }).await.unwrap();
 
-        // 이슈 A1, A2 (epic_a → mission_id 자동 상속)
         let issue_a1 = db.issue_create(CreateIssueInput {
             epic_id: epic_a.id,
-            mission_id: None,
-            sprint_id: None,
             title: "Issue A1".to_string(),
             description: None,
             goal: None,
@@ -735,50 +668,41 @@ mod tests {
         }).await.unwrap();
         let issue_a2 = db.issue_create(CreateIssueInput {
             epic_id: epic_a.id,
-            mission_id: None,
-            sprint_id: None,
             title: "Issue A2".to_string(),
             description: None,
             goal: None,
             priority: None,
         }).await.unwrap();
-
-        // 이슈 B1 (epic_b → mission_id 자동 상속)
         let issue_b1 = db.issue_create(CreateIssueInput {
             epic_id: epic_b.id,
-            mission_id: None,
-            sprint_id: None,
             title: "Issue B1".to_string(),
             description: None,
             goal: None,
             priority: None,
         }).await.unwrap();
 
-        // mission_id 상속 확인
-        assert_eq!(issue_a1.mission_id, Some(mission_a.id), "A1은 mission A 상속");
-        assert_eq!(issue_a2.mission_id, Some(mission_a.id), "A2은 mission A 상속");
-        assert_eq!(issue_b1.mission_id, Some(mission_b.id), "B1은 mission B 상속");
+        // mission_id 가 Epic 에서 derive 되는지 확인
+        assert_eq!(issue_a1.mission_id, Some(mission_a.id));
+        assert_eq!(issue_a2.mission_id, Some(mission_a.id));
+        assert_eq!(issue_b1.mission_id, Some(mission_b.id));
 
-        // mission_a 필터 → A1, A2 만
         let result_a = db.issue_list(IssueFilter {
             mission_id: Some(mission_a.id),
             ..Default::default()
         }).await.unwrap();
         let ids_a: Vec<i64> = result_a.iter().map(|i| i.id).collect();
-        assert!(ids_a.contains(&issue_a1.id), "A1이 mission_a 결과에 있어야 함");
-        assert!(ids_a.contains(&issue_a2.id), "A2가 mission_a 결과에 있어야 함");
-        assert!(!ids_a.contains(&issue_b1.id), "B1은 mission_a 결과에 없어야 함");
-        assert_eq!(result_a.len(), 2, "mission A 필터 결과는 2건");
+        assert!(ids_a.contains(&issue_a1.id));
+        assert!(ids_a.contains(&issue_a2.id));
+        assert!(!ids_a.contains(&issue_b1.id));
+        assert_eq!(result_a.len(), 2);
 
-        // mission_b 필터 → B1 만
         let result_b = db.issue_list(IssueFilter {
             mission_id: Some(mission_b.id),
             ..Default::default()
         }).await.unwrap();
         let ids_b: Vec<i64> = result_b.iter().map(|i| i.id).collect();
-        assert!(ids_b.contains(&issue_b1.id), "B1이 mission_b 결과에 있어야 함");
-        assert!(!ids_b.contains(&issue_a1.id), "A1은 mission_b 결과에 없어야 함");
-        assert_eq!(result_b.len(), 1, "mission B 필터 결과는 1건");
+        assert!(ids_b.contains(&issue_b1.id));
+        assert!(!ids_b.contains(&issue_a1.id));
+        assert_eq!(result_b.len(), 1);
     }
 }
-

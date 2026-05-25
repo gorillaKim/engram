@@ -16,25 +16,14 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "issue_create",
-            "description": "새 이슈를 required(승인대기) 상태로 생성합니다. sprint_id 는 더 이상 직접 지정할 수 없으며, 소속 미션의 스프린트 결합에 따라 결정됩니다. 작업 시작 전 반드시 사용자가 ready 로 승격해야 합니다.",
+            "description": "새 이슈를 required(승인대기) 상태로 생성합니다. sprint_id 와 mission_id 는 부모 epic 에서 자동 derive 되므로 직접 지정할 수 없습니다 (ADR-0014). 작업 시작 전 반드시 사용자가 ready 로 승격해야 합니다.",
             "inputSchema": { "type": "object", "required": ["epic_id", "title"],
                 "properties": {
                     "epic_id":     { "type": "integer" },
-                    "mission_id":  { "type": "integer", "description": "미지정 시 부모 epic.mission_id 자동 상속" },
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
                     "goal":        { "type": "string", "description": "이슈의 성공 목표" },
                     "priority":    { "type": "string", "enum": ["critical","high","medium","low"] }
-                }
-            }
-        }),
-        json!({ "name": "issue_set_sprint",
-            "description": "DEPRECATED: 이슈의 소속 스프린트를 변경합니다. mission_set_sprint 또는 issue_update(mission_id=...) 를 사용하세요. ADR-0013 참조.",
-            "inputSchema": { "type": "object", "required": ["id"],
-                "properties": {
-                    "id":        { "type": "integer" },
-                    "sprint_id": { "type": "integer" },
-                    "agent_id":  { "type": "string" }
                 }
             }
         }),
@@ -77,7 +66,7 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "issue_update",
-            "description": "이슈 상태/정보를 수정합니다. agent_id 는 필수이며, history.changed_by 로 저장되어 멀티 에이전트 감사가 가능합니다.",
+            "description": "이슈 상태/정보를 수정합니다. agent_id 는 필수이며, history.changed_by 로 저장되어 멀티 에이전트 감사가 가능합니다. epic_id 를 보내면 이슈를 다른 에픽으로 이동(sprint/mission 자동 상속).",
             "inputSchema": { "type": "object", "required": ["id", "agent_id"],
                 "properties": {
                     "id":          { "type": "integer" },
@@ -86,6 +75,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "title":       { "type": "string" },
                     "description": { "type": "string" },
                     "goal":        { "type": "string" },
+                    "epic_id":     { "type": "integer", "description": "다른 에픽으로 이동" },
                     "agent_id":    { "type": "string", "description": "호출 액터 식별자 (예: 'user', 'claude-opus@sess-abc')" }
                 }
             }
@@ -209,31 +199,21 @@ pub fn tool_definitions() -> Vec<Value> {
 }
 
 pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    if args["sprint_id"].is_number() {
+    if args["sprint_id"].is_number() || args["mission_id"].is_number() {
         return Err(engram_core::Error::Validation(
-            "sprint_id 는 더 이상 직접 지정할 수 없습니다. 이슈의 스프린트는 소속 미션을 통해 결정됩니다.".to_string()
+            "sprint_id / mission_id 는 부모 epic 에서 자동 derive 되므로 직접 지정할 수 없습니다. 다른 sprint/mission 에 두려면 epic 을 옮기세요 (ADR-0014).".to_string()
         ));
     }
     let priority: Option<IssuePriority> = args["priority"].as_str()
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
     let input = CreateIssueInput {
         epic_id:     args["epic_id"].as_i64().unwrap_or(0),
-        mission_id:  args["mission_id"].as_i64(),
-        sprint_id:   None,
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
         goal:        args["goal"].as_str().map(String::from),
         priority,
     };
     Ok(serde_json::to_value(db.issue_create(input).await?).unwrap())
-}
-
-pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
-    let sprint_id = args["sprint_id"].as_i64(); // None → 백로그로 이동
-    let agent_id = args["agent_id"].as_str().unwrap_or("agent");
-    Ok(serde_json::to_value(db.issue_set_sprint(id, sprint_id, agent_id).await?).unwrap())
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -304,8 +284,7 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         title,
         description,
         goal,
-        mission_id: None,
-        update_mission_id: None,
+        epic_id: args["epic_id"].as_i64(),
     };
     Ok(serde_json::to_value(db.issue_update(id, input, agent_id).await?).unwrap())
 }

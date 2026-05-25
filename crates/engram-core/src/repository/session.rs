@@ -397,9 +397,8 @@ impl Db {
                     i.updated_at AS since \
              FROM issues i \
              JOIN epics e ON e.id = i.epic_id \
-             JOIN missions m ON i.mission_id = m.id \
              WHERE i.status='working' AND i.assigned_agent IS NOT NULL \
-               AND m.sprint_id = ?",
+               AND e.sprint_id = ?",
         );
         if project_key.is_some() {
             workers_sql.push_str(" AND e.project_key = ?");
@@ -456,7 +455,7 @@ impl Db {
                     ) / NULLIF(COUNT(i.id), 0) as progress_rate \
                  FROM missions m \
                  LEFT JOIN epics e ON e.mission_id = m.id \
-                 LEFT JOIN issues i ON i.mission_id = m.id \
+                 LEFT JOIN issues i ON i.epic_id = e.id \
                  WHERE m.status = 'active'",
             );
             if project_key.is_some() {
@@ -589,8 +588,7 @@ impl Db {
                 COUNT(*) as total
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            JOIN missions m ON i.mission_id = m.id
-            WHERE m.sprint_id = ?
+            WHERE e.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -635,9 +633,8 @@ impl Db {
             JOIN issues ti ON il.target_id = ti.id
             JOIN epics be ON bi.epic_id = be.id
             JOIN epics te ON ti.epic_id = te.id
-            JOIN missions bm ON bi.mission_id = bm.id
             WHERE il.link_type = 'blocks'
-              AND bm.sprint_id = ?
+              AND be.sprint_id = ?
               AND bi.status NOT IN ('finished', 'cancelled')
         "#.to_string();
         if project_key.is_some() {
@@ -708,13 +705,12 @@ impl Db {
         };
 
         let mut sql = r#"
-            SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal,
+            SELECT i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, i.title, i.description, i.goal,
                    i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at,
                    e.project_key as proj
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            JOIN missions m ON i.mission_id = m.id
-            WHERE m.sprint_id = ?
+            WHERE e.sprint_id = ?
         "#.to_string();
         if project_key.is_some() {
             sql.push_str(" AND e.project_key = ?");
@@ -814,14 +810,13 @@ impl Db {
                 CAST(strftime('%s', MAX(h.created_at)) AS INTEGER) AS secs_since_activity
             FROM issues i
             JOIN epics e ON i.epic_id = e.id
-            JOIN missions m ON i.mission_id = m.id
             LEFT JOIN history h ON (
                 (h.entity_type = 'issue' AND h.entity_id = i.id)
                 OR (h.entity_type = 'task' AND h.entity_id IN (
                     SELECT t.id FROM tasks t WHERE t.issue_id = i.id
                 ))
             )
-            WHERE m.sprint_id = ?
+            WHERE e.sprint_id = ?
               AND i.status = 'working'
         "#.to_string();
         if project_key.is_some() {

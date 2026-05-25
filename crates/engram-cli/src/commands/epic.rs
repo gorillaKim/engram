@@ -24,10 +24,16 @@ pub enum EpicCommand {
         #[arg(long)] title: String,
         /// 소속 미션 ID (생략 가능 — nullable)
         #[arg(long = "mission-id")] mission_id: Option<i64>,
+        /// 실행 스프린트 (생략 시 백로그)
+        #[arg(long)] sprint: Option<i64>,
     },
     List {
         #[arg(long)] project: Option<String>,
         #[arg(long)] status: Option<String>,
+        /// 특정 sprint 의 에픽만
+        #[arg(long)] sprint: Option<i64>,
+        /// sprint_id IS NULL 인 에픽만 (백로그)
+        #[arg(long = "backlog-only")] backlog_only: bool,
         /// completed 에픽도 포함 (기본: completed 제외)
         #[arg(long = "include-completed")] include_completed: bool,
     },
@@ -39,6 +45,11 @@ pub enum EpicCommand {
         #[arg(long)] title: Option<String>,
         #[arg(long)] description: Option<String>,
     },
+    /// 에픽의 스프린트 변경 (sprint=None 이면 백로그). 산하 이슈가 자동으로 따라옵니다.
+    SetSprint {
+        #[arg(long = "epic-id")] epic_id: i64,
+        #[arg(long)] sprint: Option<i64>,
+    },
     /// 에픽 삭제 (하위 이슈/태스크/노트/링크 cascade — 비가역)
     Delete {
         id: i64,
@@ -47,15 +58,15 @@ pub enum EpicCommand {
 
 pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        EpicCommand::Create { project, title, mission_id } => {
+        EpicCommand::Create { project, title, mission_id, sprint } => {
             let epic = db.epic_create(CreateEpicInput {
-                project_key: project, mission_id, title, description: None,
+                project_key: project, mission_id, sprint_id: sprint, title, description: None,
             }).await?;
             output::print_value(&epic, fmt)?;
         }
-        EpicCommand::List { project, status: _, include_completed } => {
+        EpicCommand::List { project, status: _, sprint, backlog_only, include_completed } => {
             output::print_value(
-                &db.epic_list(project.as_deref(), include_completed).await?,
+                &db.epic_list_filtered(project.as_deref(), include_completed, sprint, backlog_only).await?,
                 fmt,
             )?;
         }
@@ -68,8 +79,13 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> a
                 title,
                 description,
                 mission_id: None,
-                cascade_issues: true,
+                sprint_id: None,
+                update_sprint_id: false,
             }, agent_id).await?;
+            output::print_value(&epic, fmt)?;
+        }
+        EpicCommand::SetSprint { epic_id, sprint } => {
+            let epic = db.epic_set_sprint(epic_id, sprint, agent_id).await?;
             output::print_value(&epic, fmt)?;
         }
         EpicCommand::Delete { id } => {
@@ -122,11 +138,35 @@ mod tests {
     fn test_parse_list_with_status() {
         let w = Wrap::try_parse_from(["x", "list", "--project", "engram", "--status", "active"]).unwrap();
         match w.cmd {
-            EpicCommand::List { project, status, include_completed: _ } => {
+            EpicCommand::List { project, status, .. } => {
                 assert_eq!(project.as_deref(), Some("engram"));
                 assert_eq!(status.as_deref(), Some("active"));
             }
             _ => panic!("List 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_set_sprint() {
+        let w = Wrap::try_parse_from(["x", "set-sprint", "--epic-id", "8", "--sprint", "3"]).unwrap();
+        match w.cmd {
+            EpicCommand::SetSprint { epic_id, sprint } => {
+                assert_eq!(epic_id, 8);
+                assert_eq!(sprint, Some(3));
+            }
+            _ => panic!("SetSprint 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_set_sprint_to_backlog() {
+        let w = Wrap::try_parse_from(["x", "set-sprint", "--epic-id", "8"]).unwrap();
+        match w.cmd {
+            EpicCommand::SetSprint { epic_id, sprint } => {
+                assert_eq!(epic_id, 8);
+                assert!(sprint.is_none());
+            }
+            _ => panic!("SetSprint 변형이 파싱되어야 함"),
         }
     }
 }

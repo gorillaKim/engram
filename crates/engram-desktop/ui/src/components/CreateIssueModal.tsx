@@ -33,7 +33,7 @@ export function CreateIssueModal({
 
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(null, false),
+    queryFn: () => missionList(false),
     enabled: open,
   });
 
@@ -68,7 +68,6 @@ export function CreateIssueModal({
     mutationFn: () =>
       issueCreate({
         epic_id: epicId as number,
-        mission_id: selectedMissionId,
         title: title.trim(),
         description: description.trim() || undefined,
         priority,

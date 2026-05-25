@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 pub struct Issue {
     pub id: i64,
     pub epic_id: i64,
+    /// Epic 에서 derive 된 mission_id (DB 컬럼 아님 — JOIN 결과).
     pub mission_id: Option<i64>,
-    /// 소속 스프린트. None 이면 백로그 (Sprint↔Issue 직접 매핑 — ADR-0008 참고).
+    /// Epic 에서 derive 된 sprint_id (DB 컬럼 아님 — JOIN 결과). ADR-0014.
     pub sprint_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
@@ -89,11 +90,6 @@ pub enum LinkType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateIssueInput {
     pub epic_id: i64,
-    /// None 이면 부모 epic.mission_id 를 자동 상속한다.
-    /// Some(id) 면 상속을 건너뛰고 명시값을 사용한다.
-    pub mission_id: Option<i64>,
-    /// None 이면 백로그(스프린트 미지정).
-    pub sprint_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub goal: Option<String>,
@@ -107,18 +103,19 @@ pub struct UpdateIssueInput {
     pub goal: Option<String>,
     pub status: Option<IssueStatus>,
     pub priority: Option<IssuePriority>,
-    pub mission_id: Option<i64>,
-    pub update_mission_id: Option<bool>,
+    /// 이슈를 다른 epic 으로 이동할 때 사용. epic.mission_id / epic.sprint_id 를 함께 상속.
+    pub epic_id: Option<i64>,
 }
 
 /// issue_list 필터
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IssueFilter {
     pub epic_id: Option<i64>,
+    /// Epic 의 mission_id 로 필터 (Issue 는 mission_id 컬럼이 없으므로 JOIN 으로 도출).
     pub mission_id: Option<i64>,
-    /// 특정 스프린트의 이슈만 (`Some`).
+    /// Epic 의 sprint_id 로 필터.
     pub sprint_id: Option<i64>,
-    /// `true` 면 백로그(sprint_id IS NULL) 이슈만 — `sprint_id` 필터보다 우선.
+    /// `true` 면 백로그(epic.sprint_id IS NULL) 이슈만.
     #[serde(default)]
     pub backlog_only: bool,
     pub project_key: Option<String>,

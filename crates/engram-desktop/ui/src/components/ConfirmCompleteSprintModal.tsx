@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { Sprint, Issue } from '../ipc/types';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { missionSetSprint, sprintUpdate, issueList } from '../ipc/invoke';
-import { getUnfinishedIssues, getUnfinishedMissions } from '../utils/sprintCompleteHelper';
+import { epicSetSprint, sprintUpdate, issueList } from '../ipc/invoke';
+import { getUnfinishedIssues, getUnfinishedEpics } from '../utils/sprintCompleteHelper';
 import { toast } from 'sonner';
 
 interface ConfirmCompleteSprintModalProps {
@@ -48,9 +48,9 @@ export function ConfirmCompleteSprintModal({
             ? null
             : selectedTargetSprintId;
 
-        const missionIds = getUnfinishedMissions(issues);
-        const promises = missionIds.map((missionId) =>
-          missionSetSprint(missionId, targetSprintId)
+        const epicIds = getUnfinishedEpics(issues);
+        const promises = epicIds.map((epicId) =>
+          epicSetSprint(epicId, targetSprintId)
         );
         await Promise.all(promises);
       }

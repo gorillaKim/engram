@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicUpdate, epicDelete } from '../ipc/invoke';
+import { epicUpdate, epicDelete, missionList, sprintList } from '../ipc/invoke';
 import type { Epic, EpicStatus } from '../ipc/types';
 
 const STATUS_OPTIONS: { value: EpicStatus; label: string }[] = [
@@ -20,13 +20,29 @@ export function EditEpicModal({ epic, onClose }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState<EpicStatus>('active');
+  const [missionIdInput, setMissionIdInput] = useState<number | null>(null);
+  const [sprintIdInput, setSprintIdInput] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const { data: missions = [] } = useQuery({
+    queryKey: ['missionList'],
+    queryFn: () => missionList(false),
+    enabled: epic != null,
+  });
+
+  const { data: sprints = [] } = useQuery({
+    queryKey: ['sprintList'],
+    queryFn: sprintList,
+    enabled: epic != null,
+  });
 
   useEffect(() => {
     if (epic) {
       setTitle(epic.title);
       setDescription(epic.description ?? '');
       setStatus(epic.status);
+      setMissionIdInput(epic.mission_id);
+      setSprintIdInput(epic.sprint_id);
       setConfirmDelete(false);
     }
   }, [epic]);
@@ -34,12 +50,16 @@ export function EditEpicModal({ epic, onClose }: Props) {
   const update = useMutation({
     mutationFn: () => {
       if (!epic) throw new Error('no epic');
+      const isSprintChanged = sprintIdInput !== epic.sprint_id;
       return epicUpdate(epic.id, {
         title: title.trim() !== epic.title ? title.trim() : undefined,
         description: description.trim() !== (epic.description ?? '')
           ? (description.trim() || null)
           : undefined,
         status: status !== epic.status ? status : undefined,
+        mission_id: missionIdInput !== epic.mission_id ? missionIdInput : undefined,
+        sprint_id: isSprintChanged ? sprintIdInput : undefined,
+        update_sprint_id: isSprintChanged ? true : undefined,
       });
     },
     onSuccess: () => {
@@ -47,6 +67,7 @@ export function EditEpicModal({ epic, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['epicListBacklog'] });
       qc.invalidateQueries({ queryKey: ['boardStatus'] });
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
       toast.success('에픽이 수정되었습니다');
       onClose();
     },
@@ -117,6 +138,36 @@ export function EditEpicModal({ epic, onClose }: Props) {
             >
               {STATUS_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Mission */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">미션</label>
+            <select
+              value={missionIdInput ?? ''}
+              onChange={(e) => setMissionIdInput(e.target.value ? Number(e.target.value) : null)}
+              className="text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            >
+              <option value="">(미지정)</option>
+              {missions.map((m) => (
+                <option key={m.id} value={m.id}>{m.title}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sprint */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-slate-600">스프린트</label>
+            <select
+              value={sprintIdInput ?? ''}
+              onChange={(e) => setSprintIdInput(e.target.value ? Number(e.target.value) : null)}
+              className="text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400"
+            >
+              <option value="">백로그 (스프린트 미지정)</option>
+              {sprints.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>

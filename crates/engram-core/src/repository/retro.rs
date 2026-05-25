@@ -40,10 +40,10 @@ impl Db {
         let sprint = self.sprint_get(sprint_id).await?;
 
         let issues = sqlx::query_as::<_, crate::models::issue::Issue>(
-            r#"SELECT i.id, i.epic_id, i.mission_id, m.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
+            r#"SELECT i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at
                FROM issues i
-               LEFT JOIN missions m ON i.mission_id = m.id
-               WHERE m.sprint_id = ?
+               JOIN epics e ON i.epic_id = e.id
+               WHERE e.sprint_id = ?
                ORDER BY i.id ASC"#,
         )
         .bind(sprint_id)
@@ -146,17 +146,18 @@ mod tests {
         }, "agent").await.unwrap();
 
         let mission = db.mission_create(crate::models::mission::CreateMissionInput {
-            title: "M".to_string(), description: None, jira_key: None, sprint_id: Some(sprint.id)
+            title: "M".to_string(), description: None, jira_key: None,
         }).await.unwrap();
 
         let epic = db.epic_create(CreateEpicInput {
             project_key: "proj".to_string(),
             mission_id: Some(mission.id),
+            sprint_id: Some(sprint.id),
             title: "Epic".to_string(), description: None,
         }).await.unwrap();
 
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, mission_id: Some(mission.id), sprint_id: None, title: "Issue 1".to_string(),
+            epic_id: epic.id, title: "Issue 1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
 

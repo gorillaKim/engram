@@ -84,8 +84,7 @@ pub async fn do_issue_update(
     title: Option<String>,
     description: Option<String>,
     goal: Option<String>,
-    mission_id: Option<i64>,
-    update_mission_id: Option<bool>,
+    epic_id: Option<i64>,
 ) -> engram_core::Result<Issue> {
     db.issue_update(
         id,
@@ -93,8 +92,7 @@ pub async fn do_issue_update(
             title,
             description,
             goal,
-            mission_id,
-            update_mission_id,
+            epic_id,
             ..Default::default()
         },
         "user",
@@ -171,16 +169,17 @@ pub async fn do_blocked_issues_graph(
 pub async fn do_epic_create(
     db: &Db,
     project_key: String,
+    mission_id: Option<i64>,
+    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
 ) -> engram_core::Result<Epic> {
-    db.epic_create(CreateEpicInput { project_key, mission_id: None, title, description }).await
+    db.epic_create(CreateEpicInput { project_key, mission_id, sprint_id, title, description }).await
 }
 
 pub async fn do_issue_create(
     db: &Db,
     epic_id: i64,
-    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
     goal: Option<String>,
@@ -191,7 +190,7 @@ pub async fn do_issue_create(
         None => None,
     };
     db.issue_create(CreateIssueInput {
-        epic_id, mission_id: None, sprint_id, title, description, goal, priority: parsed_priority,
+        epic_id, title, description, goal, priority: parsed_priority,
     }).await
 }
 
@@ -234,9 +233,15 @@ pub async fn do_epic_set_status(
     status: &str,
 ) -> engram_core::Result<Epic> {
     let parsed: EpicStatus = parse(status)?;
-    db.epic_update(id, UpdateEpicInput { status: Some(parsed), ..Default::default() }, "user")
-        .await
-        .map(|(epic, _, _)| epic)
+    db.epic_update(id, UpdateEpicInput { status: Some(parsed), ..Default::default() }, "user").await
+}
+
+pub async fn do_epic_set_sprint(
+    db: &Db,
+    epic_id: i64,
+    sprint_id: Option<i64>,
+) -> engram_core::Result<Epic> {
+    db.epic_set_sprint(epic_id, sprint_id, "user").await
 }
 
 pub async fn do_history_list(
@@ -250,11 +255,9 @@ pub async fn do_history_list(
 
 pub async fn do_mission_list(
     db: &Db,
-    sprint_id: Option<i64>,
     include_completed: Option<bool>,
 ) -> engram_core::Result<Vec<Mission>> {
     let filter = MissionFilter {
-        sprint_id,
         status: None,
         include_completed: include_completed.unwrap_or(false),
     };
@@ -266,9 +269,8 @@ pub async fn do_mission_create(
     title: String,
     description: Option<String>,
     jira_key: Option<String>,
-    sprint_id: Option<i64>,
 ) -> engram_core::Result<Mission> {
-    db.mission_create(CreateMissionInput { title, description, jira_key, sprint_id }).await
+    db.mission_create(CreateMissionInput { title, description, jira_key }).await
 }
 
 pub async fn do_mission_get(db: &Db, id: i64) -> engram_core::Result<Mission> {
@@ -282,9 +284,8 @@ pub async fn do_mission_update(
     description: Option<String>,
     jira_key: Option<String>,
     status: Option<MissionStatus>,
-    sprint_id: Option<i64>,
 ) -> engram_core::Result<Mission> {
-    let input = UpdateMissionInput { title, description, jira_key, status, sprint_id };
+    let input = UpdateMissionInput { title, description, jira_key, status };
     db.mission_update(id, input, "user").await
 }
 
@@ -298,15 +299,6 @@ pub async fn do_mission_get_progress(db: &Db, id: i64) -> engram_core::Result<Mi
 
 pub async fn do_mission_get_tree(db: &Db, id: i64) -> engram_core::Result<MissionTree> {
     db.mission_get_tree(id).await
-}
-
-/// mission_set_sprint: mission_set_sprint 를 통해 sprint_id 를 변경한다.
-pub async fn do_mission_set_sprint(
-    db: &Db,
-    mission_id: i64,
-    sprint_id: Option<i64>,
-) -> engram_core::Result<Mission> {
-    db.mission_set_sprint(mission_id, sprint_id, "user").await
 }
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
@@ -365,10 +357,9 @@ pub async fn issue_update(
     title: Option<String>,
     description: Option<String>,
     goal: Option<String>,
-    mission_id: Option<i64>,
-    update_mission_id: Option<bool>,
+    epic_id: Option<i64>,
 ) -> Result<Issue, String> {
-    do_issue_update(&db, id, title, description, goal, mission_id, update_mission_id)
+    do_issue_update(&db, id, title, description, goal, epic_id)
         .await
         .map_err(|e| e.to_string())
 }
@@ -383,12 +374,12 @@ pub async fn epic_list(
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub async fn issue_set_sprint(
+pub async fn epic_set_sprint(
     db: State<'_, Arc<Db>>,
-    id: i64,
+    epic_id: i64,
     sprint_id: Option<i64>,
-) -> Result<Issue, String> {
-    db.issue_set_sprint(id, sprint_id, "user").await.map_err(|e| e.to_string())
+) -> Result<Epic, String> {
+    do_epic_set_sprint(&db, epic_id, sprint_id).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -490,23 +481,24 @@ pub async fn blocked_issues_graph(
 pub async fn epic_create(
     db: State<'_, Arc<Db>>,
     project_key: String,
+    mission_id: Option<i64>,
+    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
 ) -> Result<Epic, String> {
-    do_epic_create(&db, project_key, title, description).await.map_err(|e| e.to_string())
+    do_epic_create(&db, project_key, mission_id, sprint_id, title, description).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn issue_create(
     db: State<'_, Arc<Db>>,
     epic_id: i64,
-    sprint_id: Option<i64>,
     title: String,
     description: Option<String>,
     goal: Option<String>,
     priority: Option<String>,
 ) -> Result<Issue, String> {
-    do_issue_create(&db, epic_id, sprint_id, title, description, goal, priority).await.map_err(|e| e.to_string())
+    do_issue_create(&db, epic_id, title, description, goal, priority).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -568,16 +560,29 @@ pub async fn epic_update(
     title: Option<String>,
     description: Option<String>,
     status: Option<String>,
+    mission_id: Option<i64>,
+    sprint_id: Option<i64>,
+    update_sprint_id: Option<bool>,
 ) -> Result<Epic, String> {
     let status_parsed = if let Some(s) = status {
         Some(parse::<EpicStatus>(&s).map_err(|e| e.to_string())?)
     } else {
         None
     };
-    db.epic_update(id, UpdateEpicInput { title, description, status: status_parsed, ..Default::default() }, "user")
-        .await
-        .map(|(epic, _, _)| epic)
-        .map_err(|e| e.to_string())
+    db.epic_update(
+        id,
+        UpdateEpicInput {
+            title,
+            description,
+            status: status_parsed,
+            mission_id,
+            sprint_id,
+            update_sprint_id: update_sprint_id.unwrap_or(false),
+        },
+        "user",
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -610,10 +615,9 @@ pub async fn history_list(
 #[tauri::command(rename_all = "snake_case")]
 pub async fn mission_list(
     db: State<'_, Arc<Db>>,
-    sprint_id: Option<i64>,
     include_completed: Option<bool>,
 ) -> Result<Vec<Mission>, String> {
-    do_mission_list(&db, sprint_id, include_completed).await.map_err(|e| e.to_string())
+    do_mission_list(&db, include_completed).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -622,9 +626,8 @@ pub async fn mission_create(
     title: String,
     description: Option<String>,
     jira_key: Option<String>,
-    sprint_id: Option<i64>,
 ) -> Result<Mission, String> {
-    do_mission_create(&db, title, description, jira_key, sprint_id).await.map_err(|e| e.to_string())
+    do_mission_create(&db, title, description, jira_key).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -643,14 +646,13 @@ pub async fn mission_update(
     description: Option<String>,
     jira_key: Option<String>,
     status: Option<String>,
-    sprint_id: Option<i64>,
 ) -> Result<Mission, String> {
     let status_parsed = if let Some(s) = status {
         Some(parse::<MissionStatus>(&s).map_err(|e| e.to_string())?)
     } else {
         None
     };
-    do_mission_update(&db, id, title, description, jira_key, status_parsed, sprint_id)
+    do_mission_update(&db, id, title, description, jira_key, status_parsed)
         .await
         .map_err(|e| e.to_string())
 }
@@ -679,14 +681,6 @@ pub async fn mission_get_tree(
     do_mission_get_tree(&db, id).await.map_err(|e| e.to_string())
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn mission_set_sprint(
-    db: State<'_, Arc<Db>>,
-    mission_id: i64,
-    sprint_id: Option<i64>,
-) -> Result<Mission, String> {
-    do_mission_set_sprint(&db, mission_id, sprint_id).await.map_err(|e| e.to_string())
-}
 
 // ── App info / lifecycle ──────────────────────────────────────────────────────
 
@@ -828,17 +822,17 @@ mod tests {
             title: "M1".to_string(),
             description: None,
             jira_key: None,
-            sprint_id: Some(sprint.id),
         }).await.unwrap();
 
         let epic = db.epic_create(CreateEpicInput {
             project_key: "proj".to_string(),
             mission_id: Some(mission.id),
+            sprint_id: Some(sprint.id),
             title: "E1".to_string(), description: None,
         }).await.unwrap();
 
         let issue = db.issue_create(CreateIssueInput {
-            epic_id: epic.id, mission_id: Some(mission.id), sprint_id: None, title: "I1".to_string(),
+            epic_id: epic.id, title: "I1".to_string(),
             description: None, goal: None, priority: None,
         }).await.unwrap();
         (epic.id, issue.id)
@@ -966,7 +960,6 @@ mod tests {
             Some("Updated desc".to_string()),
             Some("New goal".to_string()),
             None,
-            None,
         ).await.unwrap();
 
         assert_eq!(updated.title, "Updated Title");
@@ -980,7 +973,7 @@ mod tests {
         let (_, issue_id) = seed_issue(&db).await;
 
         // None 필드는 기존 값 유지
-        let updated = do_issue_update(&db, issue_id, None, Some("desc only".to_string()), None, None, None).await.unwrap();
+        let updated = do_issue_update(&db, issue_id, None, Some("desc only".to_string()), None, None).await.unwrap();
         assert_eq!(updated.title, "I1", "title unchanged");
         assert_eq!(updated.description, Some("desc only".to_string()));
         assert_eq!(updated.goal, None, "goal unchanged");
@@ -992,8 +985,8 @@ mod tests {
         let (_, issue_id) = seed_issue(&db).await;
 
         // 설명 설정 후 빈 문자열로 지우기
-        do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None, None, None).await.unwrap();
-        let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None, None, None).await.unwrap();
+        do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None, None).await.unwrap();
+        let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None, None).await.unwrap();
         // 빈 문자열은 None 으로 저장
         assert!(cleared.description.as_deref().unwrap_or("").is_empty());
     }

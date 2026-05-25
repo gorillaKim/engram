@@ -10,7 +10,6 @@ pub struct Mission {
     pub title: String,
     pub description: Option<String>,
     pub status: MissionStatus,
-    pub sprint_id: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -30,7 +29,6 @@ pub struct CreateMissionInput {
     pub title: String,
     pub description: Option<String>,
     pub jira_key: Option<String>,
-    pub sprint_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -39,12 +37,10 @@ pub struct UpdateMissionInput {
     pub description: Option<String>,
     pub jira_key: Option<String>,
     pub status: Option<MissionStatus>,
-    pub sprint_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MissionFilter {
-    pub sprint_id: Option<i64>,
     pub status: Option<MissionStatus>,
     /// false(기본): active만 반환. true: completed/cancelled도 포함
     #[serde(default)]
@@ -65,8 +61,6 @@ pub struct EpicWithIssues {
 pub struct MissionTree {
     pub mission: Mission,
     pub epics: Vec<EpicWithIssues>,
-    /// missions.sprint_id 로 조회한 sprint.title. sprint_id 없으면 None.
-    pub sprint_name: Option<String>,
 }
 
 /// session_restore 응답용 미션 경량 요약.

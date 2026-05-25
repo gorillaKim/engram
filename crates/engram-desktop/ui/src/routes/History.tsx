@@ -1,355 +1,207 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useIssues } from '../hooks/useIssues';
 import { useSprints } from '../hooks/useSprints';
 import { useEpics } from '../hooks/useEpics';
 import { useDebounce } from '../hooks/useDebounce';
-import { PriorityBadge } from '../components/PriorityBadge';
 import { useUIStore } from '../store/ui';
-import { missionList } from '../ipc/invoke';
+import { missionList, missionUpdate } from '../ipc/invoke';
 import type { Mission } from '../ipc/types';
-import { sortHistoryIssues, paginateHistoryIssues, calculateHistoryStats, SortKey, SortOrder } from '../utils/historyHelper';
+import { groupIssuesByMissionAndEpic } from '../utils/historyHelper';
+import { toast } from 'sonner';
+import { MissionHierarchy } from '../components/MissionHierarchy';
 
 export function History() {
   const { selectIssue } = useUIStore();
-  const [viewMode, setViewMode] = useState<'sprint' | 'epic' | 'mission'>('sprint');
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const qc = useQueryClient();
 
-  // 정렬 및 페이징 상태
-  const [sortKey, setSortKey] = useState<SortKey>('updated_at');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [visibleCount, setVisibleCount] = useState<number>(30);
-
-  const { data: sprints } = useSprints();
-  const { data: epics } = useEpics();
-  const { data: missions } = useQuery<Mission[]>({
-    queryKey: ['missionList', 'all'],
-    queryFn: () => missionList(null, true),
-  });
-
-  // Set default selection when data loads or mode changes
-  useEffect(() => {
-    if (viewMode === 'sprint' && sprints && sprints.length > 0) {
-      if (selectedId === null || !sprints.find(s => s.id === selectedId)) {
-        const active = sprints.find(s => s.status === 'active');
-        const completed = sprints.filter(s => s.status === 'completed');
-        setSelectedId(active?.id ?? completed[completed.length - 1]?.id ?? sprints[0].id);
-      }
-    } else if (viewMode === 'epic' && epics && epics.length > 0) {
-      if (selectedId === null || !epics.find(e => e.id === selectedId)) {
-        setSelectedId(epics[0].id);
-      }
-    } else if (viewMode === 'mission' && missions && missions.length > 0) {
-      if (selectedId === null || !missions.find(m => m.id === selectedId)) {
-        setSelectedId(missions[0].id);
-      }
-    }
-  }, [viewMode, sprints, epics, missions, selectedId]);
-
-  // 필터나 모드 변경 시 페이징 수 초기화
-  useEffect(() => {
-    setVisibleCount(30);
-  }, [viewMode, selectedId]);
-
-  // 전체 이슈 조회 (상태 필터 없음) — finished/cancelled 표시 + 진척률 계산에 모두 사용
-  const totalFilter = useMemo(() => ({
-    ...(viewMode === 'sprint'
-      ? { sprint_id: selectedId }
-      : viewMode === 'epic'
-      ? { epic_id: selectedId ?? undefined }
-      : {}),
-  }), [viewMode, selectedId]);
-
-  const { data: allIssues, isLoading } = useIssues(totalFilter);
-
-  const handleModeChange = (mode: 'sprint' | 'epic' | 'mission') => {
-    setViewMode(mode);
-    setSelectedId(null);
-  };
-
-  const [searchQuery, setSearchQuery] = useState('');
+  // 필터 상태
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const debouncedQuery = useDebounce(searchQuery);
 
-  const finishedIssues = useMemo(() => {
-    const raw = (allIssues ?? []).filter(
-      (i) => i.status === 'finished' || i.status === 'cancelled',
-    );
-    if (viewMode === 'mission' && selectedId != null) {
-      return raw.filter((i) => i.mission_id === selectedId);
-    }
-    return raw;
-  }, [allIssues, viewMode, selectedId]);
+  // Collapse 상태 제어 (key: missionId 혹은 'unclassified')
+  const [expandedMissions, setExpandedMissions] = useState<Record<string, boolean>>({});
+  // Collapse 상태 제어 (key: epicId)
+  const [expandedEpics, setExpandedEpics] = useState<Record<number, boolean>>({});
 
-  // 통계 계산
-  const stats = useMemo(() => calculateHistoryStats(finishedIssues), [finishedIssues]);
-  
-  const missionScopedAllIssues = useMemo(() => {
-    if (viewMode === 'mission' && selectedId != null) {
-      return (allIssues ?? []).filter((i) => i.mission_id === selectedId);
-    }
-    return allIssues ?? [];
-  }, [allIssues, viewMode, selectedId]);
+  // 스프린트, 에픽, 미션 데이터 로드
+  const { data: sprints = [] } = useSprints();
+  const { data: epics = [] } = useEpics();
+  const { data: missions = [] } = useQuery<Mission[]>({
+    queryKey: ['missionList', 'all'],
+    queryFn: () => missionList(true), // 완료된 미션도 히스토리를 위해 전체 로드
+  });
 
-  const progressPercent = useMemo(() => {
-    if (missionScopedAllIssues.length === 0) return 0;
-    const finishedCount = missionScopedAllIssues.filter(i => i.status === 'finished').length;
-    return Math.round((finishedCount / missionScopedAllIssues.length) * 100);
-  }, [missionScopedAllIssues]);
+  // 모든 이슈 로드 (필터 없이 로드한 후 프론트에서 완료/취소 상태 필터링)
+  const { data: allIssues = [], isLoading } = useIssues({});
 
-  const totalIssueCount = missionScopedAllIssues.length;
-  const finishedIssueCount = missionScopedAllIssues.filter(i => i.status === 'finished').length;
+  // 미션 활성화 복구 뮤테이션
+  const restoreMissionMutation = useMutation({
+    mutationFn: (id: number) => missionUpdate(id, { status: 'active' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['missionList'] });
+      qc.invalidateQueries({ queryKey: ['epicList'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('미션이 활성화 상태로 복구되었습니다.');
+    },
+    onError: (e) => toast.error(`미션 복구 실패: ${e}`),
+  });
 
+  const toggleMission = (key: string) => {
+    setExpandedMissions((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleEpic = (id: number) => {
+    setExpandedEpics((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // 1. 필터링된 완료/취소 이슈 목록 계산
   const filteredIssues = useMemo(() => {
-    const q = debouncedQuery.trim().toLowerCase();
-    if (!q) return finishedIssues;
-    if (q.startsWith('#')) {
-      const id = parseInt(q.slice(1));
-      return isNaN(id) ? [] : finishedIssues.filter((i) => i.id === id);
-    }
-    return finishedIssues.filter((i) => i.title.toLowerCase().includes(q));
-  }, [finishedIssues, debouncedQuery]);
+    return allIssues.filter((issue) => {
+      // 완료 또는 취소 상태만 히스토리에 포함
+      if (issue.status !== 'finished' && issue.status !== 'cancelled') {
+        return false;
+      }
 
-  // 정렬 및 페이징 계산 적용
-  const sortedIssues = useMemo(() => {
-    return sortHistoryIssues(filteredIssues, sortKey, sortOrder);
-  }, [filteredIssues, sortKey, sortOrder]);
+      // 날짜 필터링
+      if (issue.updated_at) {
+        const issueDate = new Date(issue.updated_at).toISOString().split('T')[0];
+        if (dateFrom && issueDate < dateFrom) return false;
+        if (dateTo && issueDate > dateTo) return false;
+      } else if (dateFrom || dateTo) {
+        return false;
+      }
 
-  const paginatedIssues = useMemo(() => {
-    return paginateHistoryIssues(sortedIssues, visibleCount);
-  }, [sortedIssues, visibleCount]);
+      // 검색어 필터링
+      const q = debouncedQuery.trim().toLowerCase();
+      if (q) {
+        if (q.startsWith('#')) {
+          const idNum = parseInt(q.slice(1), 10);
+          return issue.id === idNum;
+        }
+        return issue.title.toLowerCase().includes(q);
+      }
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortKey(key);
-      setSortOrder('desc');
-    }
-  };
+      return true;
+    });
+  }, [allIssues, dateFrom, dateTo, debouncedQuery]);
 
-  const renderSortIndicator = (key: SortKey) => {
-    if (sortKey !== key) return <span className="text-slate-300 ml-1">⇅</span>;
-    return sortOrder === 'asc' ? <span className="text-indigo-600 ml-1">▲</span> : <span className="text-indigo-600 ml-1">▼</span>;
-  };
+  // 2. 미션 > 에픽 > 이슈 계층 구조 생성
+  const groupedMissions = useMemo(() => {
+    return groupIssuesByMissionAndEpic(filteredIssues, epics, missions);
+  }, [filteredIssues, epics, missions]);
+
+  // 완료 이슈 총 개수
+  const totalCount = filteredIssues.length;
 
   return (
-    <div className="flex flex-col h-full bg-slate-50/30">
-      {/* 헤더 — 고정 */}
-      <div className="flex-shrink-0 px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between flex-wrap gap-4">
-        <h1 className="text-xl font-bold text-slate-800">완료 히스토리</h1>
-
-        <div className="flex items-center gap-3 flex-wrap">
-          <nav className="flex items-center p-1 bg-slate-100 rounded-lg">
-            <button
-              onClick={() => handleModeChange('sprint')}
-              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                viewMode === 'sprint'
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              스프린트별
-            </button>
-            <button
-              onClick={() => handleModeChange('mission')}
-              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                viewMode === 'mission'
-                  ? 'bg-white text-violet-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              미션별
-            </button>
-            <button
-              onClick={() => handleModeChange('epic')}
-              className={`text-xs px-3 py-1.5 rounded-md font-medium transition-all ${
-                viewMode === 'epic'
-                  ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              에픽별
-            </button>
-          </nav>
-
-          <select
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 min-w-[160px]"
-            value={selectedId ?? ''}
-            onChange={(e) => setSelectedId(Number(e.target.value))}
-          >
-            <option value="" disabled>선택하세요</option>
-            {viewMode === 'sprint' ? (
-              sprints?.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} {s.status === 'active' ? '(활성)' : ''}
-                </option>
-              ))
-            ) : viewMode === 'mission' ? (
-              missions?.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.title} {m.status === 'active' ? '' : `(${m.status})`}
-                </option>
-              ))
-            ) : (
-              epics?.map(e => (
-                <option key={e.id} value={e.id}>{e.title}</option>
-              ))
-            )}
-          </select>
-
-          <input
-            type="text"
-            placeholder="#ID 또는 제목 검색…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 min-w-[180px]"
-          />
-
-          <span className="text-sm text-slate-500 font-medium whitespace-nowrap">
-            총 {filteredIssues.length}건
+    <div className="flex flex-col h-full bg-slate-50/30 overflow-hidden">
+      {/* 헤더 필터 영역 */}
+      <div className="flex-shrink-0 px-6 py-4 border-b border-slate-200 bg-white flex flex-col gap-4 shadow-sm z-10">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-800">완료 히스토리</h1>
+          <span className="text-sm font-semibold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+            총 {totalCount}건의 해결된 이슈
           </span>
+        </div>
+
+        <div className="flex items-center gap-4 flex-wrap">
+          {/* 날짜 범위 필터 */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">완료 기간</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700"
+            />
+            <span className="text-slate-300">~</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="text-[11px] text-red-500 hover:text-red-700 hover:underline font-semibold"
+              >
+                날짜 초기화
+              </button>
+            )}
+          </div>
+
+          {/* 검색어 필터 */}
+          <div className="flex-1 min-w-[200px]">
+            <input
+              type="text"
+              placeholder="#ID 또는 이슈 제목 검색…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full text-xs border border-slate-200 rounded-lg px-3 py-1.5 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
+            />
+          </div>
         </div>
       </div>
 
-      {/* 테이블 및 통계 영역 — 스크롤 */}
-      <div className="flex-1 overflow-auto p-6 space-y-6">
-        {/* 통계 미니 대시보드 */}
-        {selectedId !== null && !isLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-            {/* 완료 진척률 */}
-            <div className="flex flex-col justify-between space-y-3">
-              <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  {viewMode === 'sprint' ? '스프린트' : viewMode === 'mission' ? '미션' : '에픽'} 완료율
-                </h3>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-2xl font-bold text-slate-800">{progressPercent}%</span>
-                  <span className="text-xs text-slate-500">
-                    ({finishedIssueCount} / {totalIssueCount} 완료)
-                  </span>
-                </div>
-              </div>
-              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                <div
-                  className="bg-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-            </div>
-
-            {/* 해결 이슈 우선순위 분포 */}
-            <div className="flex flex-col space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                해결 이슈 우선순위 분포
-              </h3>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { key: 'critical', label: '긴급', color: 'bg-red-500 text-red-700 bg-red-50' },
-                  { key: 'high', label: '높음', color: 'bg-orange-500 text-orange-700 bg-orange-50' },
-                  { key: 'medium', label: '보통', color: 'bg-amber-500 text-amber-700 bg-amber-50' },
-                  { key: 'low', label: '낮음', color: 'bg-sky-500 text-sky-700 bg-sky-50' },
-                ].map((item) => {
-                  const count = stats.priorityCounts[item.key as keyof typeof stats.priorityCounts] ?? 0;
-                  const ratio = stats.totalCount > 0 ? Math.round((count / stats.totalCount) * 100) : 0;
-                  return (
-                    <div key={item.key} className={`p-2.5 rounded-lg border border-slate-100 flex flex-col items-center justify-between text-center`}>
-                      <span className="text-[10px] font-semibold text-slate-500 mb-0.5">{item.label}</span>
-                      <span className="text-base font-bold text-slate-800">{count}</span>
-                      <span className="text-[9px] text-slate-400 font-mono mt-0.5">{ratio}%</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {isLoading ? (
-          <div className="flex items-center justify-center h-40 text-slate-400">
-            히스토리 로딩 중…
+          <div className="flex items-center justify-center h-40 text-slate-400 text-sm">
+            히스토리 데이터를 불러오는 중…
           </div>
-        ) : filteredIssues.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 bg-white rounded-xl border-2 border-dashed border-slate-200 p-12 text-slate-400">
+        ) : totalCount === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 bg-white rounded-2xl border-2 border-dashed border-slate-200 p-12 text-slate-400">
             <span className="text-4xl mb-3">📦</span>
-            <p>
-              {searchQuery.trim()
-                ? `"${searchQuery.trim()}" 에 일치하는 이슈가 없습니다.`
-                : `해당 ${viewMode === 'sprint' ? '스프린트' : viewMode === 'mission' ? '미션' : '에픽'}에 완료된 이슈가 없습니다.`}
-            </p>
+            <p className="text-sm font-medium">조건에 맞는 완료된 이슈가 없습니다.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <table className="w-full text-sm text-left table-fixed">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider sticky top-0 z-10">
-                  <tr>
-                    <th className="px-6 py-3 w-20 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('id')}>
-                      ID {renderSortIndicator('id')}
-                    </th>
-                    <th className="px-6 py-3 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('title')}>
-                      제목 {renderSortIndicator('title')}
-                    </th>
-                    <th className="px-6 py-3 w-48 text-slate-500">에픽</th>
-                    <th className="px-6 py-3 w-20 text-slate-500">상태</th>
-                    <th className="px-6 py-3 w-28 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('priority')}>
-                      우선순위 {renderSortIndicator('priority')}
-                    </th>
-                    <th className="px-6 py-3 w-40 cursor-pointer hover:bg-slate-100 transition-colors select-none" onClick={() => handleSort('updated_at')}>
-                      완료/취소일 {renderSortIndicator('updated_at')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {paginatedIssues.map((issue) => {
-                    const epicTitle = epics?.find((e) => e.id === issue.epic_id)?.title ?? '-';
-                    return (
-                      <tr
-                        key={issue.id}
-                        className="hover:bg-slate-50/80 cursor-pointer transition-colors"
-                        onClick={() => selectIssue(issue.id)}
-                      >
-                        <td className="px-6 py-4 text-slate-400 font-mono">#{issue.id}</td>
-                        <td className="px-6 py-4 truncate">
-                          <span className="font-medium text-slate-800">{issue.title}</span>
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 text-xs truncate">
-                          {epicTitle}
-                        </td>
-                        <td className="px-6 py-4">
-                          {issue.status === 'cancelled' ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">취소</span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700">완료</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <PriorityBadge priority={issue.priority} />
-                        </td>
-                        <td className="px-6 py-4 text-slate-500 text-xs" title={issue.updated_at}>
-                          {new Date(issue.updated_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* 더 보기 버튼 */}
-            {sortedIssues.length > visibleCount && (
-              <div className="flex justify-center mt-4">
-                <button
-                  onClick={() => setVisibleCount((prev) => prev + 30)}
-                  className="px-6 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-800 text-xs font-semibold rounded-lg shadow-sm transition-all"
-                >
-                  더 보기 ({sortedIssues.length - visibleCount}개 남음)
-                </button>
-              </div>
+          <MissionHierarchy
+            groupedMissions={groupedMissions}
+            sprints={sprints}
+            expandedMissions={expandedMissions}
+            onToggleMission={toggleMission}
+            expandedEpics={expandedEpics}
+            onToggleEpic={toggleEpic}
+            onIssueClick={selectIssue}
+            readOnly={true}
+            renderMissionActions={(mission) => {
+              if (!mission) return null;
+              return (
+                <div className="flex items-center gap-3">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                    mission.status === 'completed'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-red-50 text-red-600 border-red-200'
+                  }`}>
+                    {mission.status}
+                  </span>
+                  {(mission.status === 'completed' || mission.status === 'cancelled') && (
+                    <button
+                      type="button"
+                      onClick={() => restoreMissionMutation.mutate(mission.id)}
+                      disabled={restoreMissionMutation.isPending}
+                      className="text-xs px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium shadow-sm transition-colors"
+                    >
+                      {restoreMissionMutation.isPending ? '복구 중…' : 'Active로 복구'}
+                    </button>
+                  )}
+                </div>
+              );
+            }}
+            renderIssueExtra={(issue) => (
+              <span className="text-slate-400 text-[11px] w-24 flex-shrink-0 text-right font-medium" title={issue.updated_at}>
+                {issue.updated_at ? new Date(issue.updated_at).toLocaleDateString() : ''}
+              </span>
             )}
-          </div>
+          />
         )}
       </div>
     </div>
   );
 }
-

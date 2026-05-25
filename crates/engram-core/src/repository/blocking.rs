@@ -89,14 +89,14 @@ mod tests {
         let sprint = db.sprint_create(CreateSprintInput { name: "S".to_string(), goal: None, start_date: None, end_date: None }).await.unwrap();
         db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }, "agent").await.unwrap();
         let mission = db.mission_create(crate::models::mission::CreateMissionInput {
-            title: "M".to_string(), description: None, jira_key: None, sprint_id: Some(sprint.id)
+            title: "M".to_string(), description: None, jira_key: None,
         }).await.unwrap();
-        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), mission_id: Some(mission.id), title: "E".to_string(), description: None }).await.unwrap();
+        let epic = db.epic_create(CreateEpicInput { project_key: "p".to_string(), mission_id: Some(mission.id), sprint_id: Some(sprint.id), title: "E".to_string(), description: None }).await.unwrap();
         (sprint.id, epic.id, mission.id)
     }
 
-    async fn make_issue(db: &Db, mission_id: i64, epic_id: i64, title: &str) -> i64 {
-        db.issue_create(CreateIssueInput { epic_id, mission_id: Some(mission_id), sprint_id: None, title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
+    async fn make_issue(db: &Db, _mission_id: i64, epic_id: i64, title: &str) -> i64 {
+        db.issue_create(CreateIssueInput { epic_id, title: title.to_string(), description: None, goal: None, priority: None }).await.unwrap().id
     }
 
     #[tokio::test]

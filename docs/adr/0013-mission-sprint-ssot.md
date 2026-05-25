@@ -1,7 +1,7 @@
 # ADR-0013: Mission-Sprint SSOT
 
 ## Status
-Accepted
+Superseded by ADR-0014
 
 ## Context
 ADR-0012(Mission 레이어 도입) 이후, `sprint_id` 컬럼이 `missions`, `epics`, `issues` 세 곳에 중복하여 존재하게 되었습니다. 

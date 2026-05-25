@@ -58,8 +58,6 @@ pub struct IssueArgs {
 pub enum IssueCommand {
     Create {
         #[arg(long)] epic: i64,
-        /// 소속 미션 ID (생략 시 부모 epic.mission_id 자동 상속)
-        #[arg(long = "mission-id")] mission_id: Option<i64>,
         #[arg(long)] title: String,
         #[arg(long)] goal: Option<String>,
         #[arg(long)] description: Option<String>,
@@ -113,11 +111,6 @@ pub enum IssueCommand {
         #[arg(long = "transition-to")] transition_to: String,
         #[arg(long)] force: bool,
     },
-    /// 이슈의 sprint 소속 변경 (sprint=None 이면 백로그로 이동)
-    SetSprint {
-        id: i64,
-        #[arg(long)] sprint: Option<i64>,
-    },
     /// 이슈 삭제 (하위 task/notes/links cascade)
     Delete {
         id: i64,
@@ -151,9 +144,9 @@ pub enum IssueCommand {
 
 pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
     match args.command {
-        IssueCommand::Create { epic, mission_id, title, goal, description } => {
+        IssueCommand::Create { epic, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, mission_id, sprint_id: None, title, description, goal, priority: None,
+                epic_id: epic, title, description, goal, priority: None,
             }).await?;
             output::print_value(&issue, fmt)?;
         }
@@ -190,8 +183,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
                 title,
                 description,
                 goal,
-                mission_id: None,
-                update_mission_id: None,
+                epic_id: None,
             }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }
@@ -223,11 +215,6 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             let st = parse_release_transition(&transition_to)?;
             let issue = db.issue_release(id, st, effective, force).await?;
             output::print_value(&issue, fmt)?;
-        }
-        IssueCommand::SetSprint { id: _, sprint: _ } => {
-            return Err(engram_core::Error::Validation(
-                "sprint_id 는 더 이상 직접 지정할 수 없습니다. 대신 mission set-sprint 를 사용하여 미션 단위로 스프린트를 지정해 주세요.".into()
-            ).into());
         }
         IssueCommand::Delete { id } => {
             db.issue_delete(id, agent_id).await?;
@@ -309,7 +296,7 @@ mod tests {
     fn test_parse_create_full() {
         let cmd = parse(&["create", "--epic", "2", "--title", "Hello", "--goal", "MyGoal", "--description", "Desc"]);
         match cmd {
-            IssueCommand::Create { epic, title, goal, description, .. } => {
+            IssueCommand::Create { epic, title, goal, description } => {
                 assert_eq!(epic, 2);
                 assert_eq!(title, "Hello");
                 assert_eq!(goal.as_deref(), Some("MyGoal"));
@@ -412,27 +399,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_set_sprint_with_value() {
-        let cmd = parse(&["set-sprint", "5", "--sprint", "3"]);
-        match cmd {
-            IssueCommand::SetSprint { id, sprint } => {
-                assert_eq!(id, 5);
-                assert_eq!(sprint, Some(3));
-            }
-            _ => panic!("SetSprint 변형이 파싱되어야 함"),
-        }
-    }
-
-    #[test]
-    fn test_parse_set_sprint_to_backlog() {
-        let cmd = parse(&["set-sprint", "5"]);
-        match cmd {
-            IssueCommand::SetSprint { id, sprint } => {
-                assert_eq!(id, 5);
-                assert_eq!(sprint, None);
-            }
-            _ => panic!("SetSprint 변형이 파싱되어야 함"),
-        }
+    fn test_parse_set_sprint_command_removed() {
+        // issue set-sprint 는 ADR-0014 로 제거됨 — clap 파싱 실패
+        let res = Wrap::try_parse_from(&["x", "set-sprint", "5", "--sprint", "3"]);
+        assert!(res.is_err(), "issue set-sprint 는 제거되었어야 함");
     }
 
     #[test]
@@ -497,10 +467,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_create_with_sprint_fails() {
-        // --sprint 옵션이 제거되면 파싱 실패(clap Err)해야 합니다.
-        let args = &["create", "--epic", "2", "--title", "Hello", "--sprint", "3"];
+    fn test_parse_create_with_mission_id_fails() {
+        // --mission-id 옵션은 ADR-0014 로 제거됨 — clap 파싱 실패해야 함.
+        let args = &["create", "--epic", "2", "--title", "Hello", "--mission-id", "5"];
         let res = Wrap::try_parse_from(std::iter::once(&"engram-test").chain(args.iter()));
-        assert!(res.is_err(), "issue create --sprint should fail parsing");
+        assert!(res.is_err(), "issue create --mission-id should fail parsing");
     }
 }

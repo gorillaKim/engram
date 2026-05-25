@@ -9,8 +9,9 @@ export type NoteType = 'caveat' | 'decision' | 'discovery' | 'blocker_detail' | 
 export interface Issue {
   id: number;
   epic_id: number;
+  /** Epic 에서 derive (ADR-0014). */
   mission_id: number | null;
-  /** null이면 백로그(스프린트 미지정). Sprint↔Issue 는 직접 매핑. */
+  /** Epic 에서 derive (ADR-0014). null이면 백로그. */
   sprint_id: number | null;
   title: string;
   description: string | null;
@@ -25,6 +26,7 @@ export interface Epic {
   id: number;
   project_key: string;
   mission_id: number | null;
+  sprint_id: number | null;
   title: string;
   description: string | null;
   status: EpicStatus;
@@ -182,6 +184,7 @@ export interface IssueBoardStatus {
 export interface IssueFilter {
   epic_id?: number;
   sprint_id?: number | null;
+  mission_id?: number | null;
   backlog_only?: boolean;
   project_key?: string;
   status?: IssueStatus;
@@ -240,9 +243,6 @@ export interface ActivitySettings {
 
 export interface CreateIssueInput {
   epic_id: number;
-  /** null/undefined 이면 백로그(스프린트 미지정) */
-  sprint_id?: number | null;
-  mission_id?: number | null;
   title: string;
   description?: string;
   goal?: string;
@@ -252,6 +252,7 @@ export interface CreateIssueInput {
 export interface CreateEpicInput {
   project_key: string;
   mission_id?: number | null;
+  sprint_id?: number | null;
   title: string;
   description?: string;
 }
@@ -315,7 +316,6 @@ export interface CreateMissionInput {
   title: string;
   description?: string | null;
   jira_key?: string | null;
-  sprint_id?: number | null;
 }
 
 export interface UpdateMissionInput {
@@ -323,7 +323,6 @@ export interface UpdateMissionInput {
   description?: string | null;
   jira_key?: string | null;
   status?: MissionStatus | null;
-  sprint_id?: number | null;
 }
 
 // ── Updater ───────────────────────────────────────────────────────────────────

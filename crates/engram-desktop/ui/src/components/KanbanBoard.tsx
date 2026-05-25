@@ -33,8 +33,8 @@ export function KanbanBoard() {
   const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(null, false),
-  });
+    queryFn: () => missionList(false),
+  }); // ADR-0014: Issue.mission_id 는 Epic 에서 derive 된 값. 백엔드 JOIN 결과로 일관성 보장.
   const dnd = useIssueDnd(selectedProjectKey ?? undefined);
 
   const epicMap = new Map(epics.map((e) => [e.id, e.title]));
@@ -235,7 +235,7 @@ function applyFilters(
   if (filters.missionIds.length > 0) {
     result = result.map((board) => {
       const f = (issues: Issue[]) =>
-        issues.filter((i) => i.mission_id != null && filters.missionIds.includes(i.mission_id));
+        issues.filter((i) => i.mission_id != null && filters.missionIds.includes(i.mission_id)); // ADR-0014: Epic 에서 derive 된 값 사용
       return {
         ...board,
         required: f(board.required),

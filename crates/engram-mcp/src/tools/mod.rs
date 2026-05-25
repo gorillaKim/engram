@@ -49,13 +49,13 @@ pub async fn dispatch(
         "mission_update"     => mission::mission_update(db, args).await,
         "mission_delete"     => mission::mission_delete(db, args).await,
         "mission_get_tree"   => mission::mission_get_tree(db, args).await,
-        "mission_set_sprint" => mission::mission_set_sprint(db, args).await,
         // Epic
-        "epic_create"  => epic::create(db, args).await,
-        "epic_get"     => epic::get(db, args).await,
-        "epic_list"    => epic::list(db, args).await,
-        "epic_update"       => epic::update(db, args).await,
-        "epic_delete"       => epic::delete(db, args).await,
+        "epic_create"     => epic::create(db, args).await,
+        "epic_get"        => epic::get(db, args).await,
+        "epic_list"       => epic::list(db, args).await,
+        "epic_update"     => epic::update(db, args).await,
+        "epic_delete"     => epic::delete(db, args).await,
+        "epic_set_sprint" => epic::set_sprint(db, args).await,
         // Issue
         "issue_create" => issue::create(db, args).await,
         "issue_get"    => issue::get(db, args).await,
@@ -70,7 +70,6 @@ pub async fn dispatch(
         "issue_cancel"        => issue::cancel(db, args).await,
         "issue_bulk_update"   => issue::bulk_update(db, args).await,
         "my_blocked_issues"   => issue::my_blocked_issues(db, args).await,
-        "issue_set_sprint"    => issue::set_sprint(db, args).await,
         "stalled_issues"      => issue::stalled(db, args).await,
         "planning_review_queue" => issue::planning_review_queue(db, args).await,
         // Task

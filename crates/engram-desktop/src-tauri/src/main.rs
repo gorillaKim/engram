@@ -125,7 +125,7 @@ fn main() {
             commands::sprint_create,
             commands::sprint_update,
             commands::sprint_delete,
-            commands::issue_set_sprint,
+            commands::epic_set_sprint,
             commands::task_list,
             commands::task_set_status,
             commands::note_list,
@@ -165,7 +165,6 @@ fn main() {
             commands::mission_delete,
             commands::mission_get_progress,
             commands::mission_get_tree,
-            commands::mission_set_sprint,
         ])
         .on_window_event(|window, event| {
             // Auto-hide tray popover when it loses focus (native popover behaviour).
