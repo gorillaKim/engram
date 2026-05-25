@@ -14,6 +14,7 @@ const LABELS: Record<BoardColumn, string> = {
 };
 
 interface Props {
+  projectKey: string;
   status: BoardColumn;
   issues: Issue[];
   onIssueClick?: (id: number) => void;
@@ -22,8 +23,8 @@ interface Props {
   onCreateIssue?: () => void;
 }
 
-export function KanbanColumn({ status, issues, onIssueClick, expansionIds, epicMap, onCreateIssue }: Props) {
-  const { setNodeRef, isOver } = useDroppable({ id: status });
+export function KanbanColumn({ projectKey, status, issues, onIssueClick, expansionIds, epicMap, onCreateIssue }: Props) {
+  const { setNodeRef, isOver } = useDroppable({ id: `${projectKey}-${status}` });
   const isDemo = status === 'demo';
   const isCancelled = status === 'cancelled';
   const isRequired = status === 'required';

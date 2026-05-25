@@ -70,13 +70,34 @@ export function KanbanBoard() {
     if (!over) return;
     const issueId = active.id as number;
 
-    // over.id 가 문자열이면 컬럼(status), 숫자면 카드 위에 드롭된 것 → 카드의 status 사용
-    const toStatus: IssueStatus = typeof over.id === 'string'
-      ? (over.id as IssueStatus)
-      : ((over.data.current as { issue: Issue })?.issue.status as IssueStatus);
+    const activeIssueData = active.data.current as { issue: Issue } | undefined;
+    if (!activeIssueData) return;
+
+    let toStatus: IssueStatus | null = null;
+    let targetProjectKey: string | null = null;
+
+    if (typeof over.id === 'string') {
+      const parts = over.id.split('-');
+      toStatus = parts.pop() as IssueStatus;
+      targetProjectKey = parts.join('-');
+    } else {
+      const overIssue = (over.data.current as { issue: Issue } | undefined)?.issue;
+      if (overIssue) {
+        toStatus = overIssue.status;
+      }
+    }
 
     if (!toStatus) return;
-    const fromStatus = (active.data.current as { issue: Issue })?.issue.status;
+
+    // 다른 프로젝트 보드의 컬럼에 드랍하는 것을 차단
+    if (targetProjectKey) {
+      const issueEpic = epics.find((e) => e.id === activeIssueData.issue.epic_id);
+      if (issueEpic && issueEpic.project_key !== targetProjectKey) {
+        return;
+      }
+    }
+
+    const fromStatus = activeIssueData.issue.status;
     if (fromStatus === toStatus) return;
     dnd.mutate({ id: issueId, status: toStatus });
   }
@@ -159,6 +180,7 @@ export function KanbanBoard() {
               {visibleColumns.map((status) => (
                 <KanbanColumn
                   key={status}
+                  projectKey={board.project_key}
                   status={status}
                   issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
                   onIssueClick={(id) => selectIssue(id)}
