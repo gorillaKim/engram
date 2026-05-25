@@ -6,7 +6,7 @@ import {
   sprintList, sprintUpdate, sprintDelete,
   epicList, epicDelete,
   issueList, issueCreate,
-  missionList,
+  missionList, missionSetSprint, issueUpdate,
 } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { CreateSprintModal } from '../components/CreateSprintModal';
@@ -21,8 +21,12 @@ import type { Sprint, Epic, Issue, SprintStatus, Mission } from '../ipc/types';
 import { clampSidebarWidth } from '../utils/sidebarHelper';
 import { toggleAllEpics } from '../utils/epicHelper';
 import { filterFinishedIssues } from '../utils/issueFilterHelper';
-import { BulkActionBar } from '../components/BulkActionBar';
-import { toggleIssueSelection, toggleAllIssuesInEpic } from '../utils/bulkHelper';
+
+const MISSION_STATUS_CLS: Record<string, string> = {
+  active: 'bg-indigo-50 text-indigo-700 border border-indigo-200/50',
+  completed: 'bg-emerald-50 text-emerald-700 border border-emerald-200/50',
+  cancelled: 'bg-red-50 text-red-600 border border-red-200/50',
+};
 
 // ── Sprint sidebar ──────────────────────────────────────────────────────────
 
@@ -177,28 +181,24 @@ function EpicRow({
   epic,
   issues,
   sprints,
+  missions,
   onIssueClick,
   onAddIssue,
   onEdit,
   selectedSprintId,
   expanded,
   onToggle,
-  selectedIssueIds,
-  onToggleIssueSelection,
-  onToggleAllIssuesInEpic,
 }: {
   epic: Epic;
   issues: Issue[];
   sprints: Sprint[];
+  missions: Mission[];
   onIssueClick: (id: number) => void;
   onAddIssue: () => void;
   onEdit: (epic: Epic) => void;
   selectedSprintId: number | null;
   expanded: boolean;
   onToggle: () => void;
-  selectedIssueIds: number[];
-  onToggleIssueSelection: (id: number) => void;
-  onToggleAllIssuesInEpic: (epicIssueIds: number[], selectAll: boolean) => void;
 }) {
   const qc = useQueryClient();
   const [confirmDeleteEpic, setConfirmDeleteEpic] = useState(false);
@@ -257,10 +257,6 @@ function EpicRow({
     cancelled: 'bg-red-50 text-red-400',
   };
 
-  const epicIssueIds = issues.map((i) => i.id);
-  const isAllEpicIssuesSelected = epicIssueIds.length > 0 && epicIssueIds.every((id) => selectedIssueIds.includes(id));
-  const isSomeEpicIssuesSelected = epicIssueIds.some((id) => selectedIssueIds.includes(id)) && !isAllEpicIssuesSelected;
-
   return (
     <div className="mb-3 border border-slate-200 rounded-lg overflow-hidden">
       {/* Epic header */}
@@ -272,18 +268,6 @@ function EpicRow({
         >
           {expanded ? '▼' : '▶'}
         </button>
-
-        <input
-          type="checkbox"
-          checked={isAllEpicIssuesSelected}
-          ref={(el) => {
-            if (el) {
-              el.indeterminate = isSomeEpicIssuesSelected;
-            }
-          }}
-          onChange={(e) => onToggleAllIssuesInEpic(epicIssueIds, e.target.checked)}
-          className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3.5 h-3.5 mr-1"
-        />
 
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${epicStatusCls[epic.status] ?? ''}`}>
           {epic.status}
@@ -341,13 +325,6 @@ function EpicRow({
               onClick={() => onIssueClick(issue.id)}
               className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0"
             >
-              <input
-                type="checkbox"
-                checked={selectedIssueIds.includes(issue.id)}
-                onClick={(e) => e.stopPropagation()}
-                onChange={() => onToggleIssueSelection(issue.id)}
-                className="rounded text-indigo-600 focus:ring-indigo-500/20 border-slate-300 w-3.5 h-3.5"
-              />
               <span className={`text-xs px-2 py-0.5 rounded-full ${ISSUE_STATUS_CLS[issue.status] ?? ''}`}>
                 {ISSUE_STATUS_LABEL[issue.status] ?? issue.status}
               </span>
@@ -364,6 +341,33 @@ function EpicRow({
                   백로그
                 </span>
               )}
+
+              {/* Mission Selector Dropdown */}
+              <select
+                value={issue.mission_id ?? ""}
+                onClick={(e) => e.stopPropagation()}
+                onChange={async (e) => {
+                  const val = e.target.value === "" ? null : Number(e.target.value);
+                  try {
+                    await issueUpdate(issue.id, {
+                      mission_id: val,
+                      update_mission_id: true,
+                    });
+                    toast.success("이슈의 미션이 변경되었습니다.");
+                    qc.invalidateQueries({ queryKey: ['issueList'] });
+                    qc.invalidateQueries({ queryKey: ['missions'] });
+                    qc.invalidateQueries({ queryKey: ['boardStatus'] });
+                  } catch (err) {
+                    toast.error(`미션 변경 실패: ${String(err)}`);
+                  }
+                }}
+                className="text-[11px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 max-w-[130px] font-medium"
+              >
+                <option value="">미분류</option>
+                {missions.map(m => (
+                  <option key={m.id} value={m.id}>{m.title}</option>
+                ))}
+              </select>
 
               <span className="text-xs text-slate-400">#{issue.id}</span>
             </div>
@@ -424,9 +428,6 @@ export function IssueManager() {
   // 완료된 스프린트 아코디언 상태
   const [showPastSprints, setShowPastSprints] = useState(false);
 
-  // 다중 선택된 이슈 ID 리스트
-  const [selectedIssueIds, setSelectedIssueIds] = useState<number[]>([]);
-
   // 미션 필터 상태 — 비어 있으면 전체 선택
   const [selectedMissionIds, setSelectedMissionIds] = useState<number[]>([]);
 
@@ -486,7 +487,7 @@ export function IssueManager() {
   }, [sprints, selectedSprintId, selectSprint]);
 
   // 현재 뷰의 이슈 — 스프린트 선택 시 sprint_id 필터, 백로그 선택 시 backlog_only.
-  const { data: issuesInView = [] } = useQuery<Issue[]>({
+  const { data: issuesInView = [], isLoading: issuesLoading } = useQuery<Issue[]>({
     queryKey: ['issueList', isBacklog ? 'backlog' : selectedSprintId],
     queryFn: () => isBacklog
       ? issueList({ backlog_only: true } as any)
@@ -502,77 +503,139 @@ export function IssueManager() {
   });
 
   // 모든 에픽 (제목/설명 조회용 lookup).
-  const { data: allEpics = [] } = useQuery<Epic[]>({
+  const { data: allEpics = [], isLoading: epicsLoading } = useQuery<Epic[]>({
     queryKey: ['epicList'],
     queryFn: () => epicList(),
     refetchInterval: 30_000,
   });
 
   // 전체 활성 미션 목록 (sprint_id 무관).
-  const { data: missions = [] } = useQuery<Mission[]>({
+  const { data: missions = [], isLoading: missionsLoading } = useQuery<Mission[]>({
     queryKey: ['missionList'],
     queryFn: () => missionList(null, false),
   });
 
-  // 이슈를 epic_id 별로 그룹핑.
-  const grouped = useMemo(() => {
-    const byEpic = new Map<number, Issue[]>();
-    const filtered = filterFinishedIssues(issuesInView, hideFinished);
-    for (const issue of filtered) {
-      const arr = byEpic.get(issue.epic_id) ?? [];
-      arr.push(issue);
-      byEpic.set(issue.epic_id, arr);
+  const loading = issuesLoading || epicsLoading || missionsLoading;
+
+  // 3단계 계층형 가공 (Mission -> Epic -> Issue)
+  const groupedMissions = useMemo(() => {
+    const filteredIssues = filterFinishedIssues(issuesInView, hideFinished);
+    
+    // 1. epic_id -> issues mapping
+    const issuesByEpic = new Map<number, Issue[]>();
+    for (const issue of filteredIssues) {
+      const list = issuesByEpic.get(issue.epic_id) ?? [];
+      list.push(issue);
+      issuesByEpic.set(issue.epic_id, list);
     }
-    const result: { epic: Epic; issues: Issue[] }[] = [];
-    for (const [epicId, issues] of byEpic) {
+    
+    // 2. mission_id -> GroupedEpic[] mapping
+    const epicsByMission = new Map<number | null, { epic: Epic; issues: Issue[] }[]>();
+    
+    for (const [epicId, epicIssues] of issuesByEpic) {
       const epic = allEpics.find((e) => e.id === epicId);
-      if (epic) result.push({ epic, issues });
+      if (!epic) continue;
+      
+      const missionId = epic.mission_id ?? null;
+      const list = epicsByMission.get(missionId) ?? [];
+      list.push({ epic, issues: epicIssues });
+      epicsByMission.set(missionId, list);
     }
+    
+    const result: { mission: Mission | null; epics: { epic: Epic; issues: Issue[] }[] }[] = [];
+    
+    // 3. 미션 목록 기준으로 GroupedMission 빌드
+    for (const mission of missions) {
+      const epics = epicsByMission.get(mission.id) ?? [];
+      if (epics.length > 0 || mission.status === 'active') {
+        result.push({
+          mission,
+          epics
+        });
+        epicsByMission.delete(mission.id);
+      }
+    }
+    
+    // 4. mission_id가 없거나 missions 목록에 없지만 leftover인 에픽들을 "미분류"로 수집
+    const leftoverEpics: { epic: Epic; issues: Issue[] }[] = [];
+    for (const [, epics] of epicsByMission) {
+      leftoverEpics.push(...epics);
+    }
+    
+    if (leftoverEpics.length > 0) {
+      result.push({
+        mission: null,
+        epics: leftoverEpics
+      });
+    }
+    
     return result;
-  }, [issuesInView, allEpics, hideFinished]);
+  }, [issuesInView, allEpics, missions, hideFinished]);
 
   // 스프린트 전환 시 검색어, 선택 이슈, 미션/에픽 필터 초기화 + 필터 패널 닫기
   useEffect(() => {
     setSearchQuery('');
-    setSelectedIssueIds([]);
     setSelectedMissionIds([]);
     setSelectedEpicIds([]);
     setFilterOpen(false);
   }, [selectedSprintId]);
 
-  // 미션 필터 적용 — selectedMissionIds가 비어 있으면 전체, 있으면 해당 mission_id 에픽만.
-  const missionFilteredGrouped = useMemo(() => {
-    if (selectedMissionIds.length === 0) return grouped;
-    return grouped.filter(({ epic }) =>
-      epic.mission_id != null && selectedMissionIds.includes(epic.mission_id)
-    );
-  }, [grouped, selectedMissionIds]);
-
-  // 에픽 필터 적용
-  const epicFilteredGrouped = useMemo(() => {
-    if (selectedEpicIds.length === 0) return missionFilteredGrouped;
-    return missionFilteredGrouped.filter(({ epic }) => selectedEpicIds.includes(epic.id));
-  }, [missionFilteredGrouped, selectedEpicIds]);
+  // 필터 패널에서 사용할 에픽 목록 수집용 헬퍼 (미션 필터에 따라 동적으로 에픽 목록을 채우기 위함)
+  const filterAvailableEpics = useMemo(() => {
+    const list = selectedMissionIds.length === 0
+      ? groupedMissions
+      : groupedMissions.filter((gm) => {
+          if (gm.mission === null) return selectedMissionIds.includes(0);
+          return selectedMissionIds.includes(gm.mission.id);
+        });
+    return list.flatMap((gm) => gm.epics.map((ge) => ge.epic));
+  }, [groupedMissions, selectedMissionIds]);
 
   // 미션 선택 변경 시 에픽 필터 초기화
   useEffect(() => {
     setSelectedEpicIds([]);
   }, [selectedMissionIds]);
 
-  const filteredGrouped = useMemo(() => {
+  const filteredGroupedMissions = useMemo(() => {
+    let list = groupedMissions;
+    
+    // 1. 미션 필터 적용
+    if (selectedMissionIds.length > 0) {
+      list = list.filter((gm) => {
+        if (gm.mission === null) {
+          return selectedMissionIds.includes(0);
+        }
+        return selectedMissionIds.includes(gm.mission.id);
+      });
+    }
+    
+    // 2. 에픽 필터 적용
+    if (selectedEpicIds.length > 0) {
+      list = list.map((gm) => ({
+        ...gm,
+        epics: gm.epics.filter((ge) => selectedEpicIds.includes(ge.epic.id))
+      })).filter((gm) => gm.epics.length > 0);
+    }
+    
+    // 3. 검색어 필터 적용
     const q = debouncedQuery.trim().toLowerCase();
-    if (!q) return epicFilteredGrouped;
-    const isIdSearch = q.startsWith('#');
-    const targetId = isIdSearch ? parseInt(q.slice(1)) : NaN;
-    return epicFilteredGrouped
-      .map(({ epic, issues }) => ({
-        epic,
-        issues: issues.filter((i) =>
-          isIdSearch ? i.id === targetId : i.title.toLowerCase().includes(q)
-        ),
-      }))
-      .filter(({ issues }) => issues.length > 0);
-  }, [epicFilteredGrouped, debouncedQuery]);
+    if (q) {
+      const isIdSearch = q.startsWith('#');
+      const targetId = isIdSearch ? parseInt(q.slice(1)) : NaN;
+      
+      list = list.map((gm) => ({
+        ...gm,
+        epics: gm.epics.map((ge) => ({
+          ...ge,
+          issues: ge.issues.filter((i) =>
+            isIdSearch ? i.id === targetId : i.title.toLowerCase().includes(q)
+          )
+        })).filter((ge) => ge.issues.length > 0)
+      })).filter((gm) => gm.epics.length > 0);
+    }
+    
+    return list;
+  }, [groupedMissions, selectedMissionIds, selectedEpicIds, debouncedQuery]);
 
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
@@ -646,7 +709,7 @@ export function IssueManager() {
                 onEdit={() => setEditSprint(sprint)}
               />
               {/* 미션 + 에픽 필터 (콜랩스) */}
-              {sprint.id === selectedSprintId && (missions.length > 0 || missionFilteredGrouped.length > 0) && (
+              {sprint.id === selectedSprintId && (missions.length > 0 || filterAvailableEpics.length > 0) && (
                 <div className="mx-2 mb-2">
                   <button
                     type="button"
@@ -681,6 +744,21 @@ export function IssueManager() {
                             >
                               전체
                             </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedMissionIds((prev) =>
+                                  prev.includes(0) ? prev.filter((id) => id !== 0) : [...prev, 0]
+                                )
+                              }
+                              className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                                selectedMissionIds.includes(0)
+                                  ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                  : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                              }`}
+                            >
+                              미분류
+                            </button>
                             {missions.map((m) => (
                               <button
                                 key={m.id}
@@ -703,11 +781,11 @@ export function IssueManager() {
                           </div>
                         </div>
                       )}
-                      {missionFilteredGrouped.length > 0 && (
+                      {filterAvailableEpics.length > 0 && (
                         <div>
                           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽</p>
                           <div className="flex flex-wrap gap-1">
-                            {missionFilteredGrouped.map(({ epic }) => (
+                            {filterAvailableEpics.map((epic) => (
                               <button
                                 key={epic.id}
                                 type="button"
@@ -761,7 +839,7 @@ export function IssueManager() {
                         onDelete={() => deleteSprint.mutate(sprint.id)}
                         onEdit={() => setEditSprint(sprint)}
                       />
-                      {sprint.id === selectedSprintId && (missions.length > 0 || missionFilteredGrouped.length > 0) && (
+                      {sprint.id === selectedSprintId && (missions.length > 0 || filterAvailableEpics.length > 0) && (
                         <div className="mx-2 mb-2">
                           <button
                             type="button"
@@ -795,6 +873,21 @@ export function IssueManager() {
                                     >
                                       전체
                                     </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedMissionIds((prev) =>
+                                          prev.includes(0) ? prev.filter((id) => id !== 0) : [...prev, 0]
+                                        )
+                                      }
+                                      className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+                                        selectedMissionIds.includes(0)
+                                          ? 'bg-violet-100 text-violet-700 border-violet-300 font-medium'
+                                          : 'bg-white text-slate-500 border-slate-200 hover:border-violet-200'
+                                      }`}
+                                    >
+                                      미분류
+                                    </button>
                                     {missions.map((m) => (
                                       <button
                                         key={m.id}
@@ -817,11 +910,11 @@ export function IssueManager() {
                                   </div>
                                 </div>
                               )}
-                              {missionFilteredGrouped.length > 0 && (
+                              {filterAvailableEpics.length > 0 && (
                                 <div>
                                   <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">에픽</p>
                                   <div className="flex flex-wrap gap-1">
-                                    {missionFilteredGrouped.map(({ epic }) => (
+                                    {filterAvailableEpics.map((epic) => (
                                       <button
                                         key={epic.id}
                                         type="button"
@@ -949,6 +1042,11 @@ export function IssueManager() {
         </div>
 
         {/* Epic + Issue tree */}
+        {loading && (
+          <div className="flex items-center justify-center h-full text-slate-400 text-sm bg-white">
+            이슈 및 미션 데이터를 불러오는 중…
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-6">
           {selectedSprint && (selectedSprint.status === 'completed' || selectedSprint.status === 'cancelled') && (
             <div className="mb-6 px-4 py-3 bg-indigo-50/80 border border-indigo-100 rounded-xl flex items-center justify-between text-xs text-indigo-700">
@@ -969,7 +1067,7 @@ export function IssueManager() {
           {selectedSprintId == null && (
             <p className="text-slate-400 text-center mt-20">왼쪽에서 스프린트나 백로그를 선택하세요</p>
           )}
-          {selectedSprintId != null && filteredGrouped.length === 0 && (
+          {!loading && selectedSprintId != null && filteredGroupedMissions.length === 0 && (
             <p className="text-slate-400 text-center mt-20">
               {debouncedQuery.trim()
                 ? `"${debouncedQuery.trim()}" 에 일치하는 이슈가 없습니다.`
@@ -978,27 +1076,75 @@ export function IssueManager() {
                   : '이슈가 없습니다. "+ 새 이슈" 로 이 스프린트에 이슈를 추가하세요.'}
             </p>
           )}
-          {filteredGrouped.map(({ epic, issues }) => (
-            <EpicRow
-              key={epic.id}
-              epic={epic}
-              issues={issues}
-              sprints={sprints}
-              onIssueClick={selectIssue}
-              onAddIssue={() => setIssueModalEpicId(epic.id)}
-              onEdit={setEditEpic}
-              selectedSprintId={isBacklog ? null : selectedSprintId}
-              expanded={epicExpandedMap[epic.id] !== false}
-              onToggle={() => {
-                setEpicExpandedMap(prev => ({
-                  ...prev,
-                  [epic.id]: !(prev[epic.id] !== false)
-                }));
-              }}
-              selectedIssueIds={selectedIssueIds}
-              onToggleIssueSelection={(id) => setSelectedIssueIds(prev => toggleIssueSelection(prev, id))}
-              onToggleAllIssuesInEpic={(ids, selectAll) => setSelectedIssueIds(prev => toggleAllIssuesInEpic(prev, ids, selectAll))}
-            />
+          {!loading && filteredGroupedMissions.map((gm) => (
+            <div key={gm.mission ? `mission-${gm.mission.id}` : 'unclassified'} className="mb-6">
+              {/* Mission Header */}
+              {gm.mission ? (
+                <div className="flex items-center justify-between bg-violet-50/70 border border-violet-100/80 rounded-xl px-4 py-2.5 mb-3 shadow-sm select-none">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-violet-600 uppercase bg-violet-100 px-1.5 py-0.5 rounded tracking-wider">Mission</span>
+                    <h3 className="text-sm font-bold text-slate-800">{gm.mission.title}</h3>
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide ${MISSION_STATUS_CLS[gm.mission.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {gm.mission.status}
+                    </span>
+                  </div>
+                  {/* Sprint change selector for mission */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-medium text-slate-400">Sprint:</span>
+                    <select
+                      value={gm.mission.sprint_id ?? ""}
+                      onChange={async (e) => {
+                        const val = e.target.value === "" ? null : Number(e.target.value);
+                        try {
+                          await missionSetSprint(gm.mission!.id, val);
+                          toast.success("미션의 스프린트가 변경되었습니다.");
+                          qc.invalidateQueries({ queryKey: ['missions'] });
+                          qc.invalidateQueries({ queryKey: ['issueList'] });
+                          qc.invalidateQueries({ queryKey: ['boardStatus'] });
+                        } catch (err) {
+                          toast.error(`스프린트 변경 실패: ${String(err)}`);
+                        }
+                      }}
+                      className="text-xs bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded focus:outline-none focus:ring-1 focus:ring-violet-500 font-medium"
+                    >
+                      <option value="">백로그</option>
+                      {sprints.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center bg-slate-100/80 border border-slate-200/60 rounded-xl px-4 py-2.5 mb-3 shadow-sm select-none">
+                  <span className="text-[10px] font-bold text-slate-600 uppercase bg-slate-200 px-1.5 py-0.5 rounded tracking-wider mr-2">System</span>
+                  <h3 className="text-sm font-bold text-slate-800 text-slate-600">미분류 (지정 미션 없음)</h3>
+                </div>
+              )}
+              
+              {/* Epics belonging to this mission */}
+              <div className="pl-2 border-l-2 border-slate-100/80 flex flex-col gap-1.5">
+                {gm.epics.map(({ epic, issues }) => (
+                  <EpicRow
+                    key={epic.id}
+                    epic={epic}
+                    issues={issues}
+                    sprints={sprints}
+                    missions={missions}
+                    onIssueClick={selectIssue}
+                    onAddIssue={() => setIssueModalEpicId(epic.id)}
+                    onEdit={setEditEpic}
+                    selectedSprintId={isBacklog ? null : selectedSprintId}
+                    expanded={epicExpandedMap[epic.id] !== false}
+                    onToggle={() => {
+                      setEpicExpandedMap(prev => ({
+                        ...prev,
+                        [epic.id]: !(prev[epic.id] !== false)
+                      }));
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -1037,11 +1183,6 @@ export function IssueManager() {
           sprints={sprints}
         />
       )}
-      <BulkActionBar
-        selectedIds={selectedIssueIds}
-        onClearSelection={() => setSelectedIssueIds([])}
-        sprints={sprints}
-      />
     </div>
   );
 }

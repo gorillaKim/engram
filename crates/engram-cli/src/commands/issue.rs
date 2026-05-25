@@ -190,6 +190,8 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
                 title,
                 description,
                 goal,
+                mission_id: None,
+                update_mission_id: None,
             }, agent_id).await?;
             output::print_value(&issue, fmt)?;
         }

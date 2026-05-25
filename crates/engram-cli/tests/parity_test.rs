@@ -828,3 +828,120 @@ async fn test_task_test_check_uncheck_history_recorded() {
     assert_eq!(last2.new_value.as_deref(), Some("false"));
 }
 
+use clap::CommandFactory;
+use std::collections::HashSet;
+
+fn collect_cli_commands(cmd: &clap::Command, prefix: &str) -> HashSet<String> {
+    let mut set = HashSet::new();
+    for sub in cmd.get_subcommands() {
+        let name = if prefix.is_empty() {
+            sub.get_name().to_string()
+        } else {
+            format!("{} {}", prefix, sub.get_name())
+        };
+        set.insert(name.clone());
+        set.extend(collect_cli_commands(sub, &name));
+    }
+    set
+}
+
+fn map_mcp_to_cli(mcp_tool: &str) -> String {
+    match mcp_tool {
+        "stalled_issues" => "stalled".to_string(),
+        "my_blocked_issues" => "blocked list".to_string(),
+        "board_status" => "board status".to_string(),
+        other => {
+            if other.starts_with("task_test_") {
+                let verb = other.strip_prefix("task_test_").unwrap().replace('_', "-");
+                format!("task-test {}", verb)
+            } else {
+                let parts: Vec<&str> = other.split('_').collect();
+                if parts.len() >= 2 {
+                    let area = parts[0];
+                    let verb = parts[1..].join("-");
+                    format!("{} {}", area, verb)
+                } else {
+                    other.replace('_', "-")
+                }
+            }
+        }
+    }
+}
+
+/// 현재 CLI에 구현되지 않은 MCP 도구들의 허용 목록.
+/// 향후 해당 CLI가 구현되면 이 목록에서 제거되어야 합니다.
+const ALLOWED_MISSING_CLI_TOOLS: &[&str] = &[
+    "task_test_add",
+    "task_test_add_bulk",
+    "task_test_list",
+    "task_test_check",
+    "task_test_check_bulk",
+    "task_test_uncheck",
+    "task_test_remove",
+    "note_add_bulk",
+    "planning_review_queue",
+];
+
+#[tokio::test]
+async fn test_all_mcp_tools_have_cli_counterpart() {
+    let mcp_tools: HashSet<String> = engram_mcp::tools::all_tool_definitions()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+
+    let cmd = engram_cli::Cli::command();
+    let cli_commands = collect_cli_commands(&cmd, "");
+
+    let mut missing = Vec::new();
+    for mcp_tool in &mcp_tools {
+        if ALLOWED_MISSING_CLI_TOOLS.contains(&mcp_tool.as_str()) {
+            continue;
+        }
+        let mapped_cli = map_mcp_to_cli(mcp_tool);
+        if !cli_commands.contains(&mapped_cli) {
+            missing.push(format!("{} -> {}", mcp_tool, mapped_cli));
+        }
+    }
+
+    if !missing.is_empty() {
+        panic!(
+            "CLI 미노출 MCP 도구들이 존재합니다 (ALLOWED_MISSING_CLI_TOOLS에 등록되지 않음):\n{}\n\
+             실제 CLI 명령어 목록: {:?}",
+            missing.join("\n"),
+            cli_commands
+        );
+    }
+
+    // CLAUDE.md 의 도구 개수 검증
+    let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap();
+    let claude_md_path = project_root.join("CLAUDE.md");
+    let content = std::fs::read_to_string(&claude_md_path).expect("Failed to read CLAUDE.md");
+
+    // CLAUDE.md에서 "MCP tools 57개" 카운트 추출
+    let target = "MCP tools ";
+    if let Some(idx) = content.find(target) {
+        let start = idx + target.len();
+        let rest = &content[start..];
+        let end_idx = rest.find("개").expect("Expected '개' after tool count");
+        let count_str = rest[..end_idx].trim().trim_matches('*');
+        let count: usize = count_str.parse().expect("Failed to parse tool count");
+        assert_eq!(
+            count,
+            mcp_tools.len(),
+            "CLAUDE.md에 기재된 MCP tools 개수({})가 실제 정의된 도구 개수({})와 다릅니다.\n\
+             CLAUDE.md의 카운트 문자열을 실제 도구 수와 일치하게 동기화해 주세요.",
+            count,
+            mcp_tools.len()
+        );
+    } else {
+        panic!("CLAUDE.md에서 'MCP tools X개' 패턴을 찾을 수 없습니다.");
+    }
+}
+
+
+
+

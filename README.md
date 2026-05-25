@@ -114,6 +114,11 @@ engram hook uninstall
 
 각 프로젝트의 `CLAUDE.md` 에 `project_key: <name>` 을 명시하면 hook 이 session_restore 컨텍스트를 자동 출력.
 
+## 고급 에이전트 워크플로 (Advanced Agent Workflow)
+
+- **단독 에이전트**: 플러그인 없이 단독으로 engram MCP를 사용하는 AI 에이전트는 표준 호출 시퀀스를 담은 [에이전트 플레이북](docs/agent-playbook.md)을 참조해 주십시오.
+- **멀티 에이전트 / Leader-Worker 워크플로**: 복수 에이전트 기반 오케스트레이션이 필요한 복잡한 작업 환경에서는 jake-marketplace의 `engram-orchestrator` 플러그인 설치를 적극 권장합니다.
+
 ## Workspace 구조
 
 ```

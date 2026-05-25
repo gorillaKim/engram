@@ -107,6 +107,8 @@ pub struct UpdateIssueInput {
     pub goal: Option<String>,
     pub status: Option<IssueStatus>,
     pub priority: Option<IssuePriority>,
+    pub mission_id: Option<i64>,
+    pub update_mission_id: Option<bool>,
 }
 
 /// issue_list 필터

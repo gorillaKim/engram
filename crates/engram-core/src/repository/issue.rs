@@ -206,6 +206,21 @@ impl Db {
                 changed_by: changed_by.to_string(),
             }).await;
         }
+        if input.update_mission_id == Some(true) {
+            sqlx::query("UPDATE issues SET mission_id = ?, updated_at = datetime('now') WHERE id = ?")
+                .bind(input.mission_id)
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Issue,
+                entity_id: id,
+                field: "mission_id".to_string(),
+                old_value: None,
+                new_value: input.mission_id.map(|m| m.to_string()),
+                changed_by: changed_by.to_string(),
+            }).await;
+        }
         self.issue_get(id, false).await
     }
 
@@ -641,6 +656,8 @@ impl Db {
                 title: None,
                 description: None,
                 goal: None,
+                mission_id: None,
+                update_mission_id: None,
             };
             match self.issue_update(id, update_input, changed_by).await {
                 Ok(issue) => succeeded.push(issue),

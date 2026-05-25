@@ -5,6 +5,8 @@ Agent Issue Management System — Sprint / Epic / Issue / Task / Note 를 SQLite
 
 - 설계: `doxus://brain/Ideas/agent/Engram - Agent Issue Management System.md`
 - 구현 계획: `doxus://brain/Ideas/agent/Engram - Implementation Plan.md`
+- 에이전트 플레이북: [agent-playbook.md](file:///Users/madup/gorillaProject/engram/docs/agent-playbook.md)
+
 
 ## Workspace 구조
 

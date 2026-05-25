@@ -84,8 +84,22 @@ pub async fn do_issue_update(
     title: Option<String>,
     description: Option<String>,
     goal: Option<String>,
+    mission_id: Option<i64>,
+    update_mission_id: Option<bool>,
 ) -> engram_core::Result<Issue> {
-    db.issue_update(id, UpdateIssueInput { title, description, goal, ..Default::default() }, "user").await
+    db.issue_update(
+        id,
+        UpdateIssueInput {
+            title,
+            description,
+            goal,
+            mission_id,
+            update_mission_id,
+            ..Default::default()
+        },
+        "user",
+    )
+    .await
 }
 
 pub async fn do_epic_list(
@@ -286,16 +300,13 @@ pub async fn do_mission_get_tree(db: &Db, id: i64) -> engram_core::Result<Missio
     db.mission_get_tree(id).await
 }
 
-/// mission_set_sprint: mission_update 를 통해 sprint_id 를 변경한다.
-/// sprint_id=None 으로 백로그 이동은 UpdateMissionInput.sprint_id 가 Option<i64> 이므로
-/// Some(None) 패턴을 지원하지 않아 현재는 지원하지 않는다.
+/// mission_set_sprint: mission_set_sprint 를 통해 sprint_id 를 변경한다.
 pub async fn do_mission_set_sprint(
     db: &Db,
     mission_id: i64,
     sprint_id: Option<i64>,
 ) -> engram_core::Result<Mission> {
-    let input = UpdateMissionInput { sprint_id, ..Default::default() };
-    db.mission_update(mission_id, input, "user").await
+    db.mission_set_sprint(mission_id, sprint_id, "user").await
 }
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
@@ -354,8 +365,12 @@ pub async fn issue_update(
     title: Option<String>,
     description: Option<String>,
     goal: Option<String>,
+    mission_id: Option<i64>,
+    update_mission_id: Option<bool>,
 ) -> Result<Issue, String> {
-    do_issue_update(&db, id, title, description, goal).await.map_err(|e| e.to_string())
+    do_issue_update(&db, id, title, description, goal, mission_id, update_mission_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -950,6 +965,8 @@ mod tests {
             Some("Updated Title".to_string()),
             Some("Updated desc".to_string()),
             Some("New goal".to_string()),
+            None,
+            None,
         ).await.unwrap();
 
         assert_eq!(updated.title, "Updated Title");
@@ -963,7 +980,7 @@ mod tests {
         let (_, issue_id) = seed_issue(&db).await;
 
         // None 필드는 기존 값 유지
-        let updated = do_issue_update(&db, issue_id, None, Some("desc only".to_string()), None).await.unwrap();
+        let updated = do_issue_update(&db, issue_id, None, Some("desc only".to_string()), None, None, None).await.unwrap();
         assert_eq!(updated.title, "I1", "title unchanged");
         assert_eq!(updated.description, Some("desc only".to_string()));
         assert_eq!(updated.goal, None, "goal unchanged");
@@ -975,8 +992,8 @@ mod tests {
         let (_, issue_id) = seed_issue(&db).await;
 
         // 설명 설정 후 빈 문자열로 지우기
-        do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None).await.unwrap();
-        let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None).await.unwrap();
+        do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None, None, None).await.unwrap();
+        let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None, None, None).await.unwrap();
         // 빈 문자열은 None 으로 저장
         assert!(cleared.description.as_deref().unwrap_or("").is_empty());
     }

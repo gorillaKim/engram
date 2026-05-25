@@ -298,7 +298,15 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let input = UpdateIssueInput { status, priority, title, description, goal };
+    let input = UpdateIssueInput {
+        status,
+        priority,
+        title,
+        description,
+        goal,
+        mission_id: None,
+        update_mission_id: None,
+    };
     Ok(serde_json::to_value(db.issue_update(id, input, agent_id).await?).unwrap())
 }
 
