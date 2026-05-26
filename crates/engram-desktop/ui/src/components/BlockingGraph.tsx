@@ -3,6 +3,7 @@ import {
   ReactFlow,
   Background,
   Controls,
+  MarkerType,
   type Node,
   type Edge,
 } from '@xyflow/react';
@@ -27,12 +28,17 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
         const key = `${src}-${tgt}`;
         if (!edgeSet.has(key)) {
           edgeSet.add(key);
+          const strokeColor = graph.has_cycle ? '#ef4444' : '#94a3b8';
           allEdges.push({
             id: key,
             source: String(src),
             target: String(tgt),
             animated: graph.has_cycle,
-            style: graph.has_cycle ? { stroke: '#ef4444' } : { stroke: '#94a3b8' },
+            style: { stroke: strokeColor },
+            markerEnd: {
+              type: MarkerType.ArrowClosed,
+              color: strokeColor,
+            },
           });
         }
       }
@@ -123,7 +129,7 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
         nodesConnectable={false}
         elementsSelectable={false}
         zoomOnScroll={false}
-        panOnDrag={false}
+        panOnDrag={true}
       >
         <Background gap={16} color="#f1f5f9" />
         <Controls showInteractive={false} />

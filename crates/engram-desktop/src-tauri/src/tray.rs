@@ -1,6 +1,6 @@
 use crate::mcp_supervisor::McpSupervisor;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     image::Image,
@@ -15,9 +15,10 @@ use tauri::{
 /// `on_window_event` 의 auto-hide 가 팝오버를 곧바로 닫아버린다. show 직후 짧은
 /// grace period 동안 hide 를 막기 위해 main.rs 의 핸들러에서 이 값을 참조한다.
 pub static POPOVER_SHOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
+static POPOVER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Focused(false) 이벤트를 무시할 grace period (ms).
-pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 400;
+pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 200;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -127,12 +128,25 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
             let _ = popover.set_position(tauri::Position::Physical(
                 tauri::PhysicalPosition::new(x as i32, y as i32),
             ));
-            let _ = popover.set_visible_on_all_workspaces(true);
-            #[cfg(target_os = "macos")]
-            macos_enable_fullscreen_popover(&popover);
+
+            if !POPOVER_INITIALIZED.load(Ordering::Relaxed) {
+                let _ = popover.set_visible_on_all_workspaces(true);
+                #[cfg(target_os = "macos")]
+                macos_enable_fullscreen_popover(&popover);
+                POPOVER_INITIALIZED.store(true, Ordering::Relaxed);
+            }
+
             POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
             let _ = popover.show();
             let _ = popover.set_focus();
+
+            // fullscreen Space 에서 OS 가 첫 set_focus 를 거부할 수 있으므로
+            // 200ms 후 한 번 더 재시도한다.
+            let popover_clone = popover.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                let _ = popover_clone.set_focus();
+            });
         }
     }
 }
@@ -142,12 +156,10 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
 /// `set_visible_on_all_workspaces(true)` 는 `NSWindowCollectionBehaviorCanJoinAllSpaces`
 /// 만 세팅하지만, fullscreen Space 침투에는 `FullScreenAuxiliary` 가 추가로 필요하다.
 /// 추가로 `Stationary | IgnoresCycle` 을 켜 Mission Control 탭 사이클에서 빼고,
-/// 윈도우 레벨을 NSScreenSaverWindowLevel(1000) 까지 올려 fullscreen 앱이 띄우는
+/// 윈도우 레벨을 NSPopUpMenuWindowLevel(101) 로 올려 fullscreen 앱이 띄우는
 /// 어떤 시스템 UI 위에도 표시되게 한다.
 ///
-/// **호출 시점**: 팝오버의 첫 `show()` 직전 — macOS 는 첫 orderFront 시점에 Space
-/// 멤버십을 캐시하기 때문에, 단순 setup 단계 호출만으로는 부족할 수 있어
-/// 매 show 마다 다시 세팅한다.
+/// **호출 시점**: 앱 초기화(setup) 단계에서 최초 1회 설정하여 윈도우의 속성을 고정한다.
 #[cfg(target_os = "macos")]
 pub fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
     use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
@@ -160,13 +172,10 @@ pub fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
     unsafe {
         let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
             | NSWindowCollectionBehavior::Transient
-            | NSWindowCollectionBehavior::FullScreenAuxiliary
-            | NSWindowCollectionBehavior::Stationary
-            | NSWindowCollectionBehavior::IgnoresCycle;
+            | NSWindowCollectionBehavior::FullScreenAuxiliary;
         (*ns_window).setCollectionBehavior(behavior);
-        // NSScreenSaverWindowLevel = 1000 — fullscreen 앱이 띄우는 어떤 시스템 UI
-        // (메뉴바 자동 노출, 알림 등) 보다 위에 표시.
-        // objc2-app-kit 0.2 의 NSWindowLevel 은 type alias 이므로 정수 전달.
-        (*ns_window).setLevel(1000);
+        // 전체화면 앱 레이어 위에 팝오버가 확실히 표시될 수 있도록 팝업 메뉴 레벨(101)로 설정함.
+        // extern static 상수는 dynamic link 주소 매핑 문제로 예외를 던질 수 있어 정수 리터럴을 직접 사용함.
+        (*ns_window).setLevel(101);
     }
 }

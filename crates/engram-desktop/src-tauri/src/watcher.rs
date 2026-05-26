@@ -62,6 +62,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
     // 애니메이션 공유 상태
     let working_count = Arc::new(AtomicU32::new(0));
     let demo_only = Arc::new(AtomicBool::new(false));
+    let alert_count = Arc::new(AtomicU32::new(0)); // inbox + demo_review
     let last_activity_secs = Arc::new(AtomicU64::new(u64::MAX));
     let warn_secs_atom = Arc::new(AtomicU64::new(1800));   // 30min default
     let stall_secs_atom = Arc::new(AtomicU64::new(7200));  // 120min default
@@ -143,6 +144,7 @@ pub async fn run(app: AppHandle, db: Arc<Db>) {
         // 애니메이션 상태 갱신
         working_count.store(w, Ordering::Relaxed);
         demo_only.store(w == 0 && summary.demo_review > 0, Ordering::Relaxed);
+        alert_count.store(summary.inbox + summary.demo_review, Ordering::Relaxed);
         last_activity_secs.store(cur.last_activity_secs, Ordering::Relaxed);
 
         // 첫 틱: 기준선만 수립하고 알림 로직은 건너뜀
