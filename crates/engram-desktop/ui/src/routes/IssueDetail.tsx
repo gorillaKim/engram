@@ -27,7 +27,7 @@ export function IssueDetail() {
 
   const { data: epics = [] } = useEpics(undefined, true);
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
-  const targetProjectKey = epic?.project_key;
+  const targetProjectKey = selectedProjectKey || epic?.project_key;
   const [epicOpen, setEpicOpen] = useState(false);
   const [missionOpen, setMissionOpen] = useState(false);
   const [editingField, setEditingField] = useState<'title' | 'description' | 'goal' | null>(null);
@@ -372,7 +372,7 @@ export function IssueDetail() {
             <TaskChecklist issueId={issue.id} />
 
             {/* Issue links */}
-            <IssueLinkSection issueId={issue.id} projectKey={epic?.project_key ?? selectedProjectKey ?? undefined} />
+            <IssueLinkSection issueId={issue.id} projectKey={targetProjectKey ?? undefined} />
 
             {/* Notes (non-context) */}
             <NoteList issueId={issue.id} />
