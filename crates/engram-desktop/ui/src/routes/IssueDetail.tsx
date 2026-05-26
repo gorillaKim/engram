@@ -25,8 +25,9 @@ export function IssueDetail() {
     enabled: selectedIssueId != null,
   });
 
-  const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
+  const { data: epics = [] } = useEpics();
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
+  const targetProjectKey = epic?.project_key;
   const [epicOpen, setEpicOpen] = useState(false);
   const [missionOpen, setMissionOpen] = useState(false);
   const [editingField, setEditingField] = useState<'title' | 'description' | 'goal' | null>(null);
@@ -41,14 +42,14 @@ export function IssueDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: graphData } = useQuery({
-    queryKey: ['blockingGraph', selectedProjectKey],
-    queryFn: () => blockedIssuesGraph(selectedProjectKey!),
-    enabled: selectedIssueId != null && selectedProjectKey != null,
+    queryKey: ['blockingGraph', targetProjectKey],
+    queryFn: () => blockedIssuesGraph(targetProjectKey!),
+    enabled: selectedIssueId != null && targetProjectKey != null,
     staleTime: 10_000,
   });
 
   // Build issue title map from board data for graph node labels
-  const { data: boardData } = useBoardStatus(selectedProjectKey ?? undefined);
+  const { data: boardData } = useBoardStatus(targetProjectKey);
   const issueTitles = useIssueTitleMap(boardData?.boards ?? []);
 
   const transition = useMutation({

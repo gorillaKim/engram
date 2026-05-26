@@ -183,6 +183,7 @@ fn main() {
                         let shown = tray::POPOVER_SHOWN_AT_MS.load(Ordering::Relaxed);
                         now.saturating_sub(shown)
                     };
+                    tracing::info!("Tray popover lost focus. Elapsed: {}ms, Grace: {}ms", elapsed, tray::POPOVER_AUTO_HIDE_GRACE_MS);
                     if elapsed >= tray::POPOVER_AUTO_HIDE_GRACE_MS {
                         let _ = window.hide();
                     }
