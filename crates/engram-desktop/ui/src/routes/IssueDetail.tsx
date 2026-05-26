@@ -25,7 +25,7 @@ export function IssueDetail() {
     enabled: selectedIssueId != null,
   });
 
-  const { data: epics = [] } = useEpics();
+  const { data: epics = [] } = useEpics(undefined, true);
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
   const targetProjectKey = epic?.project_key;
   const [epicOpen, setEpicOpen] = useState(false);
