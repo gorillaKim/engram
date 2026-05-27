@@ -3,9 +3,9 @@ import { toast } from 'sonner';
 import { issueSetStatus } from '../ipc/invoke';
 import type { IssueBoardStatus, IssueStatus } from '../ipc/types';
 
-export function useIssueDnd(projectKey?: string) {
+export function useIssueDnd(projectKey?: string | null) {
   const qc = useQueryClient();
-  const queryKey = ['boardStatus', projectKey];
+  const queryKey = ['boardStatus', projectKey ?? 'all'];
 
   return useMutation({
     mutationFn: ({ id, status }: { id: number; status: IssueStatus }) =>

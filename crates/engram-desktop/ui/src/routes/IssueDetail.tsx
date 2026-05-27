@@ -49,7 +49,7 @@ export function IssueDetail() {
   });
 
   // Build issue title map from board data for graph node labels
-  const { data: boardData } = useBoardStatus(targetProjectKey);
+  const { data: boardData } = useBoardStatus(targetProjectKey ?? null);
   const issueTitles = useIssueTitleMap(boardData?.boards ?? []);
 
   const transition = useMutation({
