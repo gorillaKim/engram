@@ -14,11 +14,12 @@ interface Props {
   graph: BlockingGraph;
   focusIssueId: number;
   issueTitles: Map<number, string>;
+  onSelectIssue?: (id: number) => void;
 }
 
 const RESOLVED_STATUSES = new Set(['finished', 'cancelled']);
 
-export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
+export function BlockingGraphView({ graph, focusIssueId, issueTitles, onSelectIssue }: Props) {
   const { nodes, edges } = useMemo(() => {
     const nodeStatus = (id: number): string =>
       graph.node_statuses[String(id)] ?? 'unknown';
@@ -136,33 +137,42 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
         const title = issueTitles.get(id) ?? '';
         const label = `${statusIcon}#${id} ${title}`.trim();
 
-        let style: React.CSSProperties;
+        let style: React.CSSProperties = {
+          maxWidth: 160,
+          fontSize: 11,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        };
         if (isFocus) {
           style = {
+            ...style,
             background: '#e0e7ff', border: '2px solid #6366f1',
-            fontWeight: 700, fontSize: 11, maxWidth: 160,
+            fontWeight: 700,
           };
         } else if (isFinished) {
           style = {
+            ...style,
             background: '#f0fdf4', border: '1px dashed #86efac',
-            fontSize: 11, maxWidth: 160, opacity: 0.7,
+            opacity: 0.7,
             textDecoration: 'line-through', color: '#64748b',
           };
         } else if (isCancelled) {
           style = {
+            ...style,
             background: '#fef2f2', border: '1px dashed #fca5a5',
-            fontSize: 11, maxWidth: 160, opacity: 0.6,
+            opacity: 0.6,
             textDecoration: 'line-through', color: '#94a3b8',
           };
         } else if (isBlocker) {
           style = {
+            ...style,
             background: '#fee2e2', border: '1px solid #fca5a5',
-            fontSize: 11, maxWidth: 160,
           };
         } else {
           style = {
+            ...style,
             background: '#fef9c3', border: '1px solid #fde047',
-            fontSize: 11, maxWidth: 160,
           };
         }
 
@@ -187,6 +197,13 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
     return <p className="text-xs text-slate-400 py-2">블로킹 관계 없음</p>;
   }
 
+  const handleNodeDoubleClick = (_event: React.MouseEvent, node: Node) => {
+    const id = parseInt(node.id, 10);
+    if (!isNaN(id) && onSelectIssue) {
+      onSelectIssue(id);
+    }
+  };
+
   return (
     <div className="w-full h-48 rounded-md border border-slate-200 overflow-hidden">
       <ReactFlow
@@ -198,6 +215,7 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
         elementsSelectable={false}
         zoomOnScroll={false}
         panOnDrag={true}
+        onNodeDoubleClick={handleNodeDoubleClick}
       >
         <Background gap={16} color="#f1f5f9" />
         <Controls showInteractive={false} />

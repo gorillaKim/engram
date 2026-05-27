@@ -366,6 +366,7 @@ export function IssueDetail() {
                   graph={graphData}
                   focusIssueId={issue.id}
                   issueTitles={issueTitles}
+                  onSelectIssue={selectIssue}
                 />
               ) : (
                 <p className="text-xs text-slate-400 py-2">블로킹 관계 없음</p>
