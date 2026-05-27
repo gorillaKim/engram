@@ -16,8 +16,13 @@ interface Props {
   issueTitles: Map<number, string>;
 }
 
+const RESOLVED_STATUSES = new Set(['finished', 'cancelled']);
+
 export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
   const { nodes, edges } = useMemo(() => {
+    const nodeStatus = (id: number): string =>
+      graph.node_statuses[String(id)] ?? 'unknown';
+
     // Collect all edges (consecutive pairs in each chain)
     const edgeSet = new Set<string>();
     const allEdges: Edge[] = [];
@@ -28,13 +33,35 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
         const key = `${src}-${tgt}`;
         if (!edgeSet.has(key)) {
           edgeSet.add(key);
-          const strokeColor = graph.has_cycle ? '#ef4444' : '#94a3b8';
+
+          // 양쪽 중 하나라도 resolved면 해소된 엣지
+          const srcResolved = RESOLVED_STATUSES.has(nodeStatus(src));
+          const tgtResolved = RESOLVED_STATUSES.has(nodeStatus(tgt));
+          const edgeResolved = srcResolved || tgtResolved;
+
+          const strokeColor = graph.has_cycle
+            ? '#ef4444'
+            : edgeResolved
+            ? '#cbd5e1' // slate-300 — 해소된 관계는 흐리게
+            : '#94a3b8';
+
           allEdges.push({
             id: key,
             source: String(src),
             target: String(tgt),
             animated: graph.has_cycle,
-            style: { stroke: strokeColor },
+            style: {
+              stroke: strokeColor,
+              strokeDasharray: edgeResolved ? '6 3' : undefined,
+              opacity: edgeResolved ? 0.5 : 1,
+            },
+            label: edgeResolved ? '✓ 해소' : undefined,
+            labelStyle: edgeResolved
+              ? { fontSize: 9, fill: '#94a3b8', fontWeight: 600 }
+              : undefined,
+            labelBgStyle: edgeResolved
+              ? { fill: '#f8fafc', fillOpacity: 0.9 }
+              : undefined,
             markerEnd: {
               type: MarkerType.ArrowClosed,
               color: strokeColor,
@@ -98,16 +125,57 @@ export function BlockingGraphView({ graph, focusIssueId, issueTitles }: Props) {
     for (const [layer, ids] of layerGroups.entries()) {
       ids.forEach((id, i) => {
         const isFocus = id === focusIssueId;
+        const status = nodeStatus(id);
+        const isFinished = status === 'finished';
+        const isCancelled = status === 'cancelled';
+        const isResolved = isFinished || isCancelled;
         const isBlocker = (distBackward.get(id) ?? 0) > 0 && !distForward.has(id);
+
+        // 상태 아이콘
+        const statusIcon = isFinished ? '✅ ' : isCancelled ? '⛔ ' : '';
+        const title = issueTitles.get(id) ?? '';
+        const label = `${statusIcon}#${id} ${title}`.trim();
+
+        let style: React.CSSProperties;
+        if (isFocus) {
+          style = {
+            background: '#e0e7ff', border: '2px solid #6366f1',
+            fontWeight: 700, fontSize: 11, maxWidth: 160,
+          };
+        } else if (isFinished) {
+          style = {
+            background: '#f0fdf4', border: '1px dashed #86efac',
+            fontSize: 11, maxWidth: 160, opacity: 0.7,
+            textDecoration: 'line-through', color: '#64748b',
+          };
+        } else if (isCancelled) {
+          style = {
+            background: '#fef2f2', border: '1px dashed #fca5a5',
+            fontSize: 11, maxWidth: 160, opacity: 0.6,
+            textDecoration: 'line-through', color: '#94a3b8',
+          };
+        } else if (isBlocker) {
+          style = {
+            background: '#fee2e2', border: '1px solid #fca5a5',
+            fontSize: 11, maxWidth: 160,
+          };
+        } else {
+          style = {
+            background: '#fef9c3', border: '1px solid #fde047',
+            fontSize: 11, maxWidth: 160,
+          };
+        }
+
+        // 해소된 노드에 포커스가 아닌 경우에만 resolved 시각화 적용
+        if (isResolved && isFocus) {
+          style = { ...style, opacity: 1, textDecoration: 'none' };
+        }
+
         allNodes.push({
           id: String(id),
           position: { x: layer * 200, y: i * 90 },
-          data: { label: `#${id} ${issueTitles.get(id) ?? ''}`.trim() },
-          style: isFocus
-            ? { background: '#e0e7ff', border: '2px solid #6366f1', fontWeight: 700, fontSize: 11, maxWidth: 140 }
-            : isBlocker
-            ? { background: '#fee2e2', border: '1px solid #fca5a5', fontSize: 11, maxWidth: 140 }
-            : { background: '#fef9c3', border: '1px solid #fde047', fontSize: 11, maxWidth: 140 },
+          data: { label },
+          style,
         });
       });
     }

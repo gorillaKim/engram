@@ -6,6 +6,9 @@ pub struct BlockingGraph {
     pub chains: Vec<Vec<i64>>,   // blocker → blocked 경로 (issue id 배열)
     pub leaf_blockers: Vec<i64>, // 해소 가능한 최상위 blocker ids
     pub has_cycle: bool,
+    /// issue_id → status 문자열. 프론트에서 finished/cancelled 노드를 시각적으로 구분.
+    #[serde(default)]
+    pub node_statuses: std::collections::HashMap<i64, String>,
 }
 
 impl Db {
@@ -36,7 +39,7 @@ impl Db {
         }
 
         if adj.is_empty() {
-            return Ok(BlockingGraph { chains: vec![], leaf_blockers: vec![], has_cycle: false });
+            return Ok(BlockingGraph { chains: vec![], leaf_blockers: vec![], has_cycle: false, node_statuses: std::collections::HashMap::new() });
         }
 
         // leaf_blockers = sources that are not themselves targets (nothing blocks them)
@@ -57,7 +60,7 @@ impl Db {
                     for &next in nexts {
                         let mut new_path = path.clone();
                         if new_path.contains(&next) {
-                            return Ok(BlockingGraph { chains, leaf_blockers, has_cycle: true });
+                            return Ok(BlockingGraph { chains, leaf_blockers, has_cycle: true, node_statuses: std::collections::HashMap::new() });
                         }
                         new_path.push(next);
                         queue.push_back(new_path);
@@ -68,21 +71,20 @@ impl Db {
             }
         }
 
-        Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false })
+        Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false, node_statuses: std::collections::HashMap::new() })
     }
 
     /// 특정 이슈를 중심으로 프로젝트 경계 없이 블로킹 관계 그래프를 반환한다.
     /// 해당 이슈에서 양방향 BFS로 연결된 서브그래프만 포함.
     pub async fn blocking_graph_for_issue(&self, issue_id: i64) -> crate::Result<BlockingGraph> {
-        // 1. 모든 활성 blocks 링크 로드 (프로젝트 필터 없음)
+        // 1. 모든 blocks 링크 로드 (status 필터 없음 — finished/cancelled 도 포함)
         let rows = sqlx::query(r#"
-            SELECT il.source_id, il.target_id
+            SELECT il.source_id, il.target_id,
+                   si.status AS source_status, ti.status AS target_status
             FROM issue_links il
             JOIN issues si ON il.source_id = si.id
             JOIN issues ti ON il.target_id = ti.id
             WHERE il.link_type = 'blocks'
-              AND si.status NOT IN ('finished','cancelled')
-              AND ti.status NOT IN ('finished','cancelled')
         "#)
         .fetch_all(&self.pool)
         .await?;
@@ -90,12 +92,17 @@ impl Db {
         // adjacency: source → [targets] (forward), target → [sources] (backward)
         let mut fwd: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
         let mut bwd: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        let mut statuses: std::collections::HashMap<i64, String> = std::collections::HashMap::new();
 
         for row in &rows {
             let src: i64 = row.get("source_id");
             let tgt: i64 = row.get("target_id");
+            let src_status: String = row.get("source_status");
+            let tgt_status: String = row.get("target_status");
             fwd.entry(src).or_default().push(tgt);
             bwd.entry(tgt).or_default().push(src);
+            statuses.insert(src, src_status);
+            statuses.insert(tgt, tgt_status);
         }
 
         // 2. issue_id에서 양방향 BFS로 연결된 노드 수집
@@ -137,7 +144,7 @@ impl Db {
         }
 
         if adj.is_empty() {
-            return Ok(BlockingGraph { chains: vec![], leaf_blockers: vec![], has_cycle: false });
+            return Ok(BlockingGraph { chains: vec![], leaf_blockers: vec![], has_cycle: false, node_statuses: std::collections::HashMap::new() });
         }
 
         // leaf_blockers
@@ -158,7 +165,8 @@ impl Db {
                     for &next in nexts {
                         let mut new_path = path.clone();
                         if new_path.contains(&next) {
-                            return Ok(BlockingGraph { chains, leaf_blockers, has_cycle: true });
+                            let node_statuses: std::collections::HashMap<i64, String> = connected.iter().filter_map(|id| statuses.get(id).map(|s| (*id, s.clone()))).collect();
+                            return Ok(BlockingGraph { chains, leaf_blockers, has_cycle: true, node_statuses });
                         }
                         new_path.push(next);
                         bfs_queue.push_back(new_path);
@@ -169,7 +177,8 @@ impl Db {
             }
         }
 
-        Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false })
+        let node_statuses: std::collections::HashMap<i64, String> = connected.iter().filter_map(|id| statuses.get(id).map(|s| (*id, s.clone()))).collect();
+        Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false, node_statuses })
     }
 }
 

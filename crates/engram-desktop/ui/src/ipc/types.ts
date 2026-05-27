@@ -99,6 +99,7 @@ export interface BlockingGraph {
   chains: number[][];
   leaf_blockers: number[];
   has_cycle: boolean;
+  node_statuses: Record<string, string>;
 }
 
 // ── Session restore ───────────────────────────────────────────────────────────
