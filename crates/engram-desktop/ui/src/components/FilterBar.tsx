@@ -140,7 +140,7 @@ export function FilterBar({
       <div className="h-4 w-px bg-slate-200" />
 
       {/* 프로젝트 드롭다운 */}
-      {allProjects.length > 1 && (
+      {allProjects.length > 0 && (
         <FilterDropdown
           label="프로젝트"
           count={filters.projects.length}

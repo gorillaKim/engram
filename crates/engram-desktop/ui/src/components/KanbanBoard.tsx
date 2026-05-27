@@ -28,14 +28,14 @@ export function KanbanBoard() {
     boardFilters, setBoardFilters, resetBoardFilters,
   } = useUIStore();
 
-  const { data, isLoading, error } = useBoardStatus(selectedProjectKey ?? undefined);
-  const { data: session } = useSessionRestore(selectedProjectKey ?? undefined);
-  const { data: epics = [] } = useEpics(selectedProjectKey ?? undefined);
+  const { data, isLoading, error } = useBoardStatus(undefined);
+  const { data: session } = useSessionRestore(undefined);
+  const { data: epics = [] } = useEpics(undefined);
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
     queryFn: () => missionList(false),
   }); // ADR-0014: Issue.mission_id 는 Epic 에서 derive 된 값. 백엔드 JOIN 결과로 일관성 보장.
-  const dnd = useIssueDnd(selectedProjectKey ?? undefined);
+  const dnd = useIssueDnd(undefined);
 
   const epicMap = new Map(epics.map((e) => [e.id, e.title]));
 
@@ -57,7 +57,10 @@ export function KanbanBoard() {
   const stalledIssues = data?.stalled_issues ?? [];
 
   // Apply client-side filters
-  const filteredBoards = applyFilters(boards, boardFilters);
+  let filteredBoards = applyFilters(boards, boardFilters);
+  if (selectedProjectKey) {
+    filteredBoards = filteredBoards.filter((b) => b.project_key === selectedProjectKey);
+  }
 
   const visibleColumns: BoardColumn[] = [
     ...STANDARD_COLUMNS.filter((c) => !(hideFinished && c === 'finished')),
