@@ -133,6 +133,7 @@ fn main() {
             commands::note_add,
             commands::note_resolve,
             commands::blocked_issues_graph,
+            commands::blocking_graph_for_issue,
             commands::epic_create,
             commands::issue_create,
             commands::task_create,

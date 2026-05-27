@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { issueGet, issueSetStatus, issueSetPriority, issueUpdate, blockedIssuesGraph, issueDelete, missionGet } from '../ipc/invoke';
+import { issueGet, issueSetStatus, issueSetPriority, issueUpdate, blockingGraphForIssue, issueDelete, missionGet } from '../ipc/invoke';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
@@ -42,9 +42,9 @@ export function IssueDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: graphData } = useQuery({
-    queryKey: ['blockingGraph', targetProjectKey],
-    queryFn: () => blockedIssuesGraph(targetProjectKey!),
-    enabled: selectedIssueId != null && targetProjectKey != null,
+    queryKey: ['blockingGraph', selectedIssueId],
+    queryFn: () => blockingGraphForIssue(selectedIssueId!),
+    enabled: selectedIssueId != null,
     staleTime: 10_000,
   });
 

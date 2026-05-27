@@ -70,6 +70,107 @@ impl Db {
 
         Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false })
     }
+
+    /// 특정 이슈를 중심으로 프로젝트 경계 없이 블로킹 관계 그래프를 반환한다.
+    /// 해당 이슈에서 양방향 BFS로 연결된 서브그래프만 포함.
+    pub async fn blocking_graph_for_issue(&self, issue_id: i64) -> crate::Result<BlockingGraph> {
+        // 1. 모든 활성 blocks 링크 로드 (프로젝트 필터 없음)
+        let rows = sqlx::query(r#"
+            SELECT il.source_id, il.target_id
+            FROM issue_links il
+            JOIN issues si ON il.source_id = si.id
+            JOIN issues ti ON il.target_id = ti.id
+            WHERE il.link_type = 'blocks'
+              AND si.status NOT IN ('finished','cancelled')
+              AND ti.status NOT IN ('finished','cancelled')
+        "#)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // adjacency: source → [targets] (forward), target → [sources] (backward)
+        let mut fwd: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        let mut bwd: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+
+        for row in &rows {
+            let src: i64 = row.get("source_id");
+            let tgt: i64 = row.get("target_id");
+            fwd.entry(src).or_default().push(tgt);
+            bwd.entry(tgt).or_default().push(src);
+        }
+
+        // 2. issue_id에서 양방향 BFS로 연결된 노드 수집
+        let mut connected: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        connected.insert(issue_id);
+        queue.push_back(issue_id);
+
+        while let Some(cur) = queue.pop_front() {
+            // forward: cur가 block하는 이슈들
+            if let Some(targets) = fwd.get(&cur) {
+                for &t in targets {
+                    if connected.insert(t) {
+                        queue.push_back(t);
+                    }
+                }
+            }
+            // backward: cur를 block하는 이슈들
+            if let Some(sources) = bwd.get(&cur) {
+                for &s in sources {
+                    if connected.insert(s) {
+                        queue.push_back(s);
+                    }
+                }
+            }
+        }
+
+        // 3. 연결된 서브그래프의 adjacency 재구성
+        let mut adj: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        let mut all_targets: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
+        for row in &rows {
+            let src: i64 = row.get("source_id");
+            let tgt: i64 = row.get("target_id");
+            if connected.contains(&src) && connected.contains(&tgt) {
+                adj.entry(src).or_default().push(tgt);
+                all_targets.insert(tgt);
+            }
+        }
+
+        if adj.is_empty() {
+            return Ok(BlockingGraph { chains: vec![], leaf_blockers: vec![], has_cycle: false });
+        }
+
+        // leaf_blockers
+        let mut leaf_blockers: Vec<i64> = adj.keys()
+            .filter(|k| !all_targets.contains(*k))
+            .copied()
+            .collect();
+        leaf_blockers.sort();
+
+        // BFS to build chains
+        let mut chains = Vec::new();
+        for &leaf in &leaf_blockers {
+            let mut bfs_queue = std::collections::VecDeque::new();
+            bfs_queue.push_back(vec![leaf]);
+            while let Some(path) = bfs_queue.pop_front() {
+                let last = *path.last().unwrap();
+                if let Some(nexts) = adj.get(&last) {
+                    for &next in nexts {
+                        let mut new_path = path.clone();
+                        if new_path.contains(&next) {
+                            return Ok(BlockingGraph { chains, leaf_blockers, has_cycle: true });
+                        }
+                        new_path.push(next);
+                        bfs_queue.push_back(new_path);
+                    }
+                } else {
+                    chains.push(path);
+                }
+            }
+        }
+
+        Ok(BlockingGraph { chains, leaf_blockers, has_cycle: false })
+    }
 }
 
 #[cfg(test)]
@@ -156,5 +257,71 @@ mod tests {
 
         let graph = db.blocked_issues_graph("p").await.unwrap();
         assert!(graph.chains.is_empty(), "finished blocker는 체인에 포함 안 됨");
+    }
+
+    // ── blocking_graph_for_issue tests ────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_for_issue_same_project() {
+        let db = setup().await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        let a = make_issue(&db, mission_id, epic_id, "A").await;
+        let b = make_issue(&db, mission_id, epic_id, "B").await;
+        db.issue_link(a, b, LinkType::Blocks).await.unwrap();
+
+        // B 관점에서 조회 — A→B 체인이 보여야 함
+        let graph = db.blocking_graph_for_issue(b).await.unwrap();
+        assert!(!graph.chains.is_empty());
+        assert!(graph.leaf_blockers.contains(&a));
+        assert!(!graph.has_cycle);
+
+        // A 관점에서도 동일 서브그래프
+        let graph2 = db.blocking_graph_for_issue(a).await.unwrap();
+        assert_eq!(graph2.chains.len(), graph.chains.len());
+    }
+
+    #[tokio::test]
+    async fn test_for_issue_cross_project() {
+        let db = setup().await;
+        let sprint = db.sprint_create(CreateSprintInput { name: "S".to_string(), goal: None, start_date: None, end_date: None }).await.unwrap();
+        db.sprint_update(sprint.id, UpdateSprintInput { status: Some(SprintStatus::Active), ..Default::default() }, "agent").await.unwrap();
+        let mission = db.mission_create(crate::models::mission::CreateMissionInput {
+            title: "M".to_string(), description: None, jira_key: None,
+        }).await.unwrap();
+
+        // 프로젝트 A
+        let epic_a = db.epic_create(CreateEpicInput { project_key: "proj-a".to_string(), mission_id: Some(mission.id), sprint_id: Some(sprint.id), title: "EA".to_string(), description: None }).await.unwrap();
+        // 프로젝트 B
+        let epic_b = db.epic_create(CreateEpicInput { project_key: "proj-b".to_string(), mission_id: Some(mission.id), sprint_id: Some(sprint.id), title: "EB".to_string(), description: None }).await.unwrap();
+
+        let issue_a = make_issue(&db, mission.id, epic_a.id, "Issue in A").await;
+        let issue_b = make_issue(&db, mission.id, epic_b.id, "Issue in B").await;
+
+        // 크로스 프로젝트: proj-a 이슈가 proj-b 이슈를 block
+        db.issue_link(issue_a, issue_b, LinkType::Blocks).await.unwrap();
+
+        // 기존 프로젝트 단위 API — proj-a 기준이면 source만 보이고 target은 체인에 포함
+        let graph_a = db.blocked_issues_graph("proj-a").await.unwrap();
+        assert!(!graph_a.chains.is_empty(), "proj-a 기준: source가 proj-a라 체인 포함");
+
+        // 새 이슈 중심 API — 어느 쪽에서든 크로스 프로젝트 관계 표시
+        let graph_for_b = db.blocking_graph_for_issue(issue_b).await.unwrap();
+        assert!(!graph_for_b.chains.is_empty(), "이슈 중심: issue_b에서 크로스 프로젝트 체인 보여야 함");
+        assert!(graph_for_b.leaf_blockers.contains(&issue_a));
+
+        let graph_for_a = db.blocking_graph_for_issue(issue_a).await.unwrap();
+        assert!(!graph_for_a.chains.is_empty(), "이슈 중심: issue_a에서도 체인 보여야 함");
+    }
+
+    #[tokio::test]
+    async fn test_for_issue_no_relations() {
+        let db = setup().await;
+        let (_sprint_id, epic_id, mission_id) = seed(&db).await;
+        let a = make_issue(&db, mission_id, epic_id, "Alone").await;
+
+        let graph = db.blocking_graph_for_issue(a).await.unwrap();
+        assert!(graph.chains.is_empty());
+        assert!(graph.leaf_blockers.is_empty());
+        assert!(!graph.has_cycle);
     }
 }

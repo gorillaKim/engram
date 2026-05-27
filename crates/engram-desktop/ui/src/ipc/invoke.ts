@@ -100,6 +100,9 @@ export const noteResolve = (id: number) =>
 export const blockedIssuesGraph = (project_key: string) =>
   invoke<BlockingGraph>('blocked_issues_graph', { project_key });
 
+export const blockingGraphForIssue = (issue_id: number) =>
+  invoke<BlockingGraph>('blocking_graph_for_issue', { issue_id });
+
 // ── MCP Supervisor ────────────────────────────────────────────────────────────
 
 export const mcpStatus = () =>

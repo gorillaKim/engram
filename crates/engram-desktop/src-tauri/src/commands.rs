@@ -166,6 +166,13 @@ pub async fn do_blocked_issues_graph(
     db.blocked_issues_graph(project_key).await
 }
 
+pub async fn do_blocking_graph_for_issue(
+    db: &Db,
+    issue_id: i64,
+) -> engram_core::Result<BlockingGraph> {
+    db.blocking_graph_for_issue(issue_id).await
+}
+
 pub async fn do_epic_create(
     db: &Db,
     project_key: String,
@@ -473,6 +480,14 @@ pub async fn blocked_issues_graph(
     project_key: String,
 ) -> Result<BlockingGraph, String> {
     do_blocked_issues_graph(&db, &project_key).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn blocking_graph_for_issue(
+    db: State<'_, Arc<Db>>,
+    issue_id: i64,
+) -> Result<BlockingGraph, String> {
+    do_blocking_graph_for_issue(&db, issue_id).await.map_err(|e| e.to_string())
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
