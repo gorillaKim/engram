@@ -106,6 +106,11 @@ impl Db {
         }
 
         // 2. issue_id에서 양방향 BFS로 연결된 노드 수집
+        //    finished/cancelled 노드는 직접 연결(terminal)만 포함 — 거기서 더 확장하지 않음
+        let is_resolved = |id: i64| -> bool {
+            matches!(statuses.get(&id).map(|s| s.as_str()), Some("finished" | "cancelled"))
+        };
+
         let mut connected: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut queue = std::collections::VecDeque::new();
         connected.insert(issue_id);
@@ -116,7 +121,10 @@ impl Db {
             if let Some(targets) = fwd.get(&cur) {
                 for &t in targets {
                     if connected.insert(t) {
-                        queue.push_back(t);
+                        // resolved 노드는 추가만 하고 큐에 넣지 않음 (확장 중단)
+                        if !is_resolved(t) {
+                            queue.push_back(t);
+                        }
                     }
                 }
             }
@@ -124,7 +132,9 @@ impl Db {
             if let Some(sources) = bwd.get(&cur) {
                 for &s in sources {
                     if connected.insert(s) {
-                        queue.push_back(s);
+                        if !is_resolved(s) {
+                            queue.push_back(s);
+                        }
                     }
                 }
             }

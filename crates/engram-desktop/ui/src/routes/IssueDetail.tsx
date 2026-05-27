@@ -41,7 +41,7 @@ export function IssueDetail() {
   const [draftValue, setDraftValue] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const { data: graphData } = useQuery({
+  const { data: graphData, isLoading: graphLoading } = useQuery({
     queryKey: ['blockingGraph', selectedIssueId],
     queryFn: () => blockingGraphForIssue(selectedIssueId!),
     enabled: selectedIssueId != null,
@@ -355,18 +355,22 @@ export function IssueDetail() {
             </div>
 
             {/* Blocking Graph */}
-            {graphData && (
-              <section>
-                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  블로킹 관계
-                </h3>
+            <section>
+              <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                블로킹 관계
+              </h3>
+              {graphLoading ? (
+                <p className="text-xs text-slate-400 py-2 animate-pulse">그래프 로딩 중…</p>
+              ) : graphData ? (
                 <BlockingGraphView
                   graph={graphData}
                   focusIssueId={issue.id}
                   issueTitles={issueTitles}
                 />
-              </section>
-            )}
+              ) : (
+                <p className="text-xs text-slate-400 py-2">블로킹 관계 없음</p>
+              )}
+            </section>
 
             {/* Tasks */}
             <TaskChecklist issueId={issue.id} />
