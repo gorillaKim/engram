@@ -759,4 +759,107 @@ mod tests {
         assert!(!ids_b.contains(&issue_a1.id));
         assert_eq!(result_b.items.len(), 1);
     }
+
+    /// Helper: 테스트용 이슈를 required 상태로 생성
+    async fn create_test_issue(db: &Db) -> crate::models::issue::Issue {
+        let sprint = db.sprint_create(crate::models::sprint::CreateSprintInput {
+            name: "S-dg".to_string(),
+            goal: None,
+            start_date: None,
+            end_date: None,
+        }).await.unwrap();
+        let mission = db.mission_create(crate::models::mission::CreateMissionInput {
+            title: "M-dg".to_string(),
+            description: None,
+            jira_key: None,
+        }).await.unwrap();
+        let epic = db.epic_create(crate::models::epic::CreateEpicInput {
+            mission_id: Some(mission.id),
+            sprint_id: Some(sprint.id),
+            project_key: "dg".to_string(),
+            title: "E-dg".to_string(),
+            description: None,
+        }).await.unwrap();
+        db.issue_create(CreateIssueInput {
+            epic_id: epic.id,
+            title: "DG Test Issue".to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap()
+    }
+
+    /// Helper: required → ready → working → demo 단계별 전이 (user 권한)
+    async fn advance_to_demo(db: &Db, id: i64) {
+        db.issue_update(id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "user").await.unwrap();
+        db.issue_update(id, UpdateIssueInput { status: Some(IssueStatus::Working), ..Default::default() }, "user").await.unwrap();
+        db.issue_update(id, UpdateIssueInput { status: Some(IssueStatus::Demo), ..Default::default() }, "user").await.unwrap();
+    }
+
+    /// [demo gate] agent 가 finished 로 직접 전이 시도 → 거부
+    #[tokio::test]
+    async fn test_demo_gate_agent_cannot_set_finished() {
+        let db = setup_db().await;
+        let issue = create_test_issue(&db).await;
+        advance_to_demo(&db, issue.id).await;
+
+        let result = db.issue_update(
+            issue.id,
+            UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() },
+            "agent@some-bot",
+        ).await;
+
+        assert!(result.is_err(), "agent 의 finished 직접 전이는 거부되어야 한다");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("finished/cancelled") || err_msg.contains("user"),
+            "에러 메시지에 demo gate 설명이 포함되어야 한다: {err_msg}"
+        );
+
+        // DB 에 실제로 반영되지 않았는지 확인
+        let reloaded = db.issue_get(issue.id, false).await.unwrap();
+        assert_eq!(reloaded.status, IssueStatus::Demo, "상태는 여전히 demo 이어야 한다");
+    }
+
+    /// [demo gate] agent 가 cancelled 로 직접 전이 시도 → 거부
+    #[tokio::test]
+    async fn test_demo_gate_agent_cannot_set_cancelled() {
+        let db = setup_db().await;
+        let issue = create_test_issue(&db).await;
+        advance_to_demo(&db, issue.id).await;
+
+        let result = db.issue_update(
+            issue.id,
+            UpdateIssueInput { status: Some(IssueStatus::Cancelled), ..Default::default() },
+            "main@some-agent-id",
+        ).await;
+
+        assert!(result.is_err(), "agent 의 cancelled 직접 전이는 거부되어야 한다");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("finished/cancelled") || err_msg.contains("user"),
+            "에러 메시지에 demo gate 설명이 포함되어야 한다: {err_msg}"
+        );
+
+        let reloaded = db.issue_get(issue.id, false).await.unwrap();
+        assert_eq!(reloaded.status, IssueStatus::Demo, "상태는 여전히 demo 이어야 한다");
+    }
+
+    /// [demo gate] 정상 경로: user 가 demo → finished 전이 → 허용
+    #[tokio::test]
+    async fn test_demo_gate_user_can_finish() {
+        let db = setup_db().await;
+        let issue = create_test_issue(&db).await;
+        advance_to_demo(&db, issue.id).await;
+
+        let result = db.issue_update(
+            issue.id,
+            UpdateIssueInput { status: Some(IssueStatus::Finished), ..Default::default() },
+            "user",
+        ).await;
+
+        assert!(result.is_ok(), "user 의 demo→finished 전이는 허용되어야 한다: {:?}", result.err());
+        let updated = result.unwrap();
+        assert_eq!(updated.status, IssueStatus::Finished);
+    }
 }
