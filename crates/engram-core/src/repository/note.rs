@@ -18,32 +18,43 @@ impl Db {
         let (issue_id_db, scope_target_id_db, project_key_db) = match scope {
             NoteScope::Issue => {
                 if input.issue_id <= 0 {
-                    return Err(Error::Validation("issue scope 는 issue_id (>0) 가 필수입니다".to_string()));
+                    return Err(Error::Validation(
+                        r#"{"scope":"issue","expected_fields":["issue_id"],"message":"issue scope 는 issue_id (>0) 가 필수입니다"}"#.to_string()
+                    ));
                 }
                 (Some(input.issue_id), input.scope_target_id.or(Some(input.issue_id)), None)
             }
             NoteScope::Task => {
                 if input.issue_id <= 0 || input.task_id.is_none() {
-                    return Err(Error::Validation("task scope 는 issue_id (>0) 와 task_id 둘 다 필수입니다".to_string()));
+                    return Err(Error::Validation(
+                        r#"{"scope":"task","expected_fields":["issue_id","task_id"],"message":"task scope 는 issue_id (>0) 와 task_id 둘 다 필수입니다"}"#.to_string()
+                    ));
                 }
                 (Some(input.issue_id), input.scope_target_id.or(input.task_id), None)
             }
             NoteScope::Project => {
                 let pk = input.project_key.clone()
-                    .ok_or_else(|| Error::Validation("project scope 는 project_key 가 필수입니다".to_string()))?;
+                    .ok_or_else(|| Error::Validation(
+                        r#"{"scope":"project","expected_fields":["project_key"],"message":"project scope 는 project_key 가 필수입니다"}"#.to_string()
+                    ))?;
                 (None, None, Some(pk))
             }
             NoteScope::Sprint => {
                 let target = input.scope_target_id
-                    .ok_or_else(|| Error::Validation("sprint scope 는 scope_target_id (sprint id) 가 필수입니다".to_string()))?;
+                    .ok_or_else(|| Error::Validation(
+                        r#"{"scope":"sprint","expected_fields":["scope_target_id"],"message":"sprint scope 는 scope_target_id (sprint id) 가 필수입니다"}"#.to_string()
+                    ))?;
                 (None, Some(target), None)
             }
             NoteScope::Epic => {
                 let target = input.scope_target_id
-                    .ok_or_else(|| Error::Validation("epic scope 는 scope_target_id (epic id) 가 필수입니다".to_string()))?;
+                    .ok_or_else(|| Error::Validation(
+                        r#"{"scope":"epic","expected_fields":["scope_target_id"],"message":"epic scope 는 scope_target_id (epic id) 가 필수입니다"}"#.to_string()
+                    ))?;
                 (None, Some(target), None)
             }
         };
+
 
         // RETURNING * — WAL 가시성 회피.
         sqlx::query_as::<_, Note>(
@@ -238,29 +249,39 @@ impl Db {
             let (issue_id_db, scope_target_id_db, project_key_db) = match scope {
                 NoteScope::Issue => {
                     if input.issue_id <= 0 {
-                        return Err(Error::Validation("issue scope 는 issue_id (>0) 가 필수입니다".to_string()));
+                        return Err(Error::Validation(
+                            r#"{"scope":"issue","expected_fields":["issue_id"],"message":"issue scope 는 issue_id (>0) 가 필수입니다"}"#.to_string()
+                        ));
                     }
                     (Some(input.issue_id), input.scope_target_id.or(Some(input.issue_id)), None)
                 }
                 NoteScope::Task => {
                     if input.issue_id <= 0 || input.task_id.is_none() {
-                        return Err(Error::Validation("task scope 는 issue_id (>0) 와 task_id 둘 다 필수입니다".to_string()));
+                        return Err(Error::Validation(
+                            r#"{"scope":"task","expected_fields":["issue_id","task_id"],"message":"task scope 는 issue_id (>0) 와 task_id 둘 다 필수입니다"}"#.to_string()
+                        ));
                     }
                     (Some(input.issue_id), input.scope_target_id.or(input.task_id), None)
                 }
                 NoteScope::Project => {
                     let pk = input.project_key.clone()
-                        .ok_or_else(|| Error::Validation("project scope 는 project_key 가 필수입니다".to_string()))?;
+                        .ok_or_else(|| Error::Validation(
+                            r#"{"scope":"project","expected_fields":["project_key"],"message":"project scope 는 project_key 가 필수입니다"}"#.to_string()
+                        ))?;
                     (None, None, Some(pk))
                 }
                 NoteScope::Sprint => {
                     let target = input.scope_target_id
-                        .ok_or_else(|| Error::Validation("sprint scope 는 scope_target_id (sprint id) 가 필수입니다".to_string()))?;
+                        .ok_or_else(|| Error::Validation(
+                            r#"{"scope":"sprint","expected_fields":["scope_target_id"],"message":"sprint scope 는 scope_target_id (sprint id) 가 필수입니다"}"#.to_string()
+                        ))?;
                     (None, Some(target), None)
                 }
                 NoteScope::Epic => {
                     let target = input.scope_target_id
-                        .ok_or_else(|| Error::Validation("epic scope 는 scope_target_id (epic id) 가 필수입니다".to_string()))?;
+                        .ok_or_else(|| Error::Validation(
+                            r#"{"scope":"epic","expected_fields":["scope_target_id"],"message":"epic scope 는 scope_target_id (epic id) 가 필수입니다"}"#.to_string()
+                        ))?;
                     (None, Some(target), None)
                 }
             };

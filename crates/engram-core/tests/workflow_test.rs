@@ -2835,3 +2835,135 @@ async fn test_create_duplicate_jira_key_rejected_not_duplicated() {
     let list = db.mission_list(MissionFilter { include_completed: true, ..Default::default() }).await.unwrap();
     assert_eq!(list.len(), 1, "중복 생성 없이 1건만 존재해야 함");
 }
+
+/// ============================================================
+/// 이슈 #345: note_add DX 개선 — 구조화 에러 메시지 + 회귀 테스트
+/// ============================================================
+
+/// note_add: issue scope 에서 issue_id 누락 시 구조화 에러 반환
+#[tokio::test]
+async fn test_note_add_issue_scope_missing_issue_id_returns_structured_error() {
+    let db = setup().await;
+
+    let result = db.note_add(CreateNoteInput {
+        issue_id: 0, // 누락 (<=0)
+        task_id: None,
+        note_type: NoteType::Decision,
+        summary: "test".into(),
+        detail: None,
+        author: None,
+        agent_id: None,
+        scope: Some(NoteScope::Issue),
+        scope_target_id: None,
+        project_key: None,
+    }).await;
+
+    assert!(result.is_err(), "issue_id 없이 issue scope 는 실패해야 함");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("expected_fields"), "에러에 expected_fields 포함 필요: {err}");
+    assert!(err.contains("issue_id"), "에러에 issue_id 포함 필요: {err}");
+    assert!(err.contains("\"scope\":\"issue\""), "에러에 scope 값 포함 필요: {err}");
+}
+
+/// note_add: task scope 에서 task_id 누락 시 구조화 에러 반환
+#[tokio::test]
+async fn test_note_add_task_scope_missing_task_id_returns_structured_error() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, title: "I".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let result = db.note_add(CreateNoteInput {
+        issue_id: issue.id,
+        task_id: None, // 누락
+        note_type: NoteType::Caveat,
+        summary: "test".into(),
+        detail: None,
+        author: None,
+        agent_id: None,
+        scope: Some(NoteScope::Task),
+        scope_target_id: None,
+        project_key: None,
+    }).await;
+
+    assert!(result.is_err(), "task_id 없이 task scope 는 실패해야 함");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("expected_fields"), "에러에 expected_fields 포함 필요: {err}");
+    assert!(err.contains("task_id"), "에러에 task_id 포함 필요: {err}");
+    assert!(err.contains("\"scope\":\"task\""), "에러에 scope 값 포함 필요: {err}");
+}
+
+/// note_add: project scope 에서 project_key 누락 시 구조화 에러 반환
+#[tokio::test]
+async fn test_note_add_project_scope_missing_project_key_returns_structured_error() {
+    let db = setup().await;
+
+    let result = db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Discovery,
+        summary: "test".into(),
+        detail: None,
+        author: None,
+        agent_id: None,
+        scope: Some(NoteScope::Project),
+        scope_target_id: None,
+        project_key: None, // 누락
+    }).await;
+
+    assert!(result.is_err(), "project_key 없이 project scope 는 실패해야 함");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("expected_fields"), "에러에 expected_fields 포함 필요: {err}");
+    assert!(err.contains("project_key"), "에러에 project_key 포함 필요: {err}");
+}
+
+/// note_add: 정상 경로 회귀 없음 — issue scope 정상 성공
+#[tokio::test]
+async fn test_note_add_valid_issue_scope_succeeds_regression() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, title: "I".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let result = db.note_add(CreateNoteInput {
+        issue_id: issue.id,
+        task_id: None,
+        note_type: NoteType::Decision,
+        summary: "정상 노트".into(),
+        detail: Some("상세".into()),
+        author: Some("agent".into()),
+        agent_id: Some("test-agent".into()),
+        scope: Some(NoteScope::Issue),
+        scope_target_id: None,
+        project_key: None,
+    }).await;
+
+    assert!(result.is_ok(), "정상 issue scope 노트 추가는 성공해야 함: {:?}", result.err());
+    assert_eq!(result.unwrap().issue_id, Some(issue.id));
+}
+
+/// note_add: epic scope 에서 scope_target_id 누락 시 구조화 에러 반환
+#[tokio::test]
+async fn test_note_add_epic_scope_missing_target_id_returns_structured_error() {
+    let db = setup().await;
+
+    let result = db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Reference,
+        summary: "test".into(),
+        detail: None,
+        author: None,
+        agent_id: None,
+        scope: Some(NoteScope::Epic),
+        scope_target_id: None, // 누락
+        project_key: None,
+    }).await;
+
+    assert!(result.is_err(), "scope_target_id 없이 epic scope 는 실패해야 함");
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("expected_fields"), "에러에 expected_fields 포함 필요: {err}");
+    assert!(err.contains("\"scope\":\"epic\""), "에러에 scope 값 포함 필요: {err}");
+}
