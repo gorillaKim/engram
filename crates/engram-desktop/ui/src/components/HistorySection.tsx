@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { historyList } from '../ipc/invoke';
 import type { HistoryEntry } from '../ipc/types';
+import { Markdown } from './Markdown';
 
 const ACTOR_LABEL: Record<string, string> = {
   user: '사용자',
@@ -9,6 +10,79 @@ const ACTOR_LABEL: Record<string, string> = {
 };
 
 const PAGE = 10;
+
+/** 마크다운 렌더가 의미 있는 필드 목록 */
+const MD_FIELDS = new Set(['description', 'summary', 'body', 'content', 'note', 'comment']);
+
+function isMarkdownField(field: string) {
+  return MD_FIELDS.has(field.toLowerCase());
+}
+
+interface HistoryValueProps {
+  field: string;
+  oldValue?: string | null;
+  newValue?: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function HistoryValue({ field, oldValue, newValue, expanded, onToggle }: HistoryValueProps) {
+  const useMd = isMarkdownField(field);
+
+  if (useMd) {
+    // 마크다운 필드: 구분선으로 before/after 블록 분리
+    return (
+      <div
+        className="cursor-pointer space-y-1.5"
+        onClick={onToggle}
+      >
+        {oldValue ? (
+          <div className={`opacity-50 line-through-block ${expanded ? '' : 'line-clamp-2'}`}>
+            <div className="text-[10px] text-slate-400 font-medium mb-0.5">이전</div>
+            <div className={`overflow-hidden ${expanded ? '' : 'max-h-10'}`}>
+              <Markdown className="[&_*]:text-[11px] [&_*]:leading-relaxed [&_p]:mb-0.5 opacity-60 line-through decoration-slate-400">
+                {oldValue}
+              </Markdown>
+            </div>
+          </div>
+        ) : (
+          <span className="text-slate-400 text-[11px]">∅</span>
+        )}
+        <div className="flex items-center gap-1">
+          <span className="text-slate-300 text-[10px]">→</span>
+        </div>
+        <div>
+          <div className="text-[10px] text-slate-400 font-medium mb-0.5">이후</div>
+          <div className={`overflow-hidden ${expanded ? '' : 'max-h-14'}`}>
+            {newValue ? (
+              <Markdown className="[&_*]:text-[11px] [&_*]:leading-relaxed [&_p]:mb-0.5">
+                {newValue}
+              </Markdown>
+            ) : (
+              <span className="text-slate-400 text-[11px]">∅</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 단순 필드: 인라인 before → after
+  return (
+    <div
+      className={`text-slate-600 leading-relaxed cursor-pointer hover:text-slate-800 transition-colors ${expanded ? '' : 'line-clamp-2'}`}
+      onClick={onToggle}
+    >
+      {oldValue ? (
+        <span className="line-through text-slate-400">{oldValue}</span>
+      ) : (
+        <span className="text-slate-400">∅</span>
+      )}
+      <span className="mx-1 text-slate-400">→</span>
+      <span className="text-slate-800 font-medium">{newValue ?? '∅'}</span>
+    </div>
+  );
+}
 
 interface Props {
   entityType: 'issue' | 'epic' | 'task' | 'sprint' | 'note';
@@ -75,16 +149,13 @@ export function HistorySection({ entityType, entityId }: Props) {
                   {h.field}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div
-                    className={`text-slate-600 leading-relaxed cursor-pointer hover:text-slate-800 transition-colors ${isExpanded ? '' : 'line-clamp-2'}`}
-                    onClick={() => toggleExpand(h.id)}
-                  >
-                    {h.old_value
-                      ? <span className="line-through text-slate-400">{h.old_value}</span>
-                      : <span className="text-slate-400">∅</span>}
-                    <span className="mx-1 text-slate-400">→</span>
-                    <span className="text-slate-800">{h.new_value ?? '∅'}</span>
-                  </div>
+                  <HistoryValue
+                    field={h.field}
+                    oldValue={h.old_value}
+                    newValue={h.new_value}
+                    expanded={isExpanded}
+                    onToggle={() => toggleExpand(h.id)}
+                  />
                   <button
                     type="button"
                     onClick={() => toggleExpand(h.id)}
