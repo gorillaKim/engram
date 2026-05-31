@@ -96,7 +96,7 @@ async fn test_full_sprint_workflow() {
     }).await.unwrap();
 
     // session_restore — active_epics에 이슈가 포함되어야 함
-    let snapshot = db.session_restore(Some("test-project"), false, 120).await.unwrap();
+    let snapshot = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
     assert!(!snapshot.active_epics.is_empty(), "active_epics 비어있음");
 
     let epic_snap = &snapshot.active_epics[0];
@@ -241,12 +241,12 @@ async fn test_session_restore_filters_by_project() {
     }, "agent").await.unwrap();
 
     // proj-a 조회 → proj-a 에픽만
-    let snap_a = db.session_restore(Some("proj-a"), false, 120).await.unwrap();
+    let snap_a = db.session_restore(Some("proj-a"), false, 120, None).await.unwrap();
     assert_eq!(snap_a.active_epics.len(), 1, "proj-a: active_epics는 1개여야 함");
     assert_eq!(snap_a.active_epics[0].epic.project_key, "proj-a");
 
     // proj-b 조회 → proj-b 에픽만
-    let snap_b = db.session_restore(Some("proj-b"), false, 120).await.unwrap();
+    let snap_b = db.session_restore(Some("proj-b"), false, 120, None).await.unwrap();
     assert_eq!(snap_b.active_epics.len(), 1, "proj-b: active_epics는 1개여야 함");
     assert_eq!(snap_b.active_epics[0].epic.project_key, "proj-b");
 }
@@ -454,7 +454,7 @@ async fn test_scope_expansion_warning() {
         }).await.unwrap();
     }
 
-    let snapshot = db.session_restore(Some("test-project"), false, 120).await.unwrap();
+    let snapshot = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
 
     let expansion_warning = snapshot.warnings.iter()
         .any(|w| w.contains("스코프 팽창") || w.contains("agent_discovered") || w.contains("팽창"));
@@ -887,13 +887,13 @@ async fn test_broadcast_caveat_appears_in_session_restore() {
     }).await.unwrap();
 
     // session_restore 호출 → active_caveats 에 노출
-    let snap = db.session_restore(Some("test-project"), false, 120).await.unwrap();
+    let snap = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
     assert_eq!(snap.active_caveats.len(), 1, "project caveat 1건 노출");
     assert_eq!(snap.active_caveats[0].summary, "lint 통과 필수");
     assert_eq!(snap.active_caveats[0].project_key.as_deref(), Some("test-project"));
 
     // 다른 project 필터 → 빈 결과
-    let other = db.session_restore(Some("other-project"), false, 120).await.unwrap();
+    let other = db.session_restore(Some("other-project"), false, 120, None).await.unwrap();
     assert!(other.active_caveats.is_empty(), "다른 프로젝트 필터는 broadcast caveat 미노출");
 }
 
@@ -916,7 +916,7 @@ async fn test_sprint_scope_note_filters_by_active_sprint() {
     }).await.unwrap();
 
     // session_restore → sprint scope caveat 노출
-    let snap = db.session_restore(Some("test-project"), false, 120).await.unwrap();
+    let snap = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
     let has_sprint_caveat = snap.active_caveats.iter().any(|n|
         n.summary.contains("sprint freeze") && n.scope_target_id == Some(sprint_id)
     );
@@ -1400,7 +1400,7 @@ async fn test_session_restore_includes_active_missions() {
     }, "agent").await.unwrap();
 
     // 6. session_restore 호출 — project_key 필터 없이 전체
-    let snapshot = db.session_restore(None, false, 120).await.unwrap();
+    let snapshot = db.session_restore(None, false, 120, None).await.unwrap();
 
     assert_eq!(snapshot.active_missions.len(), 1, "active 미션 1건이어야 함");
     let m_summary = &snapshot.active_missions[0];
@@ -1415,11 +1415,11 @@ async fn test_session_restore_includes_active_missions() {
     );
 
     // 7. project_key 필터 — 일치하는 프로젝트
-    let snap_filtered = db.session_restore(Some("test-proj"), false, 120).await.unwrap();
+    let snap_filtered = db.session_restore(Some("test-proj"), false, 120, None).await.unwrap();
     assert_eq!(snap_filtered.active_missions.len(), 1, "test-proj 필터 시 미션 1건");
 
     // 8. project_key 필터 — 다른 프로젝트는 미션 포함 안 됨
-    let snap_other = db.session_restore(Some("other-proj"), false, 120).await.unwrap();
+    let snap_other = db.session_restore(Some("other-proj"), false, 120, None).await.unwrap();
     assert_eq!(snap_other.active_missions.len(), 0, "other-proj 필터 시 미션 0건");
 
     // 9. 미션 완료 처리 시 active_missions에서 제외
@@ -1427,7 +1427,7 @@ async fn test_session_restore_includes_active_missions() {
         status: Some(MissionStatus::Completed),
         ..Default::default()
     }, "agent").await.unwrap();
-    let snap_after = db.session_restore(None, false, 120).await.unwrap();
+    let snap_after = db.session_restore(None, false, 120, None).await.unwrap();
     assert_eq!(snap_after.active_missions.len(), 0, "completed 미션은 active_missions에 포함 안 됨");
 }
 
@@ -1947,6 +1947,37 @@ async fn test_schema_sprint_ssot_is_epic() {
 
     let missions = cols(&db, "missions").await;
     assert!(!missions.contains(&"sprint_id".to_string()), "missions.sprint_id 는 제거됨 (ADR-0014)");
+}
+
+#[tokio::test]
+async fn test_session_restore_size_guard() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    for i in 1..=3 {
+        let issue = db.issue_create(CreateIssueInput {
+            epic_id,
+            title: format!("Issue {}", i),
+            description: Some("Long description text to inflate size".repeat(10)),
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+        
+        db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(IssueStatus::Ready),
+            ..Default::default()
+        }, "agent").await.unwrap();
+    }
+
+    let snap_full = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
+    assert!(!snap_full.truncated);
+    assert_eq!(snap_full.active_epics.len(), 1);
+
+    let snap_tr = db.session_restore(Some("test-project"), false, 120, Some(300)).await.unwrap();
+    assert!(snap_tr.truncated);
+    assert_eq!(snap_tr.active_epics.len(), 0);
+    assert!(snap_tr.truncated_count.unwrap() > 0);
+    assert!(snap_tr.warnings.iter().any(|w| w.contains("크기 제한")));
 }
 
 

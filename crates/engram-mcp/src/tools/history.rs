@@ -27,7 +27,7 @@ pub fn tool_definitions() -> Vec<Value> {
             "inputSchema": { "type": "object",
                 "properties": {
                     "since_minutes": { "type": "integer", "description": "이 시간 안의 이력만. 생략 시 limit 기준만 적용." },
-                    "limit":         { "type": "integer", "description": "최대 반환 건수 (기본 100, 최대 500)", "default": 100 }
+                    "limit":         { "type": "integer", "description": "최대 반환 건수 (기본 20, 최대 500)", "default": 20 }
                 }
             }
         }),
@@ -51,7 +51,7 @@ pub async fn by_agent(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn recent(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let limit = args["limit"].as_i64().unwrap_or(100).clamp(1, 500);
+    let limit = args["limit"].as_i64().unwrap_or(20).clamp(1, 500);
     let since_minutes = args["since_minutes"].as_i64();
     Ok(serde_json::to_value(db.history_recent(limit, since_minutes).await?).unwrap())
 }

@@ -17,6 +17,10 @@ pub fn tool_definitions() -> Vec<Value> {
                     "compact": {
                         "type": "boolean",
                         "description": "true면 노트/태스크를 count만 반환 (페이로드 70% 감소)"
+                    },
+                    "size_limit": {
+                        "type": "integer",
+                        "description": "응답 크기 한도 (기본 25000자)"
                     }
                 }
             }
@@ -62,7 +66,8 @@ pub async fn restore(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let compact = args["compact"].as_bool().unwrap_or(false);
     let stall_minutes = args["stall_minutes"].as_i64().unwrap_or(120);
-    let snapshot = db.session_restore(project_key, compact, stall_minutes).await?;
+    let size_limit = args["size_limit"].as_u64().map(|n| n as usize);
+    let snapshot = db.session_restore(project_key, compact, stall_minutes, size_limit).await?;
     Ok(serde_json::to_value(snapshot).unwrap())
 }
 

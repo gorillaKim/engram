@@ -23,7 +23,7 @@ pub struct HistoryArgs {
 pub enum HistoryCommand {
     /// 최근 변경 이력 — limit / since-minutes 필터.
     Recent {
-        #[arg(long, default_value_t = 100)] limit: i64,
+        #[arg(long, default_value_t = 20)] limit: i64,
         #[arg(long = "since-minutes")] since_minutes: Option<i64>,
     },
     /// 특정 엔티티의 시간순 이력.
@@ -76,7 +76,7 @@ mod tests {
         let w = Wrap::try_parse_from(["x", "recent"]).unwrap();
         match w.cmd {
             HistoryCommand::Recent { limit, since_minutes } => {
-                assert_eq!(limit, 100, "기본 limit=100");
+                assert_eq!(limit, 20, "기본 limit=20");
                 assert_eq!(since_minutes, None);
             }
             _ => panic!("Recent 변형이 파싱되어야 함"),

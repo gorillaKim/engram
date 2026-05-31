@@ -30,6 +30,10 @@ pub struct SessionSnapshot {
     /// 에이전트는 이 목록을 확인해 재개 여부를 결정한다.
     #[serde(default)]
     pub stalled_working: Vec<StalledIssueBrief>,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated_count: Option<usize>,
 }
 
 /// `assigned_agent` 가 NULL 이 아닌 working 이슈의 점유 정보.
@@ -168,6 +172,18 @@ pub struct IssueProjectBoard {
     pub cancelled: Vec<crate::models::Issue>,
 }
 
+fn truncate_opt_string(s: Option<String>, max_len: usize) -> Option<String> {
+    s.map(|val| {
+        if val.chars().count() > max_len {
+            let mut truncated: String = val.chars().take(max_len).collect();
+            truncated.push_str("...");
+            truncated
+        } else {
+            val
+        }
+    })
+}
+
 impl Db {
     /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회.
     /// `compact=true` 이면 per-issue notes/tasks fetch 를 COUNT 쿼리로 대체해 페이로드를 70%+ 줄인다.
@@ -176,6 +192,7 @@ impl Db {
         project_key: Option<&str>,
         compact: bool,
         stall_minutes: i64,
+        size_limit: Option<usize>,
     ) -> Result<SessionSnapshot> {
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
@@ -193,6 +210,8 @@ impl Db {
                 warnings: vec!["활성 스프린트가 없습니다. sprint_create로 시작하세요.".to_string()],
                 scope_expansion_ids: vec![],
                 stalled_working: vec![],
+                truncated: false,
+                truncated_count: None,
             });
         };
 
@@ -218,7 +237,11 @@ impl Db {
         let mut pending_drafts = Vec::new();
 
         for (epic_id, issues) in grouped {
-            let epic = self.epic_get(epic_id).await?;
+            let mut epic = self.epic_get(epic_id).await?;
+            let is_unrelated = project_key.is_none() || project_key != Some(epic.project_key.as_str());
+            if compact || is_unrelated {
+                epic.description = truncate_opt_string(epic.description, 200);
+            }
 
             let (mut done, mut in_prog, mut todo_cnt, total) =
                 (0u32, 0u32, 0u32, issues.len() as u32);
@@ -293,11 +316,16 @@ impl Db {
                         blocked_by_map.entry(lr.target_id).or_default().push(lr.source_id);
                     }
 
-                    active_issue_list.iter().map(|issue| IssueSnapshotCompact {
-                        issue: (*issue).clone(),
-                        task_count: *task_counts.get(&issue.id).unwrap_or(&0),
-                        note_count: *note_counts.get(&issue.id).unwrap_or(&0),
-                        blocked_by_ids: blocked_by_map.remove(&issue.id).unwrap_or_default(),
+                    active_issue_list.iter().map(|issue| {
+                        let mut issue_cloned = (*issue).clone();
+                        issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
+                        issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
+                        IssueSnapshotCompact {
+                            issue: issue_cloned,
+                            task_count: *task_counts.get(&issue.id).unwrap_or(&0),
+                            note_count: *note_counts.get(&issue.id).unwrap_or(&0),
+                            blocked_by_ids: blocked_by_map.remove(&issue.id).unwrap_or_default(),
+                        }
                     }).collect()
                 };
                 (Vec::new(), Some(compact_snaps))
@@ -305,14 +333,19 @@ impl Db {
                 // full 모드: 기존 N+1 per-issue fetch
                 let mut full_snaps = Vec::new();
                 for issue in active_issue_list {
-                    let active_notes = self.note_summaries(issue.id, false).await?;
-                    let tasks = self.task_list(issue.id, None).await?;
+                    let mut issue_cloned = issue.clone();
+                    if is_unrelated {
+                        issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
+                        issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
+                    }
+                    let active_notes = self.note_summaries(issue_cloned.id, false).await?;
+                    let tasks = self.task_list(issue_cloned.id, None).await?;
                     let current_task = tasks.into_iter()
                         .find(|t| t.status == crate::models::task::TaskStatus::Ready);
-                    let blocked_by = self.issue_blocked_by(issue.id).await?
+                    let blocked_by = self.issue_blocked_by(issue_cloned.id).await?
                         .into_iter().map(|l| l.source_id).collect();
                     full_snaps.push(IssueSnapshot {
-                        issue: issue.clone(),
+                        issue: issue_cloned,
                         active_notes,
                         current_task,
                         blocked_by,
@@ -481,7 +514,7 @@ impl Db {
 
         let stalled_working = self.stalled_working_issues(project_key, stall_minutes).await.unwrap_or_default();
 
-        Ok(SessionSnapshot {
+        let mut snapshot = SessionSnapshot {
             sprint_id: sprint.id,
             sprint_name: sprint.name,
             sprint_goal: sprint.goal,
@@ -495,7 +528,31 @@ impl Db {
             active_caveats,
             active_missions,
             stalled_working,
-        })
+            truncated: false,
+            truncated_count: None,
+        };
+
+        let limit = size_limit.unwrap_or(25000);
+        let mut serialized = serde_json::to_string(&snapshot).unwrap();
+
+        if serialized.chars().count() > limit {
+            snapshot.truncated = true;
+            let mut truncated_count = 0;
+
+            while !snapshot.active_epics.is_empty() && serde_json::to_string(&snapshot).unwrap().chars().count() > limit {
+                let removed = snapshot.active_epics.pop().unwrap();
+                let issue_cnt = removed.active_issues.len() + removed.active_issues_compact.as_ref().map(|v| v.len()).unwrap_or(0);
+                truncated_count += issue_cnt + 1;
+            }
+
+            snapshot.truncated_count = Some(truncated_count);
+            snapshot.warnings.push(format!(
+                "응답 크기 제한({}자)을 초과하여 {}개의 항목이 누락되었습니다. project_key 필터를 사용하여 범위를 좁히십시오.",
+                limit, truncated_count
+            ));
+        }
+
+        Ok(snapshot)
     }
 
     /// 세션 종료 체크리스트 — context note 누락 경고

@@ -38,7 +38,7 @@ pub async fn do_session_restore(
     project_key: Option<&str>,
 ) -> engram_core::Result<SessionSnapshot> {
     let stall = crate::settings::load().unwrap_or_default().activity.stall_minutes;
-    db.session_restore(project_key, false, stall).await
+    db.session_restore(project_key, false, stall, None).await
 }
 
 pub async fn do_board_status(

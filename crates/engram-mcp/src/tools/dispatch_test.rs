@@ -573,6 +573,38 @@ async fn test_session_restore_compact_zero_children() {
     assert!(blocked_by.is_empty(), "블로커 없을 때 blocked_by_ids=[] 이어야 함");
 }
 
+/// Test F: session_restore 시 size_limit 을 명시하면 dispatch 레벨에서도 잘려나가는지 검증한다.
+#[tokio::test]
+async fn test_session_restore_size_limit_via_dispatch() {
+    let db = setup().await;
+    let (sprint_id, epic_id, issue_id) = seed(&db).await;
+    promote_to_ready(&db, issue_id, sprint_id).await;
+
+    // issue에 긴 goal/description 추가하여 크기 부풀림
+    db.issue_update(
+        issue_id,
+        engram_core::models::UpdateIssueInput {
+            description: Some("Long description text to inflate size".repeat(10)),
+            ..Default::default()
+        },
+        "agent",
+    )
+    .await
+    .unwrap();
+
+    let snap = dispatch(
+        Arc::clone(&db),
+        "session_restore",
+        &json!({"project_key": "p", "size_limit": 100}),
+    )
+    .await
+    .unwrap();
+
+    assert!(snap["truncated"].as_bool().unwrap());
+    assert!(snap["truncated_count"].as_i64().unwrap() > 0);
+    assert!(!snap["warnings"].as_array().unwrap().is_empty());
+}
+
 // ── Issue #175: dispatch 무결성 ────────────────────────────────────────────────
 
 /// Issue #175: dispatch 무결성 — tool_definitions() 에 있는 모든 도구명이
