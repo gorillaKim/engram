@@ -19,6 +19,12 @@ pub struct Issue {
     pub assigned_agent: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    #[sqlx(default)]
+    pub note_count: Option<i64>,
+    #[serde(default)]
+    #[sqlx(default)]
+    pub task_count: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
@@ -122,6 +128,9 @@ pub struct IssueFilter {
     pub status: Option<IssueStatus>,
     pub statuses: Option<Vec<IssueStatus>>,
     pub priority: Option<IssuePriority>,
+    pub compact: Option<bool>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 /// `stalled_issues` 응답 — 특정 상태에서 threshold 분 이상 머문 이슈.

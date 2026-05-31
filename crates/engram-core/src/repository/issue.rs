@@ -1,5 +1,6 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::issue::*;
+use crate::models::PaginatedResponse;
 use crate::{Db, Error, Result};
 
 const DESCRIPTION_EXCERPT_CHARS: usize = 100;
@@ -8,12 +9,15 @@ const DESCRIPTION_EXCERPT_CHARS: usize = 100;
 fn issue_select_columns(compact: bool) -> &'static str {
     if compact {
         "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
-         i.title, NULL AS description, NULL AS goal, i.status, i.priority, \
-         i.assigned_agent, i.created_at, i.updated_at"
+         i.title, CASE WHEN i.description IS NOT NULL THEN SUBSTR(i.description, 1, 200) ELSE NULL END AS description, \
+         CASE WHEN i.goal IS NOT NULL THEN SUBSTR(i.goal, 1, 200) ELSE NULL END AS goal, \
+         i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at, \
+         NULL AS note_count, NULL AS task_count"
     } else {
         "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
          i.title, i.description, i.goal, i.status, i.priority, \
-         i.assigned_agent, i.created_at, i.updated_at"
+         i.assigned_agent, i.created_at, i.updated_at, \
+         NULL AS note_count, NULL AS task_count"
     }
 }
 
@@ -51,20 +55,36 @@ impl Db {
         .ok_or_else(|| Error::NotFound(format!("issue:{id}")))
     }
 
-    pub async fn issue_list(&self, filter: IssueFilter) -> Result<Vec<Issue>> {
-        let cols = issue_select_columns(false);
-        let mut sql = format!(
-            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE 1=1"
-        );
-        if filter.epic_id.is_some()     { sql.push_str(" AND i.epic_id = ?"); }
-        if filter.mission_id.is_some()  { sql.push_str(" AND e.mission_id = ?"); }
+    pub async fn issue_list(&self, filter: IssueFilter) -> Result<PaginatedResponse<Issue>> {
+        let is_compact = filter.compact.unwrap_or(false);
+        let cols = if is_compact {
+            "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
+             i.title, CASE WHEN i.description IS NOT NULL THEN SUBSTR(i.description, 1, 200) ELSE NULL END AS description, \
+             CASE WHEN i.goal IS NOT NULL THEN SUBSTR(i.goal, 1, 200) ELSE NULL END AS goal, \
+             i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at, \
+             COUNT(DISTINCT n.id) AS note_count, COUNT(DISTINCT t.id) AS task_count"
+        } else {
+            "i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
+             i.title, i.description, i.goal, i.status, i.priority, \
+             i.assigned_agent, i.created_at, i.updated_at, \
+             NULL AS note_count, NULL AS task_count"
+        };
+
+        let mut from_clause = "FROM issues i JOIN epics e ON i.epic_id = e.id".to_string();
+        if is_compact {
+            from_clause.push_str(" LEFT JOIN notes n ON i.id = n.issue_id LEFT JOIN tasks t ON i.id = t.issue_id");
+        }
+
+        let mut where_clause = String::new();
+        if filter.epic_id.is_some()     { where_clause.push_str(" AND i.epic_id = ?"); }
+        if filter.mission_id.is_some()  { where_clause.push_str(" AND e.mission_id = ?"); }
         if filter.backlog_only {
-            sql.push_str(" AND e.sprint_id IS NULL");
+            where_clause.push_str(" AND e.sprint_id IS NULL");
         } else if filter.sprint_id.is_some() {
-            sql.push_str(" AND e.sprint_id = ?");
+            where_clause.push_str(" AND e.sprint_id = ?");
         }
         if filter.project_key.is_some() {
-            sql.push_str(" AND e.project_key = ?");
+            where_clause.push_str(" AND e.project_key = ?");
         }
 
         let mut target_statuses = Vec::new();
@@ -81,22 +101,56 @@ impl Db {
 
         if !target_statuses.is_empty() {
             let placeholders = target_statuses.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            sql.push_str(&format!(" AND i.status IN ({})", placeholders));
+            where_clause.push_str(&format!(" AND i.status IN ({})", placeholders));
         }
-        sql.push_str(" ORDER BY i.id DESC");
 
+        // 1) total count 쿼리 실행
+        let count_sql = format!(
+            "SELECT COUNT(DISTINCT i.id) FROM issues i JOIN epics e ON i.epic_id = e.id WHERE 1=1 {where_clause}"
+        );
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+
+        // 2) items 쿼리 실행
+        let group_by = if is_compact { " GROUP BY i.id, e.mission_id, e.sprint_id" } else { "" };
+        let (lim, off) = crate::repository::apply_pagination(filter.limit, filter.offset);
+        let sql = format!(
+            "SELECT {cols} {from_clause} WHERE 1=1 {where_clause} {group_by} ORDER BY i.id DESC LIMIT ? OFFSET ?"
+        );
         let mut q = sqlx::query_as::<_, Issue>(&sql);
-        if let Some(e) = filter.epic_id     { q = q.bind(e); }
-        if let Some(m) = filter.mission_id  { q = q.bind(m); }
-        if !filter.backlog_only {
-            if let Some(s) = filter.sprint_id { q = q.bind(s); }
+
+        // 바인딩
+        if let Some(e) = filter.epic_id {
+            count_q = count_q.bind(e);
+            q = q.bind(e);
         }
-        if let Some(p) = filter.project_key { q = q.bind(p); }
+        if let Some(m) = filter.mission_id {
+            count_q = count_q.bind(m);
+            q = q.bind(m);
+        }
+        if !filter.backlog_only {
+            if let Some(s) = filter.sprint_id {
+                count_q = count_q.bind(s);
+                q = q.bind(s);
+            }
+        }
+        if let Some(p) = filter.project_key {
+            count_q = count_q.bind(p.clone());
+            q = q.bind(p);
+        }
         for s in target_statuses {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
+            count_q = count_q.bind(sv.clone());
             q = q.bind(sv);
         }
-        q.fetch_all(&self.pool).await.map_err(Into::into)
+
+        // q 에만 pagination 바인딩
+        q = q.bind(lim).bind(off);
+
+        let total = count_q.fetch_one(&self.pool).await.unwrap_or(0);
+        let items = q.fetch_all(&self.pool).await?;
+        let has_more = (off + items.len() as i64) < total;
+
+        Ok(PaginatedResponse { items, total, has_more })
     }
 
     pub async fn issue_update(&self, id: i64, input: UpdateIssueInput, changed_by: &str) -> Result<Issue> {
@@ -690,19 +744,19 @@ mod tests {
             mission_id: Some(mission_a.id),
             ..Default::default()
         }).await.unwrap();
-        let ids_a: Vec<i64> = result_a.iter().map(|i| i.id).collect();
+        let ids_a: Vec<i64> = result_a.items.iter().map(|i| i.id).collect();
         assert!(ids_a.contains(&issue_a1.id));
         assert!(ids_a.contains(&issue_a2.id));
         assert!(!ids_a.contains(&issue_b1.id));
-        assert_eq!(result_a.len(), 2);
+        assert_eq!(result_a.items.len(), 2);
 
         let result_b = db.issue_list(IssueFilter {
             mission_id: Some(mission_b.id),
             ..Default::default()
         }).await.unwrap();
-        let ids_b: Vec<i64> = result_b.iter().map(|i| i.id).collect();
+        let ids_b: Vec<i64> = result_b.items.iter().map(|i| i.id).collect();
         assert!(ids_b.contains(&issue_b1.id));
         assert!(!ids_b.contains(&issue_a1.id));
-        assert_eq!(result_b.len(), 1);
+        assert_eq!(result_b.items.len(), 1);
     }
 }

@@ -63,6 +63,7 @@ pub enum IssueCommand {
         #[arg(long)] description: Option<String>,
     },
     /// 이슈 목록. IssueFilter 전체 노출.
+    /// 이슈 목록. IssueFilter 전체 노출.
     List {
         #[arg(long)] project: Option<String>,
         #[arg(long)] epic: Option<i64>,
@@ -72,6 +73,10 @@ pub enum IssueCommand {
         #[arg(long = "backlog-only")] backlog_only: bool,
         #[arg(long)] status: Vec<String>,
         #[arg(long)] priority: Option<String>,
+        #[arg(long)] limit: Option<i64>,
+        #[arg(long)] offset: Option<i64>,
+        #[arg(long)] compact: Option<bool>,
+        #[arg(long, value_delimiter = ',')] projection: Option<Vec<String>>,
     },
     Get {
         id: i64,
@@ -129,14 +134,14 @@ pub enum IssueCommand {
         /// 업데이트할 이슈 ID 목록 (쉼표 구분)
         #[arg(long, value_delimiter = ',')]
         ids: Option<Vec<i64>>,
-
+ 
         /// 표준 입력(stdin)에서 쉼표나 개행으로 구분된 이슈 ID 목록을 입력받음
         #[arg(long = "ids-from-stdin")]
         ids_from_stdin: bool,
-
+ 
         #[arg(long)]
         status: Option<String>,
-
+ 
         #[arg(long)]
         priority: Option<String>,
     },
@@ -150,12 +155,15 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             }).await?;
             output::print_value(&issue, fmt)?;
         }
-        IssueCommand::List { project, epic, mission, sprint, backlog_only, status, priority } => {
+        IssueCommand::List {
+            project, epic, mission, sprint, backlog_only, status, priority,
+            limit, offset, compact, projection,
+        } => {
             let mut target_statuses = Vec::new();
             for s in status {
                 target_statuses.push(parse_status(&s)?);
             }
-            let list = db.issue_list(IssueFilter {
+            let paginated = db.issue_list(IssueFilter {
                 epic_id: epic,
                 mission_id: mission,
                 sprint_id: sprint,
@@ -164,8 +172,18 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
                 status: None,
                 statuses: if target_statuses.is_empty() { None } else { Some(target_statuses) },
                 priority: priority.as_deref().map(parse_priority).transpose()?,
+                compact,
+                limit,
+                offset,
             }).await?;
-            output::print_value(&list, fmt)?;
+ 
+            if let Some(ref fields) = projection {
+                let val = serde_json::to_value(&paginated).unwrap();
+                let filtered = engram_core::apply_projection(val, fields);
+                output::print_value(&filtered, fmt)?;
+            } else {
+                output::print_value(&paginated, fmt)?;
+            }
         }
         IssueCommand::Get { id, compact } => {
             output::print_value(&db.issue_get(id, compact).await?, fmt)?;

@@ -67,3 +67,11 @@ impl Db {
         &self.pool
     }
 }
+
+pub const DEFAULT_LIMIT: i64 = 50;
+
+pub fn apply_pagination(limit: Option<i64>, offset: Option<i64>) -> (i64, i64) {
+    let lim = limit.unwrap_or(DEFAULT_LIMIT);
+    let off = offset.unwrap_or(0);
+    (lim, off)
+}

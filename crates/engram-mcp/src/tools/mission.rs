@@ -36,7 +36,9 @@ pub fn tool_definitions() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "status":             { "type": "string", "enum": MissionStatus::ALL },
-                    "include_completed":  { "type": "boolean", "description": "true면 completed/cancelled 포함" }
+                    "include_completed":  { "type": "boolean", "description": "true면 completed/cancelled 포함" },
+                    "project_key":        { "type": "string", "description": "특정 프로젝트 미션 필터" },
+                    "sprint_id":          { "type": "integer", "description": "특정 스프린트 미션 필터" }
                 }
             }
         }),
@@ -108,6 +110,8 @@ pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
             .as_str()
             .and_then(|s| serde_json::from_value(json!(s)).ok()),
         include_completed: args["include_completed"].as_bool().unwrap_or(false),
+        project_key: args["project_key"].as_str().map(String::from),
+        sprint_id: args["sprint_id"].as_i64(),
     };
     let missions = db.mission_list(filter).await?;
     Ok(serde_json::to_value(&missions).unwrap())

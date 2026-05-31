@@ -1,5 +1,6 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::note::*;
+use crate::models::PaginatedResponse;
 use crate::{Db, Error, Result};
 
 impl Db {
@@ -121,27 +122,81 @@ impl Db {
         note_type: Option<NoteType>,
         include_resolved: bool,
         include_detail: bool,
-    ) -> Result<Vec<Note>> {
+        project_key: Option<&str>,
+        sprint_id: Option<i64>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+        compact: Option<bool>,
+    ) -> Result<PaginatedResponse<Note>> {
         let select_fields = if include_detail {
-            "id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at"
+            "n.detail"
+        } else if compact.unwrap_or(false) {
+            "CASE WHEN n.detail IS NOT NULL THEN SUBSTR(n.detail, 1, 200) ELSE NULL END AS detail"
         } else {
-            "id, issue_id, task_id, note_type, summary, NULL AS detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at"
+            "NULL AS detail"
         };
-        let mut sql = format!("SELECT {} FROM notes WHERE 1=1", select_fields);
-        if issue_id.is_some()  { sql.push_str(" AND issue_id = ?"); }
-        if task_id.is_some()   { sql.push_str(" AND task_id = ?"); }
-        if note_type.is_some() { sql.push_str(" AND note_type = ?"); }
-        if !include_resolved   { sql.push_str(" AND resolved = 0"); }
-        sql.push_str(" ORDER BY created_at DESC");
+        let mut from_where = "FROM notes n \
+             LEFT JOIN issues i ON n.issue_id = i.id \
+             LEFT JOIN epics ie ON i.epic_id = ie.id \
+             LEFT JOIN epics ee ON (n.scope = 'epic' AND n.scope_target_id = ee.id) \
+             WHERE 1=1".to_string();
 
+        if issue_id.is_some()  { from_where.push_str(" AND n.issue_id = ?"); }
+        if task_id.is_some()   { from_where.push_str(" AND n.task_id = ?"); }
+        if note_type.is_some() { from_where.push_str(" AND n.note_type = ?"); }
+        if !include_resolved   { from_where.push_str(" AND n.resolved = 0"); }
+        if project_key.is_some() {
+            from_where.push_str(" AND COALESCE(n.project_key, ie.project_key, ee.project_key) = ?");
+        }
+        if sprint_id.is_some() {
+            from_where.push_str(" AND COALESCE(CASE WHEN n.scope = 'sprint' THEN n.scope_target_id ELSE NULL END, ie.sprint_id, ee.sprint_id) = ?");
+        }
+
+        // 1) total count
+        let count_sql = format!("SELECT COUNT(*) {from_where}");
+        let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql);
+
+        // 2) items
+        let (lim, off) = crate::repository::apply_pagination(limit, offset);
+        let sql = format!(
+            "SELECT n.id, n.issue_id, n.task_id, n.note_type, n.summary, {}, n.author, n.agent_id, n.resolved, n.scope, n.scope_target_id, n.project_key, n.created_at, n.resolved_at
+             {from_where} ORDER BY n.created_at DESC LIMIT ? OFFSET ?",
+            select_fields
+        );
         let mut q = sqlx::query_as::<_, Note>(&sql);
-        if let Some(i) = issue_id { q = q.bind(i); }
-        if let Some(t) = task_id  { q = q.bind(t); }
+
+        // 바인딩
+        if let Some(i) = issue_id {
+            count_q = count_q.bind(i);
+            q = q.bind(i);
+        }
+        if let Some(t) = task_id {
+            count_q = count_q.bind(t);
+            q = q.bind(t);
+        }
         if let Some(nt) = note_type {
             let ntv = serde_json::to_value(&nt).unwrap().as_str().unwrap().to_string();
+            count_q = count_q.bind(ntv.clone());
             q = q.bind(ntv);
         }
-        q.fetch_all(&self.pool).await.map_err(Into::into)
+        if let Some(pk) = project_key {
+            let pks = pk.to_string();
+            count_q = count_q.bind(pks.clone());
+            q = q.bind(pks);
+        }
+        if let Some(sid) = sprint_id {
+            count_q = count_q.bind(sid);
+            q = q.bind(sid);
+        }
+
+        // q 에만 pagination 바인딩
+        q = q.bind(lim).bind(off);
+
+        let total = count_q.fetch_one(&self.pool).await.unwrap_or(0);
+        let items = q.fetch_all(&self.pool).await?;
+        let has_more = (off + items.len() as i64) < total;
+
+        Ok(PaginatedResponse { items, total, has_more })
     }
 
     pub async fn note_resolve(&self, id: i64, changed_by: &str) -> Result<Note> {

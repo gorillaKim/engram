@@ -225,7 +225,7 @@ impl Db {
 
         // 이슈를 epic_id 별로 묶는다 (삽입 순서 유지를 위해 IndexMap 대신 Vec<(epic_id, ...)>).
         let mut grouped: Vec<(i64, Vec<crate::models::issue::Issue>)> = Vec::new();
-        for issue in sprint_issues {
+        for issue in sprint_issues.items {
             if let Some((_, v)) = grouped.iter_mut().find(|(eid, _)| *eid == issue.epic_id) {
                 v.push(issue);
             } else {
@@ -828,6 +828,8 @@ impl Db {
                 assigned_agent: r.assigned_agent,
                 created_at: r.created_at,
                 updated_at: r.updated_at,
+                note_count: None,
+                task_count: None,
             };
             use crate::models::issue::IssueStatus::*;
             match r.status {

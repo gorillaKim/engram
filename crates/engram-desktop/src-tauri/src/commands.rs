@@ -53,7 +53,8 @@ pub async fn do_issue_list(
     db: &Db,
     filter: IssueFilter,
 ) -> engram_core::Result<Vec<Issue>> {
-    db.issue_list(filter).await
+    let res = db.issue_list(filter).await?;
+    Ok(res.items)
 }
 
 pub async fn do_issue_get(db: &Db, id: i64) -> engram_core::Result<Issue> {
@@ -144,7 +145,8 @@ pub async fn do_task_set_status(
 }
 
 pub async fn do_note_list(db: &Db, issue_id: i64) -> engram_core::Result<Vec<Note>> {
-    db.note_list(Some(issue_id), None, None, false, true).await
+    let res = db.note_list(Some(issue_id), None, None, false, true, None, None, None, None, None).await?;
+    Ok(res.items)
 }
 
 pub async fn do_note_get(db: &Db, id: i64) -> engram_core::Result<Note> {
@@ -267,6 +269,8 @@ pub async fn do_mission_list(
     let filter = MissionFilter {
         status: None,
         include_completed: include_completed.unwrap_or(false),
+        project_key: None,
+        sprint_id: None,
     };
     db.mission_list(filter).await
 }

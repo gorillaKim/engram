@@ -3,11 +3,11 @@ use engram_core::{
     models::{
         sprint::{CreateSprintInput, UpdateSprintInput, SprintStatus},
         epic::CreateEpicInput,
-        issue::{CreateIssueInput, UpdateIssueInput, IssueStatus, IssuePriority},
+        issue::{CreateIssueInput, UpdateIssueInput, IssueStatus, IssuePriority, IssueFilter},
         task::{CreateTaskInput, UpdateTaskInput, TaskStatus},
-        note::{CreateNoteInput, NoteType},
+        note::{CreateNoteInput, NoteType, NoteScope},
         history::EntityType,
-        mission::{CreateMissionInput, MissionStatus},
+        mission::{CreateMissionInput, MissionStatus, MissionFilter},
         LinkType,
     },
 };
@@ -639,7 +639,7 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
 
     // 사전: 모든 자식 존재 확인
     assert_eq!(db.task_list(issue_a.id, None).await.unwrap().len(), 1, "이슈 A 에 태스크 1건");
-    assert_eq!(db.note_list(Some(issue_a.id), None, None, false, true).await.unwrap().len(), 1, "이슈 A 에 노트 1건");
+    assert_eq!(db.note_list(Some(issue_a.id), None, None, false, true, None, None, None, None, None).await.unwrap().items.len(), 1, "이슈 A 에 노트 1건");
     assert_eq!(db.issue_links_for(issue_a.id).await.unwrap().len(), 1, "이슈 A 에 링크 1건");
 
     // 이슈 A 삭제
@@ -650,7 +650,7 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
 
     // 자식 데이터 cascade 확인
     assert!(db.task_list(issue_a.id, None).await.unwrap().is_empty(), "태스크가 모두 삭제됨");
-    assert!(db.note_list(Some(issue_a.id), None, None, false, true).await.unwrap().is_empty(), "노트가 모두 삭제됨");
+    assert!(db.note_list(Some(issue_a.id), None, None, false, true, None, None, None, None, None).await.unwrap().items.is_empty(), "노트가 모두 삭제됨");
     assert!(db.issue_links_for(issue_b.id).await.unwrap().is_empty(), "이슈 B 측에서 본 링크도 cascade 됨");
 
     // 이슈 B 는 살아 있어야 한다
@@ -697,7 +697,7 @@ async fn test_epic_delete_cascades_all_issues_and_descendants() {
     assert!(db.issue_get(i1.id, false).await.is_err(), "하위 이슈 i1 cascade");
     assert!(db.issue_get(i2.id, false).await.is_err(), "하위 이슈 i2 cascade");
     assert!(db.task_list(i1.id, None).await.unwrap().is_empty(), "i1 의 태스크 cascade");
-    assert!(db.note_list(Some(i1.id), None, None, false, true).await.unwrap().is_empty(), "i1 의 노트 cascade");
+    assert!(db.note_list(Some(i1.id), None, None, false, true, None, None, None, None, None).await.unwrap().items.is_empty(), "i1 의 노트 cascade");
 
     // 다른 에픽/이슈는 살아 있어야 한다
     assert!(db.epic_get(other_epic.id).await.is_ok(), "다른 에픽은 살아 있음");
@@ -828,7 +828,7 @@ async fn test_note_add_persists_agent_id() {
     assert_eq!(n2.agent_id, None, "agent_id 미지정은 NULL 유지");
 
     // note_list 응답에도 agent_id 가 노출되어야 한다
-    let notes = db.note_list(Some(issue.id), None, None, false, true).await.unwrap();
+    let notes = db.note_list(Some(issue.id), None, None, false, true, None, None, None, None, None).await.unwrap().items;
     let opus_notes: Vec<_> = notes.iter()
         .filter(|n| n.agent_id.as_deref() == Some("claude-opus@sess-A"))
         .collect();
@@ -1979,6 +1979,334 @@ async fn test_session_restore_size_guard() {
     assert!(snap_tr.truncated_count.unwrap() > 0);
     assert!(snap_tr.warnings.iter().any(|w| w.contains("크기 제한")));
 }
+
+#[tokio::test]
+async fn test_session_restore_five_projects_regression() {
+    let db = setup().await;
+
+    // 5개 프로젝트 각각의 활성 스프린트, 에픽, 이슈 생성
+    for p_idx in 1..=5 {
+        let proj_key = format!("proj-{}", p_idx);
+        
+        // 1. 스프린트 생성
+        let sprint = db.sprint_create(engram_core::models::CreateSprintInput {
+            name: format!("Sprint {}", proj_key),
+            goal: None,
+            start_date: None,
+            end_date: None,
+        }).await.unwrap();
+
+        // 2. 미션 생성
+        let mission = db.mission_create(engram_core::models::CreateMissionInput {
+            title: format!("Mission for {}", proj_key),
+            description: None,
+            jira_key: None,
+        }).await.unwrap();
+
+        // 3. 에픽 생성
+        let epic = db.epic_create(engram_core::models::CreateEpicInput {
+            project_key: proj_key.clone(),
+            title: format!("Epic for {}", proj_key),
+            description: Some("Long epic description text to test payload size. ".repeat(10)),
+            mission_id: Some(mission.id),
+            sprint_id: Some(sprint.id),
+        }).await.unwrap();
+
+        // 4. 이슈 3개씩 생성 및 ready 상태로 전이
+        for i in 1..=3 {
+            let issue = db.issue_create(engram_core::models::CreateIssueInput {
+                epic_id: epic.id,
+                title: format!("Issue {} in {}", i, proj_key),
+                description: Some("Very long issue description text that could inflate the payload size. ".repeat(20)),
+                goal: Some("Very long issue goal text that could inflate the payload size. ".repeat(20)),
+                priority: None,
+            }).await.unwrap();
+
+            db.issue_update(issue.id, engram_core::models::UpdateIssueInput {
+                status: Some(engram_core::models::IssueStatus::Ready),
+                ..Default::default()
+            }, "agent").await.unwrap();
+        }
+    }
+
+    // 5. session_restore(project_key=None, compact=true)로 전역 세션 복원 호출
+    let snap = db.session_restore(None, true, 120, None).await.unwrap();
+
+    // 6. 응답 전체 크기 검증 (25,000자 이내)
+    let serialized = serde_json::to_string(&snap).unwrap();
+    assert!(serialized.len() < 25000, "Compact session restore payload is too large: {} chars", serialized.len());
+
+    // 7. compact/unrelated 절단 검증: 모든 에픽의 description 과 모든 이슈의 description/goal 이 200자 이하로 절단되었는지 확인
+    for epic_snap in &snap.active_epics {
+        if let Some(ref desc) = epic_snap.epic.description {
+            assert!(desc.len() <= 205, "Epic description not truncated correctly: {}", desc.len());
+        }
+
+        if let Some(ref issues_compact) = epic_snap.active_issues_compact {
+            for issue_snap in issues_compact {
+                if let Some(ref desc) = issue_snap.issue.description {
+                    assert!(desc.len() <= 205, "Issue description not truncated: {}", desc.len());
+                }
+                if let Some(ref goal) = issue_snap.issue.goal {
+                    assert!(goal.len() <= 205, "Issue goal not truncated: {}", goal.len());
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_note_list_derive_filtering() {
+    let db = setup().await;
+    let (sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    // 1. issue scope note
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "issue for note".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    let n_issue = db.note_add(CreateNoteInput {
+        issue_id: issue.id,
+        task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "issue caveat".into(),
+        detail: None,
+        author: None,
+        agent_id: Some("test".into()),
+        scope: Some(NoteScope::Issue),
+        scope_target_id: Some(issue.id),
+        project_key: None,
+    }).await.unwrap();
+
+    // 2. epic scope note
+    let n_epic = db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Decision,
+        summary: "epic decision".into(),
+        detail: None,
+        author: None,
+        agent_id: Some("test".into()),
+        scope: Some(NoteScope::Epic),
+        scope_target_id: Some(epic_id),
+        project_key: None,
+    }).await.unwrap();
+
+    // 3. project scope note
+    let n_proj = db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Discovery,
+        summary: "project discovery".into(),
+        detail: None,
+        author: None,
+        agent_id: Some("test".into()),
+        scope: Some(NoteScope::Project),
+        scope_target_id: None,
+        project_key: Some("test-project".into()),
+    }).await.unwrap();
+
+    // project_key 필터 조회
+    let notes_p = db.note_list(None, None, None, false, true, Some("test-project"), None, None, None, None).await.unwrap().items;
+    assert_eq!(notes_p.len(), 3, "test-project에 속한 노트가 3개여야 함");
+
+    // sprint_id 필터 조회
+    let notes_s = db.note_list(None, None, None, false, true, None, Some(sprint_id), None, None, None).await.unwrap().items;
+    assert_eq!(notes_s.len(), 2, "sprint에 속한 노트가 2개여야 함");
+    assert!(notes_s.iter().any(|n| n.id == n_issue.id));
+    assert!(notes_s.iter().any(|n| n.id == n_epic.id));
+
+    // project_key + sprint_id 필터 조합 교집합 조회
+    let notes_both = db.note_list(None, None, None, false, true, Some("test-project"), Some(sprint_id), None, None, None).await.unwrap().items;
+    assert_eq!(notes_both.len(), 2, "교집합 조회 결과 2개여야 함");
+
+    // 다른 project_key 필터 조회 -> 빈 결과여야 함
+    let notes_other = db.note_list(None, None, None, false, true, Some("other-project"), None, None, None, None).await.unwrap().items;
+    assert_eq!(notes_other.len(), 0);
+}
+
+#[tokio::test]
+async fn test_mission_list_derive_filtering() {
+    let db = setup().await;
+    let (sprint_id, epic_id, mission_id) = seed_sprint_epic(&db).await;
+
+    // 미션 1 (seed로 생성된 mission_id) 은 sprint-project-epic 과 연관되어 있음
+    // 미션 2 생성 (epic 및 sprint가 없음)
+    let m2 = db.mission_create(CreateMissionInput {
+        title: "unrelated mission".into(),
+        description: None,
+        jira_key: None,
+    }).await.unwrap();
+
+    // 1. project_key 필터 조회
+    let missions_p = db.mission_list(MissionFilter {
+        project_key: Some("test-project".into()),
+        ..Default::default()
+    }).await.unwrap();
+    assert_eq!(missions_p.len(), 1, "test-project에 속한 미션이 1개여야 함");
+    assert_eq!(missions_p[0].id, mission_id);
+
+    // 2. sprint_id 필터 조회
+    let missions_s = db.mission_list(MissionFilter {
+        sprint_id: Some(sprint_id),
+        ..Default::default()
+    }).await.unwrap();
+    assert_eq!(missions_s.len(), 1, "sprint_id에 속한 미션이 1개여야 함");
+    assert_eq!(missions_s[0].id, mission_id);
+
+    // 3. 교집합 필터 조회
+    let missions_both = db.mission_list(MissionFilter {
+        project_key: Some("test-project".into()),
+        sprint_id: Some(sprint_id),
+        ..Default::default()
+    }).await.unwrap();
+    assert_eq!(missions_both.len(), 1);
+
+    // 4. 하위 호환 조회 (필터 미지정 시 둘 다 active 이므로 2개여야 함)
+    let missions_all = db.mission_list(MissionFilter::default()).await.unwrap();
+    assert_eq!(missions_all.len(), 2, "필터 없을 시 active 미션 2개 전체 반환");
+}
+
+#[tokio::test]
+async fn test_list_pagination_and_compact() {
+    let db = setup().await;
+    let (sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    // 대용량 Mock 데이터 생성 (이슈 5개 생성)
+    for i in 1..=5 {
+        let title = format!("Issue {}", i);
+        let desc = "A".repeat(300); // 300자 description
+        let goal = "B".repeat(300); // 300자 goal
+        let issue = db.issue_create(CreateIssueInput {
+            epic_id,
+            title,
+            description: Some(desc),
+            goal: Some(goal),
+            priority: None,
+        }).await.unwrap();
+
+        // issue 1에 note 2개, task 3개 부착
+        if i == 1 {
+            db.task_create(CreateTaskInput {
+                issue_id: issue.id,
+                title: "Task 1".into(),
+                description: None,
+                goal: None,
+                after_task_id: None,
+                source: None,
+            }).await.unwrap();
+            db.task_create(CreateTaskInput {
+                issue_id: issue.id,
+                title: "Task 2".into(),
+                description: None,
+                goal: None,
+                after_task_id: None,
+                source: None,
+            }).await.unwrap();
+            db.task_create(CreateTaskInput {
+                issue_id: issue.id,
+                title: "Task 3".into(),
+                description: None,
+                goal: None,
+                after_task_id: None,
+                source: None,
+            }).await.unwrap();
+
+            db.note_add(CreateNoteInput {
+                issue_id: issue.id,
+                task_id: None,
+                note_type: NoteType::Caveat,
+                summary: "Caveat 1".into(),
+                detail: Some("Detail".into()),
+                author: None,
+                agent_id: None,
+                scope: None,
+                scope_target_id: None,
+                project_key: None,
+            }).await.unwrap();
+            db.note_add(CreateNoteInput {
+                issue_id: issue.id,
+                task_id: None,
+                note_type: NoteType::Decision,
+                summary: "Decision 1".into(),
+                detail: Some("Detail".into()),
+                author: None,
+                agent_id: None,
+                scope: None,
+                scope_target_id: None,
+                project_key: None,
+            }).await.unwrap();
+        }
+    }
+
+    // 1. issue_list 페이지네이션 검증 (limit=2, offset=1)
+    let res = db.issue_list(IssueFilter {
+        project_key: Some("test-project".into()),
+        limit: Some(2),
+        offset: Some(1),
+        ..Default::default()
+    }).await.unwrap();
+
+    assert_eq!(res.items.len(), 2, "limit 2 설정으로 2개만 반환");
+    assert_eq!(res.total, 5, "전체 개수는 5여야 함");
+    assert!(res.has_more, "offset 1 + items 2 < total 5 이므로 has_more=true");
+
+    // 2. issue_list compact 모드 검증
+    let res_compact = db.issue_list(IssueFilter {
+        project_key: Some("test-project".into()),
+        compact: Some(true),
+        limit: Some(10),
+        ..Default::default()
+    }).await.unwrap();
+
+    // 첫 번째 생성한 이슈(Issue 1) 찾기
+    let issue_1 = res_compact.items.iter().find(|i| i.title == "Issue 1").unwrap();
+    assert_eq!(issue_1.note_count, Some(2), "note_count=2 검증");
+    assert_eq!(issue_1.task_count, Some(3), "task_count=3 검증");
+    
+    // 장문 절단 검증 (SUBSTR 200자)
+    assert_eq!(issue_1.description.as_ref().unwrap().len(), 200, "description 200자 절단 검증");
+    assert_eq!(issue_1.goal.as_ref().unwrap().len(), 200, "goal 200자 절단 검증");
+
+    // 3. note_list 페이지네이션 및 compact 검증
+    // issue 1에 note 2건 생성됨
+    let notes_res = db.note_list(
+        Some(issue_1.id),
+        None,
+        None,
+        false,
+        false, // include_detail = false
+        None,
+        None,
+        Some(1),
+        Some(0),
+        Some(true), // compact = true
+    ).await.unwrap();
+
+    assert_eq!(notes_res.items.len(), 1, "limit 1로 1개 반환");
+    assert_eq!(notes_res.total, 2);
+    assert!(notes_res.has_more);
+
+    // 4. projection (필드 선택) 검증
+    let paginated_val = serde_json::to_value(&res_compact).unwrap();
+    let projected = engram_core::apply_projection(paginated_val, &vec!["id".into(), "title".into(), "status".into()]);
+    
+    let items_arr = projected.get("items").unwrap().as_array().unwrap();
+    for item in items_arr {
+        let obj: &serde_json::Map<String, serde_json::Value> = item.as_object().unwrap();
+        assert!(obj.contains_key("id"));
+        assert!(obj.contains_key("title"));
+        assert!(obj.contains_key("status"));
+        assert!(!obj.contains_key("description"));
+        assert!(!obj.contains_key("goal"));
+        assert!(!obj.contains_key("note_count"));
+    }
+}
+
 
 
 

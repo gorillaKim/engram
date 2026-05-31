@@ -40,7 +40,7 @@ impl Db {
 
     pub async fn mission_list(&self, filter: MissionFilter) -> Result<Vec<Mission>> {
         let mut sql = "SELECT id, jira_key, title, description, status, created_at, updated_at \
-                       FROM missions WHERE 1=1"
+                       FROM missions m WHERE 1=1"
             .to_string();
 
         if filter.status.is_some() {
@@ -48,12 +48,24 @@ impl Db {
         } else if !filter.include_completed {
             sql.push_str(" AND status = 'active'");
         }
+        if filter.project_key.is_some() {
+            sql.push_str(" AND EXISTS (SELECT 1 FROM epics WHERE mission_id = m.id AND project_key = ?)");
+        }
+        if filter.sprint_id.is_some() {
+            sql.push_str(" AND EXISTS (SELECT 1 FROM epics WHERE mission_id = m.id AND sprint_id = ?)");
+        }
         sql.push_str(" ORDER BY id DESC");
 
         let mut q = sqlx::query_as::<_, Mission>(&sql);
         if let Some(s) = filter.status {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
             q = q.bind(sv);
+        }
+        if let Some(ref pk) = filter.project_key {
+            q = q.bind(pk);
+        }
+        if let Some(sid) = filter.sprint_id {
+            q = q.bind(sid);
         }
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }

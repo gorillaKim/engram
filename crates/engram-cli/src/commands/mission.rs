@@ -32,6 +32,8 @@ pub enum MissionCommand {
     List {
         /// completed/cancelled 미션도 포함
         #[arg(long = "include-completed")] include_completed: bool,
+        #[arg(long = "project-key")] project_key: Option<String>,
+        #[arg(long = "sprint-id")] sprint_id: Option<i64>,
     },
     /// 미션 상세 조회
     Get {
@@ -67,10 +69,12 @@ pub async fn run(db: Db, args: MissionArgs, fmt: OutputFormat, agent_id: &str) -
             }).await?;
             output::print_value(&mission, fmt)?;
         }
-        MissionCommand::List { include_completed } => {
+        MissionCommand::List { include_completed, project_key, sprint_id } => {
             let missions = db.mission_list(MissionFilter {
                 status: None,
                 include_completed,
+                project_key,
+                sprint_id,
             }).await?;
             output::print_value(&missions, fmt)?;
         }
@@ -155,7 +159,7 @@ mod tests {
     fn test_parse_list_defaults() {
         let cmd = parse(&["list"]);
         match cmd {
-            MissionCommand::List { include_completed } => {
+            MissionCommand::List { include_completed, .. } => {
                 assert!(!include_completed);
             }
             _ => panic!("List 변형이 파싱되어야 함"),
@@ -166,7 +170,7 @@ mod tests {
     fn test_parse_list_include_completed() {
         let cmd = parse(&["list", "--include-completed"]);
         match cmd {
-            MissionCommand::List { include_completed } => {
+            MissionCommand::List { include_completed, .. } => {
                 assert!(include_completed);
             }
             _ => panic!("List 변형이 파싱되어야 함"),

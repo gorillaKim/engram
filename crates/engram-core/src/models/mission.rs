@@ -45,6 +45,8 @@ pub struct MissionFilter {
     /// false(기본): active만 반환. true: completed/cancelled도 포함
     #[serde(default)]
     pub include_completed: bool,
+    pub project_key: Option<String>,
+    pub sprint_id: Option<i64>,
 }
 
 /// epic 하나와 그에 속한 이슈 목록.

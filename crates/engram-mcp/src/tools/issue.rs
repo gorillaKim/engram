@@ -51,7 +51,11 @@ pub fn tool_definitions() -> Vec<Value> {
                             { "type": "array", "items": { "type": "string", "enum": IssueStatus::ALL } }
                         ]
                     },
-                    "backlog_only":{ "type": "boolean" }
+                    "backlog_only":{ "type": "boolean" },
+                    "limit":        { "type": "integer" },
+                    "offset":       { "type": "integer" },
+                    "compact":      { "type": "boolean" },
+                    "projection":   { "type": "array", "items": { "type": "string" } }
                 }
             }
         }),
@@ -249,8 +253,18 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         status,
         statuses,
         priority:     None,
+        compact:      args["compact"].as_bool(),
+        limit:        args["limit"].as_i64(),
+        offset:       args["offset"].as_i64(),
     };
-    Ok(serde_json::to_value(db.issue_list(filter).await?).unwrap())
+    let paginated = db.issue_list(filter).await?;
+
+    let mut val = serde_json::to_value(&paginated).unwrap();
+    if let Some(arr) = args["projection"].as_array() {
+        let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        val = engram_core::apply_projection(val, &fields);
+    }
+    Ok(val)
 }
 
 pub async fn stalled(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

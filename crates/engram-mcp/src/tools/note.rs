@@ -43,7 +43,13 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "task_id":  { "type": "integer" },
                     "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
                     "include_resolved": { "type": "boolean" },
-                    "include_detail": { "type": "boolean", "description": "detail 필드를 포함하여 조회할지 여부 (기본값 false)" }
+                    "include_detail": { "type": "boolean", "description": "detail 필드를 포함하여 조회할지 여부 (기본값 false)" },
+                    "project_key": { "type": "string", "description": "특정 프로젝트의 노트만 필터" },
+                    "sprint_id": { "type": "integer", "description": "특정 스프린트의 노트만 필터" },
+                    "limit":            { "type": "integer" },
+                    "offset":           { "type": "integer" },
+                    "compact":          { "type": "boolean" },
+                    "projection":       { "type": "array", "items": { "type": "string" } }
                 }
             }
         }),
@@ -140,7 +146,31 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let note_type = args["note_type"].as_str().and_then(parse_note_type);
     let include_resolved = args["include_resolved"].as_bool().unwrap_or(false);
     let include_detail = args["include_detail"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.note_list(issue_id, task_id, note_type, include_resolved, include_detail).await?).unwrap())
+    let project_key = args["project_key"].as_str();
+    let sprint_id = args["sprint_id"].as_i64();
+    let limit = args["limit"].as_i64();
+    let offset = args["offset"].as_i64();
+    let compact = args["compact"].as_bool();
+
+    let paginated = db.note_list(
+        issue_id,
+        task_id,
+        note_type,
+        include_resolved,
+        include_detail,
+        project_key,
+        sprint_id,
+        limit,
+        offset,
+        compact,
+    ).await?;
+
+    let mut val = serde_json::to_value(&paginated).unwrap();
+    if let Some(arr) = args["projection"].as_array() {
+        let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+        val = engram_core::apply_projection(val, &fields);
+    }
+    Ok(val)
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

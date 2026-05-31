@@ -68,6 +68,12 @@ pub enum NoteCommand {
         #[arg(long, value_name = "TYPE")] r#type: Option<String>,
         #[arg(long = "include-resolved")] include_resolved: bool,
         #[arg(long = "include-detail")] include_detail: bool,
+        #[arg(long = "project-key")] project_key: Option<String>,
+        #[arg(long = "sprint-id")] sprint_id: Option<i64>,
+        #[arg(long)] limit: Option<i64>,
+        #[arg(long)] offset: Option<i64>,
+        #[arg(long)] compact: bool,
+        #[arg(long, value_delimiter = ',')] projection: Option<Vec<String>>,
     },
     Resolve { id: i64 },
     /// 노트 상세 조회 (detail 포함)
@@ -97,12 +103,31 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
             }).await?;
             output::print_value(&note, fmt)?;
         }
-        NoteCommand::List { issue, task, r#type, include_resolved, include_detail } => {
+        NoteCommand::List {
+            issue, task, r#type, include_resolved, include_detail,
+            project_key, sprint_id, limit, offset, compact, projection,
+        } => {
             let nt = r#type.as_deref().map(parse_note_type_filter).transpose()?;
-            output::print_value(
-                &db.note_list(issue, task, nt, include_resolved, include_detail).await?,
-                fmt,
-            )?;
+            let paginated = db.note_list(
+                issue,
+                task,
+                nt,
+                include_resolved,
+                include_detail,
+                project_key.as_deref(),
+                sprint_id,
+                limit,
+                offset,
+                Some(compact),
+            ).await?;
+
+            if let Some(ref fields) = projection {
+                let val = serde_json::to_value(&paginated).unwrap();
+                let filtered = engram_core::apply_projection(val, fields);
+                output::print_value(&filtered, fmt)?;
+            } else {
+                output::print_value(&paginated, fmt)?;
+            }
         }
         NoteCommand::Resolve { id } => {
             db.note_resolve(id, global_agent_id).await?;

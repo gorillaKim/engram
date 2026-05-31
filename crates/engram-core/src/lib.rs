@@ -5,6 +5,8 @@ pub use repository::Db;
 pub use repository::retro::RetroReport;
 pub use repository::session::{SessionSnapshot, EpicSnapshot, IssueSnapshot, BoardStatus, ProjectBoard, BlockedChain, IssueBoardStatus, IssueProjectBoard};
 pub use repository::blocking::BlockingGraph;
+pub use models::PaginatedResponse;
+pub use models::apply_projection;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

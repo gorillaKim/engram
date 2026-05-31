@@ -199,7 +199,7 @@ async fn test_parity_note_list_and_get() {
     })).await.unwrap();
 
     let cli = normalize(serde_json::to_value(
-        db_a.note_list(Some(iid), None, None, false, false).await.unwrap()
+        db_a.note_list(Some(iid), None, None, false, false, None, None, None, None, None).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_list",
         &json!({"issue_id": iid_b})).await.unwrap());
@@ -360,7 +360,7 @@ async fn test_parity_link_unlink_roundtrip() {
         &json!({"project_key": "p"})).await.unwrap());
     // unlink 후 양쪽 모두 링크가 비어있어야 함 (issue_list 가 아닌 links_for 를 양쪽에서)
     assert_eq!(cli_links, json!([]), "unlink 후 CLI 링크 비어야 함");
-    assert!(mcp_links.is_array(), "issue_list 응답 형태 유지");
+    assert!(mcp_links["items"].is_array(), "issue_list 응답 형태 유지");
 }
 
 #[tokio::test]
