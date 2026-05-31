@@ -2307,6 +2307,531 @@ async fn test_list_pagination_and_compact() {
     }
 }
 
+/// ============================================================
+/// 이슈 #343: list 계열 필터·페이지네이션 토큰 한도 회귀 테스트
+/// ============================================================
 
 
+/// 25K 자 토큰 임계값 (session_restore 회귀 테스트와 동일 기준)
+const TOKEN_LIMIT_CHARS: usize = 25_000;
 
+/// note_list(project_key + sprint_id) derive 필터 정확성 검증
+#[tokio::test]
+async fn test_note_list_derive_filter_project_and_sprint() {
+    let db = setup().await;
+
+    // sprint/epic/issue/note 세팅
+    let sprint_a = db.sprint_create(CreateSprintInput {
+        name: "Sprint A".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let sprint_b = db.sprint_create(CreateSprintInput {
+        name: "Sprint B".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+
+    let mission = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+
+    let epic_a = db.epic_create(CreateEpicInput {
+        project_key: "proj-a".to_string(), mission_id: Some(mission.id),
+        sprint_id: Some(sprint_a.id), title: "Epic A".to_string(), description: None,
+    }).await.unwrap();
+    let epic_b = db.epic_create(CreateEpicInput {
+        project_key: "proj-b".to_string(), mission_id: Some(mission.id),
+        sprint_id: Some(sprint_b.id), title: "Epic B".to_string(), description: None,
+    }).await.unwrap();
+
+    let issue_a = db.issue_create(CreateIssueInput {
+        epic_id: epic_a.id, title: "Issue A".to_string(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    let issue_b = db.issue_create(CreateIssueInput {
+        epic_id: epic_b.id, title: "Issue B".to_string(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // 각 이슈에 노트 추가
+    db.note_add(CreateNoteInput {
+        issue_id: issue_a.id, task_id: None, note_type: NoteType::Decision,
+        summary: "note for proj-a sprint-a".to_string(), detail: None,
+        author: Some("agent".to_string()), agent_id: None, scope: None, scope_target_id: None, project_key: None,
+    }).await.unwrap();
+    db.note_add(CreateNoteInput {
+        issue_id: issue_b.id, task_id: None, note_type: NoteType::Decision,
+        summary: "note for proj-b sprint-b".to_string(), detail: None,
+        author: Some("agent".to_string()), agent_id: None, scope: None, scope_target_id: None, project_key: None,
+    }).await.unwrap();
+
+    // project_key 필터: proj-a 만 반환
+    let res = db.note_list(None, None, None, true, false, Some("proj-a"), None, None, None, None).await.unwrap();
+    assert_eq!(res.items.len(), 1);
+    assert_eq!(res.items[0].summary, "note for proj-a sprint-a");
+
+    // sprint_id 필터: sprint_b 만 반환
+    let res2 = db.note_list(None, None, None, true, false, None, Some(sprint_b.id), None, None, None).await.unwrap();
+    assert_eq!(res2.items.len(), 1);
+    assert_eq!(res2.items[0].summary, "note for proj-b sprint-b");
+
+    // 교집합 필터: proj-a + sprint_b → 0건
+    let res3 = db.note_list(None, None, None, true, false, Some("proj-a"), Some(sprint_b.id), None, None, None).await.unwrap();
+    assert_eq!(res3.items.len(), 0);
+}
+
+/// issue_list compact 모드 토큰 한도 회귀 검증 (25K 임계)
+#[tokio::test]
+async fn test_issue_list_compact_token_limit_regression() {
+    let db = setup().await;
+
+    let sprint = db.sprint_create(CreateSprintInput {
+        name: "Sprint".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let mission = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(), mission_id: Some(mission.id),
+        sprint_id: Some(sprint.id), title: "Epic".to_string(), description: None,
+    }).await.unwrap();
+
+    // 이슈 30개를 긴 description/goal 로 생성
+    let long_text = "a".repeat(2000);
+    for i in 0..30 {
+        db.issue_create(CreateIssueInput {
+            epic_id: epic.id,
+            title: format!("Issue {}", i),
+            description: Some(long_text.clone()),
+            goal: Some(long_text.clone()),
+            priority: None,
+        }).await.unwrap();
+    }
+
+    // compact + limit=50 로 조회 → 직렬화 크기 25K 이내
+    let res = db.issue_list(IssueFilter {
+        compact: Some(true),
+        limit: Some(50),
+        ..Default::default()
+    }).await.unwrap();
+
+    assert_eq!(res.total, 30);
+    assert!(!res.has_more, "30개 이슈 limit=50 이므로 has_more=false 기대");
+
+    // compact 응답 직렬화 크기 25K 이내 검증
+    let json_str = serde_json::to_string(&res).unwrap();
+    assert!(
+        json_str.len() < TOKEN_LIMIT_CHARS,
+        "compact 응답이 토큰 한도 {}자 초과: {}자",
+        TOKEN_LIMIT_CHARS,
+        json_str.len()
+    );
+
+    // compact 시 description 200자 절단 확인
+    for item in &res.items {
+        if let Some(ref desc) = item.description {
+            assert!(desc.len() <= 200, "compact 모드 description 200자 초과");
+        }
+        if let Some(ref goal) = item.goal {
+            assert!(goal.len() <= 200, "compact 모드 goal 200자 초과");
+        }
+    }
+}
+
+/// note_list compact 모드 토큰 한도 + detail 절단 검증
+#[tokio::test]
+async fn test_note_list_compact_token_limit_regression() {
+    let db = setup().await;
+
+    let sprint = db.sprint_create(CreateSprintInput {
+        name: "Sprint".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let mission = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(), mission_id: Some(mission.id),
+        sprint_id: Some(sprint.id), title: "Epic".to_string(), description: None,
+    }).await.unwrap();
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: epic.id, title: "Issue".to_string(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // 긴 detail 의 노트 30개 생성
+    let long_detail = "b".repeat(3000);
+    for i in 0..30 {
+        db.note_add(CreateNoteInput {
+            issue_id: issue.id, task_id: None, note_type: NoteType::Discovery,
+            summary: format!("summary {}", i),
+            detail: Some(long_detail.clone()),
+            author: Some("agent".to_string()), agent_id: None, scope: None, scope_target_id: None, project_key: None,
+        }).await.unwrap();
+    }
+
+    // compact=true, limit=50 로 조회
+    let res = db.note_list(
+        Some(issue.id), None, None, true, false, None, None,
+        Some(50), Some(0), Some(true),
+    ).await.unwrap();
+
+    assert_eq!(res.total, 30);
+
+    // compact 응답 직렬화 크기 25K 이내
+    let json_str = serde_json::to_string(&res).unwrap();
+    assert!(
+        json_str.len() < TOKEN_LIMIT_CHARS,
+        "note_list compact 응답 토큰 한도 {}자 초과: {}자",
+        TOKEN_LIMIT_CHARS,
+        json_str.len()
+    );
+
+    // compact 시 detail 200자 절단 확인
+    for note in &res.items {
+        if let Some(ref detail) = note.detail {
+            assert!(detail.len() <= 200, "compact 모드 note.detail 200자 초과");
+        }
+    }
+}
+
+/// issue_list 페이지네이션 메타(total/has_more) 정확성 검증
+#[tokio::test]
+async fn test_issue_list_pagination_meta_accuracy() {
+    let db = setup().await;
+
+    let sprint = db.sprint_create(CreateSprintInput {
+        name: "Sprint".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let mission = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(), mission_id: Some(mission.id),
+        sprint_id: Some(sprint.id), title: "Epic".to_string(), description: None,
+    }).await.unwrap();
+
+    for i in 0..7 {
+        db.issue_create(CreateIssueInput {
+            epic_id: epic.id,
+            title: format!("Issue {}", i),
+            description: None, goal: None, priority: None,
+        }).await.unwrap();
+    }
+
+    // 첫 페이지: limit=3
+    let p1 = db.issue_list(IssueFilter { limit: Some(3), offset: Some(0), ..Default::default() }).await.unwrap();
+    assert_eq!(p1.items.len(), 3);
+    assert_eq!(p1.total, 7);
+    assert!(p1.has_more);
+
+    // 두 번째 페이지: limit=3, offset=3
+    let p2 = db.issue_list(IssueFilter { limit: Some(3), offset: Some(3), ..Default::default() }).await.unwrap();
+    assert_eq!(p2.items.len(), 3);
+    assert_eq!(p2.total, 7);
+    assert!(p2.has_more);
+
+    // 마지막 페이지: limit=3, offset=6 → 1개만
+    let p3 = db.issue_list(IssueFilter { limit: Some(3), offset: Some(6), ..Default::default() }).await.unwrap();
+    assert_eq!(p3.items.len(), 1);
+    assert_eq!(p3.total, 7);
+    assert!(!p3.has_more);
+}
+
+/// history_recent 기본 limit=20 동작 검증
+#[tokio::test]
+async fn test_history_recent_default_limit_20() {
+    let db = setup().await;
+
+    // 미션/에픽/이슈를 만들고 이슈 상태를 반복 변경해 30건 이상의 history 생성
+    let mission = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(), mission_id: Some(mission.id),
+        sprint_id: None, title: "Epic".to_string(), description: None,
+    }).await.unwrap();
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: epic.id, title: "Issue".to_string(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // ready → working → demo → ready → working ... 순환으로 30회 history 생성
+    let transitions = [IssueStatus::Ready, IssueStatus::Working];
+    for t in transitions.iter().cycle().take(30) {
+        let _ = db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(t.clone()),
+            ..Default::default()
+        }, "agent").await;
+    }
+
+    // limit=20 명시 호출 → 최대 20건
+    let recent_20 = db.history_recent(20, None).await.unwrap();
+    assert!(recent_20.len() <= 20, "limit=20 명시 시 최대 20건");
+
+    // limit=5 명시 호출 → 최대 5건
+    let recent_5 = db.history_recent(5, None).await.unwrap();
+    assert!(recent_5.len() <= 5, "limit=5 명시 시 최대 5건");
+
+    // limit=30 호출 → 실제 생성된 건수(30+α)까지 반환
+    let recent_30 = db.history_recent(100, None).await.unwrap();
+    assert!(recent_30.len() >= 30, "history 최소 30건 이상 생성됐어야 함");
+}
+
+/// ============================================================
+/// 이슈 #344: demo gate 불변 보호 — user 외 주체의 finished/cancelled 거부
+/// ============================================================
+
+/// issue_update 를 통한 직접 finished 전이도 비 user agent_id 에서 거부됨을 검증
+#[tokio::test]
+async fn test_demo_gate_invariant_via_issue_update_various_agents() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "demo gate via issue_update".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    // ready → working → demo 까지 진행
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working), ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo), ..Default::default()
+    }, "agent").await.unwrap();
+
+    // 다양한 비 user agent_id 로 finished 전이 시도 → 전부 거부
+    for bad_agent in ["agent", "claude-opus@sess-abc", "main@0f22c068-issue1", "system"] {
+        let result = db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(IssueStatus::Finished),
+            ..Default::default()
+        }, bad_agent).await;
+        assert!(
+            result.is_err(),
+            "agent_id='{}' 로 finished 전이 시도가 허용되면 안 됨",
+            bad_agent
+        );
+    }
+
+    // user 만 허용
+    let ok = db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Finished),
+        ..Default::default()
+    }, "user").await;
+    assert!(ok.is_ok(), "user 는 finished 전이 가능해야 함");
+    assert_eq!(ok.unwrap().status, IssueStatus::Finished);
+}
+
+/// ============================================================
+/// 이슈 #346: 상태 전이 매트릭스 table-driven 테스트
+/// ============================================================
+
+/// 모든 (from, to, changed_by) 조합에 대해 허용/금지 기대값을 table-driven 으로 단언
+#[tokio::test]
+async fn test_status_transition_matrix_table_driven() {
+    use IssueStatus::*;
+
+    // (from_status, to_status, changed_by, should_succeed)
+    // * finished/cancelled 전이는 "user" 만 허용
+    // * 기타 전이는 모두 허용 (can_transition_to = true)
+    let cases: &[(IssueStatus, IssueStatus, &str, bool)] = &[
+        // 정상 흐름
+        (Required, Ready,     "agent", true),
+        (Ready,    Working,   "agent", true),
+        (Working,  Demo,      "agent", true),
+        // 역방향 (칸반 UX에서 허용)
+        (Working,  Ready,     "agent", true),
+        (Demo,     Working,   "agent", true),
+        // agent 가 finished/cancelled 직접 시도 → 거부
+        (Demo,     Finished,  "agent", false),
+        (Demo,     Cancelled, "agent", false),
+        (Working,  Finished,  "agent", false),
+        (Ready,    Cancelled, "agent", false),
+        (Required, Finished,  "agent", false),
+        // user 는 finished/cancelled 허용
+        (Demo,     Finished,  "user",  true),
+        (Working,  Cancelled, "user",  true),
+        (Ready,    Cancelled, "user",  true),
+    ];
+
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+
+    for (from, to, changed_by, should_succeed) in cases {
+        // 매 케이스마다 fresh 이슈 생성
+        let issue = db.issue_create(CreateIssueInput {
+            epic_id,
+            title: format!("{:?}→{:?} by {}", from, to, changed_by),
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+
+        // 이슈를 from 상태로 이동 (agent 로 진행, finished/cancelled 를 목적지로 사용하지 않음)
+        let intermediate_states: Vec<IssueStatus> = match from {
+            Required => vec![],
+            Ready    => vec![Required, Ready],
+            Working  => vec![Required, Ready, Working],
+            Demo     => vec![Required, Ready, Working, Demo],
+            Finished | Cancelled => vec![Required, Ready, Working, Demo],
+        };
+        for st in &intermediate_states {
+            let _ = db.issue_update(issue.id, UpdateIssueInput {
+                status: Some(st.clone()), ..Default::default()
+            }, "agent").await;
+        }
+
+        // 목표 전이 시도
+        let result = db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(to.clone()), ..Default::default()
+        }, changed_by).await;
+
+        if *should_succeed {
+            assert!(
+                result.is_ok(),
+                "({:?}→{:?} by {}) 허용되어야 하는데 실패: {:?}",
+                from, to, changed_by, result.err()
+            );
+        } else {
+            assert!(
+                result.is_err(),
+                "({:?}→{:?} by {}) 거부되어야 하는데 성공",
+                from, to, changed_by
+            );
+        }
+    }
+}
+
+/// ============================================================
+/// 이슈 #340: create 계열 create-then-read race 차단
+/// ============================================================
+
+/// mission_create 직후 즉시 조회가 성공함을 검증 (RETURNING 절 사용)
+#[tokio::test]
+async fn test_mission_create_then_read_immediate_success() {
+    let db = setup().await;
+    let m = db.mission_create(CreateMissionInput {
+        title: "Race Test Mission".to_string(),
+        description: Some("테스트".to_string()),
+        jira_key: Some("RACE-1".to_string()),
+    }).await.unwrap();
+
+    // 생성 직후 즉시 조회 — WAL 가시성 문제 없어야 함
+    let fetched = db.mission_get(m.id).await.unwrap();
+    assert_eq!(fetched.id, m.id);
+    assert_eq!(fetched.title, "Race Test Mission");
+    assert_eq!(fetched.jira_key.as_deref(), Some("RACE-1"));
+}
+
+/// epic_create 직후 즉시 조회가 성공함을 검증
+#[tokio::test]
+async fn test_epic_create_then_read_immediate_success() {
+    let db = setup().await;
+    let m = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(),
+        mission_id: Some(m.id),
+        sprint_id: None,
+        title: "Race Test Epic".to_string(),
+        description: None,
+    }).await.unwrap();
+
+    let fetched = db.epic_get(epic.id).await.unwrap();
+    assert_eq!(fetched.id, epic.id);
+    assert_eq!(fetched.title, "Race Test Epic");
+    assert_eq!(fetched.project_key, "proj");
+}
+
+/// issue_create 직후 즉시 조회가 성공하고 mission_id/sprint_id 가 derive 됨
+#[tokio::test]
+async fn test_issue_create_then_read_immediate_success() {
+    let db = setup().await;
+    let sprint = db.sprint_create(CreateSprintInput {
+        name: "S".to_string(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    let m = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(),
+        mission_id: Some(m.id),
+        sprint_id: Some(sprint.id),
+        title: "Epic".to_string(),
+        description: None,
+    }).await.unwrap();
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: epic.id,
+        title: "Race Test Issue".to_string(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    // 생성 직후 즉시 조회 — RETURNING 으로 파생 필드까지 포함
+    let fetched = db.issue_get(issue.id, false).await.unwrap();
+    assert_eq!(fetched.id, issue.id);
+    assert_eq!(fetched.mission_id, Some(m.id), "mission_id 가 derive 되어야 함");
+    assert_eq!(fetched.sprint_id, Some(sprint.id), "sprint_id 가 derive 되어야 함");
+}
+
+/// task_create 직후 즉시 조회가 성공함을 검증
+#[tokio::test]
+async fn test_task_create_then_read_immediate_success() {
+    let db = setup().await;
+    let m = db.mission_create(CreateMissionInput {
+        title: "M".to_string(), description: None, jira_key: None,
+    }).await.unwrap();
+    let epic = db.epic_create(CreateEpicInput {
+        project_key: "proj".to_string(),
+        mission_id: Some(m.id),
+        sprint_id: None,
+        title: "Epic".to_string(),
+        description: None,
+    }).await.unwrap();
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: epic.id, title: "Issue".to_string(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let task = db.task_create(CreateTaskInput {
+        issue_id: issue.id,
+        title: "Race Test Task".to_string(),
+        description: None,
+        goal: None,
+        after_task_id: None,
+        source: None,
+    }).await.unwrap();
+
+    let fetched = db.task_get(task.id).await.unwrap();
+    assert_eq!(fetched.id, task.id);
+    assert_eq!(fetched.title, "Race Test Task");
+    assert_eq!(fetched.issue_id, issue.id);
+}
+
+/// 동일 jira_key 로 연속 mission_create 시 중복 생성이 아닌 에러 반환 (중복 0건)
+#[tokio::test]
+async fn test_create_duplicate_jira_key_rejected_not_duplicated() {
+    let db = setup().await;
+
+    db.mission_create(CreateMissionInput {
+        title: "M1".to_string(),
+        description: None,
+        jira_key: Some("PROJ-UNIQUE".to_string()),
+    }).await.unwrap();
+
+    // 동일 jira_key 로 재시도 → 에러
+    let result = db.mission_create(CreateMissionInput {
+        title: "M2".to_string(),
+        description: None,
+        jira_key: Some("PROJ-UNIQUE".to_string()),
+    }).await;
+    assert!(result.is_err(), "중복 jira_key 는 에러여야 함");
+
+    // DB 에 실제 1건만 존재하는지 확인
+    let list = db.mission_list(MissionFilter { include_completed: true, ..Default::default() }).await.unwrap();
+    assert_eq!(list.len(), 1, "중복 생성 없이 1건만 존재해야 함");
+}
