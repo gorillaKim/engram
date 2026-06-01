@@ -185,6 +185,248 @@ fn truncate_opt_string(s: Option<String>, max_len: usize) -> Option<String> {
 }
 
 impl Db {
+    async fn fetch_compact_issue_snapshots(
+        &self,
+        active_issue_list: &[&crate::models::issue::Issue],
+    ) -> Result<Vec<IssueSnapshotCompact>> {
+        if active_issue_list.is_empty() {
+            return Ok(Vec::new());
+        }
+        let issue_ids: Vec<i64> = active_issue_list.iter().map(|i| i.id).collect();
+
+        // bulk task count
+        let placeholders = issue_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let task_sql = format!(
+            "SELECT issue_id, COUNT(*) as cnt FROM tasks WHERE issue_id IN ({}) GROUP BY issue_id",
+            placeholders
+        );
+        #[derive(sqlx::FromRow)]
+        struct CountRow { issue_id: i64, cnt: i64 }
+        let mut tq = sqlx::query_as::<_, CountRow>(&task_sql);
+        for id in &issue_ids { tq = tq.bind(id); }
+        let task_counts: std::collections::HashMap<i64, i64> = tq
+            .fetch_all(&self.pool).await.unwrap_or_default()
+            .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
+
+        // bulk note count
+        let note_sql = format!(
+            "SELECT issue_id, COUNT(*) as cnt FROM notes WHERE issue_id IN ({}) AND resolved = 0 GROUP BY issue_id",
+            placeholders
+        );
+        let mut nq = sqlx::query_as::<_, CountRow>(&note_sql);
+        for id in &issue_ids { nq = nq.bind(id); }
+        let note_counts: std::collections::HashMap<i64, i64> = nq
+            .fetch_all(&self.pool).await.unwrap_or_default()
+            .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
+
+        // bulk blocked_by: issue_links WHERE target_id IN (...)
+        let links_sql = format!(
+            "SELECT target_id, source_id FROM issue_links WHERE link_type = 'blocks' AND target_id IN ({})",
+            placeholders
+        );
+        #[derive(sqlx::FromRow)]
+        struct LinkRow { target_id: i64, source_id: i64 }
+        let mut lq = sqlx::query_as::<_, LinkRow>(&links_sql);
+        for id in &issue_ids { lq = lq.bind(id); }
+        let link_rows = lq.fetch_all(&self.pool).await.unwrap_or_default();
+        let mut blocked_by_map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
+        for lr in link_rows {
+            blocked_by_map.entry(lr.target_id).or_default().push(lr.source_id);
+        }
+
+        Ok(active_issue_list.iter().map(|issue| {
+            let mut issue_cloned = (**issue).clone();
+            issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
+            issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
+            IssueSnapshotCompact {
+                issue: issue_cloned,
+                task_count: *task_counts.get(&issue.id).unwrap_or(&0),
+                note_count: *note_counts.get(&issue.id).unwrap_or(&0),
+                blocked_by_ids: blocked_by_map.remove(&issue.id).unwrap_or_default(),
+            }
+        }).collect())
+    }
+
+    async fn fetch_full_issue_snapshots(
+        &self,
+        active_issue_list: &[&crate::models::issue::Issue],
+        is_unrelated: bool,
+    ) -> Result<Vec<IssueSnapshot>> {
+        let mut full_snaps = Vec::new();
+        for issue in active_issue_list {
+            let mut issue_cloned = (**issue).clone();
+            if is_unrelated {
+                issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
+                issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
+            }
+            let active_notes = self.note_summaries(issue_cloned.id, false).await?;
+            let tasks = self.task_list(issue_cloned.id, None).await?;
+            let current_task = tasks.into_iter()
+                .find(|t| t.status == crate::models::task::TaskStatus::Ready);
+            let blocked_by = self.issue_blocked_by(issue_cloned.id).await?
+                .into_iter().map(|l| l.source_id).collect();
+            full_snaps.push(IssueSnapshot {
+                issue: issue_cloned,
+                active_notes,
+                current_task,
+                blocked_by,
+            });
+        }
+        Ok(full_snaps)
+    }
+
+    async fn check_scope_expansion(
+        &self,
+        active_epics: &[EpicSnapshot],
+        warnings: &mut Vec<String>,
+    ) -> Result<Vec<i64>> {
+        for epic_snap in active_epics {
+            let full_iter = epic_snap.active_issues.iter()
+                .map(|s| (s.issue.id, s.issue.title.as_str()));
+            let compact_iter = epic_snap.active_issues_compact.as_deref().unwrap_or(&[]).iter()
+                .map(|s| (s.issue.id, s.issue.title.as_str()));
+
+            for (issue_id, issue_title) in full_iter.chain(compact_iter) {
+                let total: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ?",
+                )
+                .bind(issue_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+
+                if total == 0 { continue; }
+
+                let discovered: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ? AND source = 'agent_discovered'",
+                )
+                .bind(issue_id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap_or(0);
+
+                let rate = discovered * 100 / total;
+                if rate > 50 {
+                    warnings.push(format!(
+                        "스코프 팽창 감지: 이슈 #{} '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
+                        issue_id, issue_title, rate, discovered, total
+                    ));
+                }
+            }
+        }
+
+        let scope_expansion_ids: Vec<i64> = warnings.iter()
+            .filter(|w| w.contains("스코프 팽창 감지"))
+            .filter_map(|w| {
+                w.split_once("이슈 #").and_then(|(_, rest)| {
+                    rest.split_once(|c: char| !c.is_ascii_digit())
+                        .and_then(|(id_str, _)| id_str.parse::<i64>().ok())
+                        .or_else(|| rest.parse::<i64>().ok())
+                })
+            })
+            .collect();
+
+        Ok(scope_expansion_ids)
+    }
+
+    async fn fetch_active_workers(
+        &self,
+        sprint_id: i64,
+        project_key: Option<&str>,
+    ) -> Result<Vec<ActiveWorker>> {
+        let mut workers_sql = String::from(
+            "SELECT i.id AS issue_id, i.title AS issue_title, \
+                    i.assigned_agent AS agent_id, e.project_key AS project_key, \
+                    i.updated_at AS since \
+             FROM issues i \
+             JOIN epics e ON e.id = i.epic_id \
+             WHERE i.status='working' AND i.assigned_agent IS NOT NULL \
+               AND e.sprint_id = ?",
+        );
+        if project_key.is_some() {
+            workers_sql.push_str(" AND e.project_key = ?");
+        }
+        workers_sql.push_str(" ORDER BY i.updated_at ASC");
+
+        let mut wq = sqlx::query_as::<_, ActiveWorker>(&workers_sql).bind(sprint_id);
+        if let Some(pk) = project_key { wq = wq.bind(pk); }
+        wq.fetch_all(&self.pool).await.map_err(Into::into)
+    }
+
+    async fn fetch_active_caveats(
+        &self,
+        sprint_id: i64,
+        active_epic_ids: &[i64],
+        project_key: Option<&str>,
+    ) -> Result<Vec<Note>> {
+        let placeholders = if active_epic_ids.is_empty() {
+            "NULL".to_string()
+        } else {
+            active_epic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        };
+        let mut sql = String::from(
+            "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at \
+             FROM notes WHERE resolved = 0 AND ("
+        );
+        sql.push_str("(scope = 'sprint' AND scope_target_id = ?)");
+        sql.push_str(&format!(" OR (scope = 'epic' AND scope_target_id IN ({}))", placeholders));
+        if project_key.is_some() {
+            sql.push_str(" OR (scope = 'project' AND project_key = ?)");
+        }
+        sql.push_str(") ORDER BY created_at DESC");
+
+        let mut cq = sqlx::query_as::<_, Note>(&sql).bind(sprint_id);
+        for eid in active_epic_ids { cq = cq.bind(eid); }
+        if let Some(pk) = project_key { cq = cq.bind(pk); }
+        cq.fetch_all(&self.pool).await.map_err(Into::into)
+    }
+
+    async fn fetch_active_missions_summary(
+        &self,
+        project_key: Option<&str>,
+    ) -> Result<Vec<MissionSummary>> {
+        #[derive(sqlx::FromRow)]
+        struct MissionSummaryRaw {
+            id: i64,
+            title: String,
+            status: crate::models::MissionStatus,
+            progress_rate: Option<f64>,
+            epic_count: i64,
+        }
+
+        let mut msql = String::from(
+            "SELECT \
+                m.id, m.title, m.status, \
+                COUNT(DISTINCT e.id) as epic_count, \
+                CAST( \
+                    COUNT(CASE WHEN i.status = 'finished' THEN 1 END) AS REAL \
+                ) / NULLIF(COUNT(i.id), 0) as progress_rate \
+             FROM missions m \
+             LEFT JOIN epics e ON e.mission_id = m.id \
+             LEFT JOIN issues i ON i.epic_id = e.id \
+             WHERE m.status = 'active'",
+        );
+        if project_key.is_some() {
+            msql.push_str(" AND EXISTS ( \
+                SELECT 1 FROM epics ep \
+                WHERE ep.mission_id = m.id AND ep.project_key = ? \
+            )");
+        }
+        msql.push_str(" GROUP BY m.id ORDER BY m.id");
+
+        let mut mq = sqlx::query_as::<_, MissionSummaryRaw>(&msql);
+        if let Some(pk) = project_key { mq = mq.bind(pk); }
+        let rows = mq.fetch_all(&self.pool).await?;
+
+        Ok(rows.into_iter().map(|r| MissionSummary {
+            id: r.id,
+            title: r.title,
+            status: r.status,
+            progress_rate: r.progress_rate.unwrap_or(0.0),
+            epic_count: r.epic_count,
+        }).collect())
+    }
+
     /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회.
     /// `compact=true` 이면 per-issue notes/tasks fetch 를 COUNT 쿼리로 대체해 페이로드를 70%+ 줄인다.
     pub async fn session_restore(
@@ -270,88 +512,9 @@ impl Db {
             }
 
             let (full_issues, compact_issues) = if compact {
-                // compact 모드: COUNT 쿼리로 N+1 제거
-                let compact_snaps = if active_issue_list.is_empty() {
-                    Vec::new()
-                } else {
-                    let issue_ids: Vec<i64> = active_issue_list.iter().map(|i| i.id).collect();
-
-                    // bulk task count
-                    let placeholders = issue_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-                    let task_sql = format!(
-                        "SELECT issue_id, COUNT(*) as cnt FROM tasks WHERE issue_id IN ({}) GROUP BY issue_id",
-                        placeholders
-                    );
-                    #[derive(sqlx::FromRow)]
-                    struct CountRow { issue_id: i64, cnt: i64 }
-                    let mut tq = sqlx::query_as::<_, CountRow>(&task_sql);
-                    for id in &issue_ids { tq = tq.bind(id); }
-                    let task_counts: std::collections::HashMap<i64, i64> = tq
-                        .fetch_all(&self.pool).await.unwrap_or_default()
-                        .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
-
-                    // bulk note count
-                    let note_sql = format!(
-                        "SELECT issue_id, COUNT(*) as cnt FROM notes WHERE issue_id IN ({}) AND resolved = 0 GROUP BY issue_id",
-                        placeholders
-                    );
-                    let mut nq = sqlx::query_as::<_, CountRow>(&note_sql);
-                    for id in &issue_ids { nq = nq.bind(id); }
-                    let note_counts: std::collections::HashMap<i64, i64> = nq
-                        .fetch_all(&self.pool).await.unwrap_or_default()
-                        .into_iter().map(|r| (r.issue_id, r.cnt)).collect();
-
-                    // bulk blocked_by: issue_links WHERE target_id IN (...)
-                    let links_sql = format!(
-                        "SELECT target_id, source_id FROM issue_links WHERE link_type = 'blocks' AND target_id IN ({})",
-                        placeholders
-                    );
-                    #[derive(sqlx::FromRow)]
-                    struct LinkRow { target_id: i64, source_id: i64 }
-                    let mut lq = sqlx::query_as::<_, LinkRow>(&links_sql);
-                    for id in &issue_ids { lq = lq.bind(id); }
-                    let link_rows = lq.fetch_all(&self.pool).await.unwrap_or_default();
-                    let mut blocked_by_map: std::collections::HashMap<i64, Vec<i64>> = std::collections::HashMap::new();
-                    for lr in link_rows {
-                        blocked_by_map.entry(lr.target_id).or_default().push(lr.source_id);
-                    }
-
-                    active_issue_list.iter().map(|issue| {
-                        let mut issue_cloned = (*issue).clone();
-                        issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
-                        issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
-                        IssueSnapshotCompact {
-                            issue: issue_cloned,
-                            task_count: *task_counts.get(&issue.id).unwrap_or(&0),
-                            note_count: *note_counts.get(&issue.id).unwrap_or(&0),
-                            blocked_by_ids: blocked_by_map.remove(&issue.id).unwrap_or_default(),
-                        }
-                    }).collect()
-                };
-                (Vec::new(), Some(compact_snaps))
+                (Vec::new(), Some(self.fetch_compact_issue_snapshots(&active_issue_list).await?))
             } else {
-                // full 모드: 기존 N+1 per-issue fetch
-                let mut full_snaps = Vec::new();
-                for issue in active_issue_list {
-                    let mut issue_cloned = issue.clone();
-                    if is_unrelated {
-                        issue_cloned.description = truncate_opt_string(issue_cloned.description, 200);
-                        issue_cloned.goal = truncate_opt_string(issue_cloned.goal, 200);
-                    }
-                    let active_notes = self.note_summaries(issue_cloned.id, false).await?;
-                    let tasks = self.task_list(issue_cloned.id, None).await?;
-                    let current_task = tasks.into_iter()
-                        .find(|t| t.status == crate::models::task::TaskStatus::Ready);
-                    let blocked_by = self.issue_blocked_by(issue_cloned.id).await?
-                        .into_iter().map(|l| l.source_id).collect();
-                    full_snaps.push(IssueSnapshot {
-                        issue: issue_cloned,
-                        active_notes,
-                        current_task,
-                        blocked_by,
-                    });
-                }
-                (full_snaps, None)
+                (self.fetch_full_issue_snapshots(&active_issue_list, is_unrelated).await?, None)
             };
 
             active_epics.push(EpicSnapshot {
@@ -372,145 +535,14 @@ impl Db {
             ));
         }
 
-        // 스코프 팽창 감지: agent_discovered 태스크 비율 > 50% 이슈
-        // compact / full 모드 모두 동일하게 처리: issue id + title 만 필요
-        for epic_snap in &active_epics {
-            // full 모드: active_issues 순회
-            let full_iter = epic_snap.active_issues.iter()
-                .map(|s| (s.issue.id, s.issue.title.as_str()));
-            // compact 모드: active_issues_compact 순회
-            let compact_iter = epic_snap.active_issues_compact.as_deref().unwrap_or(&[]).iter()
-                .map(|s| (s.issue.id, s.issue.title.as_str()));
+        let scope_expansion_ids = self.check_scope_expansion(&active_epics, &mut warnings).await?;
 
-            for (issue_id, issue_title) in full_iter.chain(compact_iter) {
-                let total: i64 = sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ?",
-                )
-                .bind(issue_id)
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(0);
+        let active_workers = self.fetch_active_workers(sprint.id, project_key).await?;
 
-                if total == 0 { continue; }
-
-                let discovered: i64 = sqlx::query_scalar(
-                    "SELECT COUNT(*) FROM tasks WHERE issue_id = ? AND source = 'agent_discovered'",
-                )
-                .bind(issue_id)
-                .fetch_one(&self.pool)
-                .await
-                .unwrap_or(0);
-
-                let rate = discovered * 100 / total;
-                if rate > 50 {
-                    warnings.push(format!(
-                        "스코프 팽창 감지: 이슈 #{} '{}' 태스크의 {}%가 agent_discovered ({}/{}건)",
-                        issue_id, issue_title, rate, discovered, total
-                    ));
-                }
-            }
-        }
-
-        // Collect scope expansion IDs alongside warning strings
-        let scope_expansion_ids: Vec<i64> = warnings.iter()
-            .filter(|w| w.contains("스코프 팽창 감지"))
-            .filter_map(|w| {
-                w.split_once("이슈 #").and_then(|(_, rest)| {
-                    rest.split_once(|c: char| !c.is_ascii_digit())
-                        .and_then(|(id_str, _)| id_str.parse::<i64>().ok())
-                        .or_else(|| rest.parse::<i64>().ok())
-                })
-            })
-            .collect();
-
-        // 현재 working 상태에서 점유 중인 에이전트 조회
-        let mut workers_sql = String::from(
-            "SELECT i.id AS issue_id, i.title AS issue_title, \
-                    i.assigned_agent AS agent_id, e.project_key AS project_key, \
-                    i.updated_at AS since \
-             FROM issues i \
-             JOIN epics e ON e.id = i.epic_id \
-             WHERE i.status='working' AND i.assigned_agent IS NOT NULL \
-               AND e.sprint_id = ?",
-        );
-        if project_key.is_some() {
-            workers_sql.push_str(" AND e.project_key = ?");
-        }
-        workers_sql.push_str(" ORDER BY i.updated_at ASC");
-
-        let mut wq = sqlx::query_as::<_, ActiveWorker>(&workers_sql).bind(sprint.id);
-        if let Some(pk) = project_key { wq = wq.bind(pk); }
-        let active_workers = wq.fetch_all(&self.pool).await.unwrap_or_default();
-
-        // Broadcast scope caveat 조회 — project / 활성 sprint / 활성 epic 의 unresolved 노트.
-        // 어떤 이슈로 session_restore 를 호출해도 같은 광역 공지가 노출된다.
         let active_epic_ids: Vec<i64> = active_epics.iter().map(|e| e.epic.id).collect();
-        let active_caveats: Vec<Note> = {
-            let placeholders = if active_epic_ids.is_empty() {
-                "NULL".to_string()
-            } else {
-                active_epic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
-            };
-            let mut sql = String::from(
-                "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at \
-                 FROM notes WHERE resolved = 0 AND ("
-            );
-            sql.push_str("(scope = 'sprint' AND scope_target_id = ?)");
-            sql.push_str(&format!(" OR (scope = 'epic' AND scope_target_id IN ({}))", placeholders));
-            if project_key.is_some() {
-                sql.push_str(" OR (scope = 'project' AND project_key = ?)");
-            }
-            sql.push_str(") ORDER BY created_at DESC");
+        let active_caveats = self.fetch_active_caveats(sprint.id, &active_epic_ids, project_key).await?;
 
-            let mut cq = sqlx::query_as::<_, Note>(&sql).bind(sprint.id);
-            for eid in &active_epic_ids { cq = cq.bind(eid); }
-            if let Some(pk) = project_key { cq = cq.bind(pk); }
-            cq.fetch_all(&self.pool).await.unwrap_or_default()
-        };
-
-        // active 미션 목록 조회 — project_key 있으면 해당 프로젝트 에픽을 가진 미션만 포함
-        let active_missions: Vec<MissionSummary> = {
-            #[derive(sqlx::FromRow)]
-            struct MissionSummaryRaw {
-                id: i64,
-                title: String,
-                status: crate::models::MissionStatus,
-                progress_rate: Option<f64>,
-                epic_count: i64,
-            }
-
-            let mut msql = String::from(
-                "SELECT \
-                    m.id, m.title, m.status, \
-                    COUNT(DISTINCT e.id) as epic_count, \
-                    CAST( \
-                        COUNT(CASE WHEN i.status = 'finished' THEN 1 END) AS REAL \
-                    ) / NULLIF(COUNT(i.id), 0) as progress_rate \
-                 FROM missions m \
-                 LEFT JOIN epics e ON e.mission_id = m.id \
-                 LEFT JOIN issues i ON i.epic_id = e.id \
-                 WHERE m.status = 'active'",
-            );
-            if project_key.is_some() {
-                msql.push_str(" AND EXISTS ( \
-                    SELECT 1 FROM epics ep \
-                    WHERE ep.mission_id = m.id AND ep.project_key = ? \
-                )");
-            }
-            msql.push_str(" GROUP BY m.id ORDER BY m.id");
-
-            let mut mq = sqlx::query_as::<_, MissionSummaryRaw>(&msql);
-            if let Some(pk) = project_key { mq = mq.bind(pk); }
-            let rows = mq.fetch_all(&self.pool).await.unwrap_or_default();
-
-            rows.into_iter().map(|r| MissionSummary {
-                id: r.id,
-                title: r.title,
-                status: r.status,
-                progress_rate: r.progress_rate.unwrap_or(0.0),
-                epic_count: r.epic_count,
-            }).collect()
-        };
+        let active_missions = self.fetch_active_missions_summary(project_key).await?;
 
         let stalled_working = self.stalled_working_issues(project_key, stall_minutes).await.unwrap_or_default();
 
@@ -533,7 +565,7 @@ impl Db {
         };
 
         let limit = size_limit.unwrap_or(25000);
-        let mut serialized = serde_json::to_string(&snapshot).unwrap();
+        let serialized = serde_json::to_string(&snapshot).unwrap();
 
         if serialized.chars().count() > limit {
             snapshot.truncated = true;
