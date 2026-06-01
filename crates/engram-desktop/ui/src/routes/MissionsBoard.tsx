@@ -3,281 +3,26 @@ import {
   ReactFlow,
   Background,
   Controls,
-  Handle,
-  type Edge,
-  type Node,
-  type NodeProps,
-  Position,
   useEdgesState,
   useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { Mission, MissionTree, EpicWithIssues, Issue, Epic, Sprint } from '../ipc/types';
+import type { Mission, MissionTree, Epic, Sprint } from '../ipc/types';
 import { missionList, missionGetTree, sprintCurrent, sprintList, epicList } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
 import { EditEpicModal } from '../components/EditEpicModal';
 import { StatusBadge } from '../components/StatusBadge';
-
-
-// ── Custom node data types (must extend Record<string, unknown> for @xyflow/react) ──
-
-type MissionNodeData = {
-  label: string;
-  progress_rate: number;
-  status: string;
-  missionData: Mission;
-  onDoubleClickMission: (mission: Mission) => void;
-  [key: string]: unknown;
-};
-
-type EpicNodeData = {
-  label: string;
-  status: string;
-  project_key: string;
-  epicData: Epic;
-  sprints: Sprint[];
-  onDoubleClickEpic: (epic: Epic) => void;
-  [key: string]: unknown;
-};
-
-type IssueNodeData = {
-  label: string;
-  status: string;
-  priority: string;
-  issueId: number;
-  onDoubleClickIssue: (issueId: number) => void;
-  [key: string]: unknown;
-};
-
-// ── Custom node types ─────────────────────────────────────────────────────────
-
-type MissionFlowNode = Node<MissionNodeData, 'mission'>;
-type EpicFlowNode = Node<EpicNodeData, 'epic'>;
-type IssueFlowNode = Node<IssueNodeData, 'issue'>;
-
-function MissionNodeComponent({ data }: NodeProps<MissionFlowNode>) {
-  return (
-    <div
-      className="relative w-52 rounded-xl border-2 border-indigo-400 bg-white shadow-lg p-3 flex flex-col gap-2 cursor-pointer hover:border-indigo-600 hover:shadow-xl transition-all"
-      onDoubleClick={() => data.onDoubleClickMission(data.missionData)}
-      title="더블클릭으로 수정"
-    >
-      <Handle type="source" position={Position.Right} style={{ background: '#a78bfa', border: 'none' }} />
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Mission</span>
-        <StatusBadge status={data.status} />
-      </div>
-      <p className="text-sm font-semibold text-slate-800 leading-tight line-clamp-2">
-        {data.label}
-      </p>
-
-      <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
-        <div className="flex justify-between text-[10px] text-slate-500">
-          <span>진행률</span>
-          <span className="font-mono font-semibold text-indigo-600">{data.progress_rate}%</span>
-        </div>
-        <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-          <div
-            className="h-full rounded-full bg-indigo-500 transition-all duration-300"
-            style={{ width: `${data.progress_rate}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EpicNodeComponent({ data }: NodeProps<EpicFlowNode>) {
-  const epic = data.epicData;
-  const sprints = (data.sprints as Sprint[]) ?? [];
-  const sprintName = epic.sprint_id
-    ? (sprints.find((s) => s.id === epic.sprint_id)?.name ?? `Sprint #${epic.sprint_id}`)
-    : '백로그';
-
-  return (
-    <div
-      className="relative w-44 rounded-lg border border-violet-300 bg-violet-50 shadow p-2.5 flex flex-col gap-1.5 cursor-pointer hover:border-violet-500 hover:shadow-md transition-all"
-      onDoubleClick={() => data.onDoubleClickEpic(data.epicData)}
-      title="더블클릭으로 수정"
-    >
-      <Handle type="target" position={Position.Left} style={{ background: '#a78bfa', border: 'none' }} />
-      <Handle type="source" position={Position.Right} style={{ background: '#c4b5fd', border: 'none' }} />
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">Epic</span>
-        <StatusBadge status={data.status} />
-      </div>
-      <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">
-        {data.label}
-      </p>
-      <div className="flex items-center justify-between gap-2 mt-1">
-        <span className="text-[10px] text-slate-400 font-mono">{data.project_key}</span>
-        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium ${epic.sprint_id ? 'bg-indigo-100 text-indigo-700 border border-indigo-200/30' : 'bg-slate-200 text-slate-600'}`}>
-          {sprintName}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-const PRIORITY_DOT: Record<string, string> = {
-  critical: 'bg-red-500',
-  high: 'bg-orange-400',
-  medium: 'bg-yellow-400',
-  low: 'bg-slate-300',
-};
-
-function IssueNodeComponent({ data }: NodeProps<IssueFlowNode>) {
-  const dot = PRIORITY_DOT[data.priority] ?? 'bg-slate-300';
-  return (
-    <div
-      className="relative w-36 rounded-md border border-slate-200 bg-white shadow-sm p-2 flex flex-col gap-1 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all"
-      onDoubleClick={() => data.onDoubleClickIssue(data.issueId)}
-      title="더블클릭으로 상세 보기"
-    >
-      <Handle type="target" position={Position.Left} style={{ background: '#c4b5fd', border: 'none' }} />
-      <div className="flex items-center gap-1.5">
-        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-        <StatusBadge status={data.status} />
-      </div>
-      <p className="text-[11px] font-medium text-slate-700 leading-tight line-clamp-2">
-        {data.label}
-      </p>
-    </div>
-  );
-}
+import { MissionNode } from '../components/flow/MissionNode';
+import { EpicNode } from '../components/flow/EpicNode';
+import { IssueNode } from '../components/flow/IssueNode';
+import { buildGraph } from '../utils/graph';
 
 const NODE_TYPES = {
-  mission: MissionNodeComponent,
-  epic: EpicNodeComponent,
-  issue: IssueNodeComponent,
+  mission: MissionNode,
+  epic: EpicNode,
+  issue: IssueNode,
 };
-
-// ── Layout builder ────────────────────────────────────────────────────────────
-
-const COL_GAP = 240;
-const ISSUE_H = 64;    // approximate issue card height
-const ISSUE_GAP = 8;   // vertical gap between issue nodes
-const EPIC_H = 80;     // approximate epic card height
-const EPIC_GAP = 20;   // vertical gap between epic groups
-const MISSION_H = 110; // approximate mission card height
-
-function buildGraph(
-  tree: MissionTree,
-  sprints: Sprint[],
-  onDoubleClickIssue: (issueId: number) => void,
-  onDoubleClickEpic: (epic: Epic) => void,
-  onDoubleClickMission: (mission: Mission) => void,
-): {
-  nodes: Node[];
-  edges: Edge[];
-} {
-  const nodes: Node[] = [];
-  const edges: Edge[] = [];
-
-  const missionId = `mission-${tree.mission.id}`;
-
-  // compute progress_rate from issues
-  const allIssues = tree.epics.flatMap((e) => e.issues);
-  const total = allIssues.length;
-  const finished = allIssues.filter((i) => i.status === 'finished').length;
-  const progressRate = total > 0 ? Math.round((finished / total) * 100) : 0;
-
-  // First pass: compute cumulative Y positions based on actual block heights
-  let curY = 0;
-  const epicLayouts: { epicY: number; issueStartY: number; blockH: number }[] = [];
-
-  for (const ew of tree.epics) {
-    const n = ew.issues.length;
-    const issueBlockH = n > 0 ? n * ISSUE_H + (n - 1) * ISSUE_GAP : ISSUE_H;
-    const epicCenterY = curY + Math.max(0, issueBlockH / 2 - EPIC_H / 2);
-    epicLayouts.push({ epicY: epicCenterY, issueStartY: curY, blockH: issueBlockH });
-    curY += issueBlockH + EPIC_GAP;
-  }
-
-  const totalH = Math.max(curY - EPIC_GAP, MISSION_H + 40); // 40px buffer for sprint dropdown
-  const missionY = totalH / 2 - MISSION_H / 2;
-
-  // Mission node — vertically centered relative to all epics
-  const missionNode: MissionFlowNode = {
-    id: missionId,
-    type: 'mission',
-    position: { x: 0, y: missionY },
-    data: {
-      label: tree.mission.title,
-      progress_rate: progressRate,
-      status: tree.mission.status,
-      missionData: tree.mission,
-      onDoubleClickMission,
-    },
-    sourcePosition: Position.Right,
-    targetPosition: Position.Left,
-  };
-  nodes.push(missionNode);
-
-  // Epics — column 1, Issues — column 2
-  tree.epics.forEach((ew: EpicWithIssues, ei: number) => {
-    const epicId = `epic-${ew.epic.id}`;
-    const { epicY, issueStartY } = epicLayouts[ei];
-
-    const epicNode: EpicFlowNode = {
-      id: epicId,
-      type: 'epic',
-      position: { x: COL_GAP, y: epicY },
-      data: {
-        label: ew.epic.title,
-        status: ew.epic.status,
-        project_key: ew.epic.project_key,
-        epicData: ew.epic,
-        sprints,
-        onDoubleClickEpic,
-      },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-    };
-    nodes.push(epicNode);
-
-    edges.push({
-      id: `e-${missionId}-${epicId}`,
-      source: missionId,
-      target: epicId,
-      type: 'smoothstep',
-      style: { stroke: '#a78bfa', strokeWidth: 1.5 },
-    });
-
-    ew.issues.forEach((issue: Issue, ii: number) => {
-      const issueId = `issue-${issue.id}`;
-
-      const issueNode: IssueFlowNode = {
-        id: issueId,
-        type: 'issue',
-        position: { x: COL_GAP * 2, y: issueStartY + ii * (ISSUE_H + ISSUE_GAP) },
-        data: {
-          label: issue.title,
-          status: issue.status,
-          priority: issue.priority,
-          issueId: issue.id,
-          onDoubleClickIssue,
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-      };
-      nodes.push(issueNode);
-
-      edges.push({
-        id: `e-${epicId}-${issueId}`,
-        source: epicId,
-        target: issueId,
-        type: 'smoothstep',
-        style: { stroke: '#c4b5fd', strokeWidth: 1 },
-      });
-    });
-  });
-
-  return { nodes, edges };
-}
-
-// ── FlowCanvas ────────────────────────────────────────────────────────────────
 
 function FlowCanvas({
   tree,
@@ -301,9 +46,7 @@ function FlowCanvas({
         onEpicDoubleClick,
         onMissionDoubleClick,
       ),
-    // stable callbacks from useCallback in parent
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tree, sprints],
+    [tree, sprints, onIssueDoubleClick, onEpicDoubleClick, onMissionDoubleClick],
   );
   const [nodes, , onNodesChange] = useNodesState(initNodes);
   const [edges, , onEdgesChange] = useEdgesState(initEdges);
@@ -317,7 +60,7 @@ function FlowCanvas({
       nodeTypes={NODE_TYPES}
       fitView
       fitViewOptions={{ padding: 0.2 }}
-      minZoom={0.3}
+      minZoom={0.5} // 이슈 #366: fitView 텍스트 축소 한계값 minZoom 0.5 설정
       maxZoom={2}
       proOptions={{ hideAttribution: true }}
     >
@@ -326,8 +69,6 @@ function FlowCanvas({
     </ReactFlow>
   );
 }
-
-// ── MissionsBoard ─────────────────────────────────────────────────────────────
 
 export function MissionsBoard() {
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -447,8 +188,6 @@ export function MissionsBoard() {
   useEffect(() => {
     reloadMissions();
   }, [reloadMissions]);
-
-
 
   const handleModalClose = useCallback(() => {
     setModalOpen(false);

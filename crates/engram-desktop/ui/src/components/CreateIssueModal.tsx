@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { epicList, issueCreate, missionList } from '../ipc/invoke';
 import type { Epic, IssuePriority, Mission } from '../ipc/types';
+import { BaseModal } from './BaseModal';
 
 interface Props {
   open: boolean;
@@ -28,8 +29,6 @@ export function CreateIssueModal({
     queryFn: () => epicList(projectKey),
     enabled: open,
   });
-
-
 
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
@@ -83,113 +82,101 @@ export function CreateIssueModal({
     onError: (err) => toast.error(`이슈 생성 실패: ${err}`),
   });
 
-  if (!open) return null;
-
   const canSubmit = title.trim().length > 0 && typeof epicId === 'number';
-  const inputCls = 'w-full text-sm border border-slate-200 rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400';
+  const inputCls = 'w-full text-sm border border-slate-700 rounded-md px-3 py-2 bg-slate-800 text-white focus:outline-none focus:border-blue-500';
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-5 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-800">새 이슈 생성</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>
+    <BaseModal open={open} onClose={onClose} title="새 이슈 생성" maxWidth="max-w-md">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-400">미션</label>
+          <select
+            value={selectedMissionId ?? ''}
+            onChange={(e) => setSelectedMissionId(e.target.value ? Number(e.target.value) : null)}
+            className={inputCls}
+          >
+            <option value="" className="bg-slate-900">미션 없음 (전체 에픽 표시)</option>
+            {activeMissions.map((m) => (
+              <option key={m.id} value={m.id} className="bg-slate-900">{m.title}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">미션</label>
-            <select
-              value={selectedMissionId ?? ''}
-              onChange={(e) => setSelectedMissionId(e.target.value ? Number(e.target.value) : null)}
-              className={inputCls}
-            >
-              <option value="">미션 없음 (전체 에픽 표시)</option>
-              {activeMissions.map((m) => (
-                <option key={m.id} value={m.id}>{m.title}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">에픽</label>
-            <select
-              value={epicId}
-              onChange={(e) => setEpicId(e.target.value === '' ? '' : Number(e.target.value))}
-              className={inputCls}
-            >
-              <option value="">에픽 선택…</option>
-              {filteredEpics.map((epic: Epic) => (
-                <option key={epic.id} value={epic.id}>
-                  [{epic.project_key}] {epic.title}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="text-xs text-slate-400 bg-slate-50 border border-slate-100 rounded-md p-2 flex items-center justify-between">
-            <span>ℹ️ 스프린트는 미션 결합에 따라 결정됩니다.</span>
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">
-              제목 <span className="text-red-400">*</span>
-            </label>
-            <input
-              autoFocus
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="이슈 제목"
-              className={inputCls}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">설명</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              placeholder="이슈 설명 (선택)"
-              className={`${inputCls} resize-y`}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-600">우선순위</label>
-            <select
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as IssuePriority)}
-              className={inputCls}
-            >
-              {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-400">에픽</label>
+          <select
+            value={epicId}
+            onChange={(e) => setEpicId(e.target.value === '' ? '' : Number(e.target.value))}
+            className={inputCls}
+          >
+            <option value="" className="bg-slate-900">에픽 선택…</option>
+            {filteredEpics.map((epic: Epic) => (
+              <option key={epic.id} value={epic.id} className="bg-slate-900">
+                [{epic.project_key}] {epic.title}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex gap-2 justify-end pt-1 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+        <div className="text-xs text-slate-400 bg-slate-800/40 border border-slate-700/60 rounded-md p-2 flex items-center justify-between">
+          <span>ℹ️ 스프린트는 미션 결합에 따라 결정됩니다.</span>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-400">
+            제목 <span className="text-red-400">*</span>
+          </label>
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="이슈 제목"
+            className={inputCls}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-400">설명</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="이슈 설명 (선택)"
+            className={`${inputCls} resize-y`}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-slate-400">우선순위</label>
+          <select
+            value={priority}
+            onChange={(e) => setPriority(e.target.value as IssuePriority)}
+            className={inputCls}
           >
-            취소
-          </button>
-          <button
-            type="button"
-            disabled={!canSubmit || create.isPending}
-            onClick={() => create.mutate()}
-            className="px-4 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 font-medium"
-          >
-            {create.isPending ? '생성 중…' : '생성'}
-          </button>
+            {PRIORITIES.map((p) => (
+              <option key={p.value} value={p.value} className="bg-slate-900">{p.label}</option>
+            ))}
+          </select>
         </div>
       </div>
-    </div>
+
+      <div className="flex gap-2 justify-end pt-4 border-t border-slate-800 mt-6">
+        <button
+          type="button"
+          onClick={onClose}
+          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          disabled={!canSubmit || create.isPending}
+          onClick={() => create.mutate()}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg disabled:opacity-50"
+        >
+          {create.isPending ? '생성 중…' : '생성'}
+        </button>
+      </div>
+    </BaseModal>
   );
 }
