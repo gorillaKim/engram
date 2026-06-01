@@ -98,7 +98,7 @@ export function IssueManager() {
 
   const { data: missions = [], isLoading: missionsLoading } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(false),
+    queryFn: () => missionList(true),
   });
 
   const loading = issuesLoading || epicsLoading || missionsLoading;

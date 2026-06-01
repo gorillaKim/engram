@@ -22,7 +22,7 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
 
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(false),
+    queryFn: () => missionList(true),
     enabled: open,
   });
 

@@ -27,7 +27,7 @@ export function EditEpicModal({ epic, onClose }: Props) {
 
   const { data: missions = [] } = useQuery({
     queryKey: ['missionList'],
-    queryFn: () => missionList(false),
+    queryFn: () => missionList(true),
     enabled: epic != null,
   });
 

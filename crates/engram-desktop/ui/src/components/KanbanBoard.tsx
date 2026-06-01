@@ -45,7 +45,7 @@ export function KanbanBoard() {
   const { data: epics = [] } = useEpics(undefined);
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList'],
-    queryFn: () => missionList(false),
+    queryFn: () => missionList(true),
   }); // ADR-0014: Issue.mission_id 는 Epic 에서 derive 된 값. 백엔드 JOIN 결과로 일관성 보장.
   const dnd = useIssueDnd(null);
 

@@ -144,7 +144,7 @@ export function MissionsBoard() {
     setLoading(true);
     
     const fetchMissions = async () => {
-      const list = await missionList(false);
+      const list = await missionList(true);
       setMissions(list);
       setLoading(false);
     };
