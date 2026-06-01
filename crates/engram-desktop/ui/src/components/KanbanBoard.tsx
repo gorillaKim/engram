@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
+import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCenter, pointerWithin, rectIntersection, useSensor, useSensors, type CollisionDetection } from '@dnd-kit/core';
 import { KanbanColumn } from './KanbanColumn';
 import { IssueCardView } from './IssueCard';
 import { FilterBar } from './FilterBar';
@@ -19,6 +19,18 @@ import { BOARD_COLUMNS, type Issue, type IssueStatus, type IssueProjectBoard, ty
 
 type BoardColumn = IssueStatus;
 const STANDARD_COLUMNS = BOARD_COLUMNS.filter((c) => c !== 'cancelled');
+
+const customCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  if (pointerCollisions.length > 0) {
+    return pointerCollisions;
+  }
+  const rectCollisions = rectIntersection(args);
+  if (rectCollisions.length > 0) {
+    return rectCollisions;
+  }
+  return closestCenter(args);
+};
 
 export function KanbanBoard() {
   const {
@@ -108,7 +120,7 @@ export function KanbanBoard() {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={customCollisionDetection}
       measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={(e) => setActiveIssue((e.active.data.current as { issue: Issue })?.issue ?? null)}
       onDragEnd={handleDragEnd}
