@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { issueLinks, issueLink, issueUnlink, issueList } from '../ipc/invoke';
 import type { Issue, IssueLink, LinkType } from '../ipc/types';
 import { useUIStore } from '../store/ui';
+import { StatusBadge } from './StatusBadge';
 
 const LINK_TYPE_LABEL: Record<LinkType, string> = {
   blocks: '차단함',
@@ -290,7 +291,7 @@ function IssueSearchSelect({
             >
               <span className="text-slate-400 shrink-0">#{c.id}</span>
               <span className="text-slate-800 flex-1 truncate">{c.title}</span>
-              <span className="text-slate-400 text-[10px] shrink-0">{c.status}</span>
+              <StatusBadge status={c.status} type="issue" />
             </li>
           ))}
         </ul>

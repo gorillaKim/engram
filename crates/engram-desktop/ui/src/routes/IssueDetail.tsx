@@ -5,6 +5,7 @@ import { issueGet, issueSetStatus, issueSetPriority, issueUpdate, blockingGraphF
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
+import { StatusBadge } from '../components/StatusBadge';
 import { BlockingGraphView } from '../components/BlockingGraph';
 import { IssueLinkSection } from '../components/IssueLinkSection';
 import { CommentSection } from '../components/CommentSection';
@@ -173,9 +174,7 @@ export function IssueDetail() {
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">상태</span>
-                <span className="text-xs font-medium bg-slate-100 rounded px-2 py-0.5 capitalize">
-                  {issue.status}
-                </span>
+                <StatusBadge status={issue.status} type="issue" />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500">우선순위</span>
@@ -207,11 +206,7 @@ export function IssueDetail() {
                   {mission.jira_key && (
                     <span className="text-[10px] font-mono text-violet-400 flex-shrink-0">{mission.jira_key}</span>
                   )}
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    mission.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                    mission.status === 'completed' ? 'bg-slate-100 text-slate-500' :
-                    'bg-red-100 text-red-600'
-                  }`}>{mission.status}</span>
+                  <StatusBadge status={mission.status} type="mission" />
                   <span className="text-violet-400 text-xs ml-1">{missionOpen ? '▲' : '▼'}</span>
                 </button>
                 {missionOpen && (
@@ -239,11 +234,7 @@ export function IssueDetail() {
                   <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
                   <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">에픽</span>
                   <span className="flex-1 text-xs text-indigo-800 font-medium truncate">{epic.title}</span>
-                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                    epic.status === 'active' ? 'bg-emerald-100 text-emerald-700' :
-                    epic.status === 'completed' ? 'bg-slate-100 text-slate-500' :
-                    'bg-red-100 text-red-600'
-                  }`}>{epic.status}</span>
+                  <StatusBadge status={epic.status} type="epic" />
                   <span className="text-indigo-400 text-xs ml-1">{epicOpen ? '▲' : '▼'}</span>
                 </button>
                 {epicOpen && (

@@ -2,26 +2,9 @@ import { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { PriorityBadge } from './PriorityBadge';
+import { StatusBadge } from './StatusBadge';
 import type { Sprint, Epic, Issue } from '../ipc/types';
 import { epicDelete, issueCreate } from '../ipc/invoke';
-
-const ISSUE_STATUS_CLS: Record<string, string> = {
-  required: 'bg-slate-100 text-slate-600',
-  ready: 'bg-blue-50 text-blue-700 border border-blue-100',
-  working: 'bg-indigo-50 text-indigo-700 border border-indigo-100',
-  demo: 'bg-amber-50 text-amber-700 border border-amber-100',
-  finished: 'bg-emerald-50 text-emerald-700 border border-emerald-100',
-  cancelled: 'bg-red-50 text-red-600 border border-red-100',
-};
-
-const ISSUE_STATUS_LABEL: Record<string, string> = {
-  required: '미진행',
-  ready: '준비 완료',
-  working: '진행 중',
-  demo: '데모',
-  finished: '완료',
-  cancelled: '취소',
-};
 
 interface EpicRowProps {
   epic: Epic;
@@ -198,9 +181,7 @@ export function EpicRow({
               onClick={() => onIssueClick(issue.id)}
               className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-colors"
             >
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${ISSUE_STATUS_CLS[issue.status] ?? ''}`}>
-                {ISSUE_STATUS_LABEL[issue.status] ?? issue.status}
-              </span>
+              <StatusBadge status={issue.status} type="issue" variant="ko" />
               <PriorityBadge priority={issue.priority} />
               <span className="text-xs text-slate-700 flex-1 truncate font-medium">{issue.title}</span>
 

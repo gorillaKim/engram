@@ -17,30 +17,8 @@ import { missionList, missionGetTree, sprintCurrent, sprintList, epicList } from
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
 import { EditEpicModal } from '../components/EditEpicModal';
+import { StatusBadge } from '../components/StatusBadge';
 
-// ── Status badge ──────────────────────────────────────────────────────────────
-
-const STATUS_COLOR: Record<string, string> = {
-  required: 'bg-slate-200 text-slate-700',
-  ready: 'bg-blue-100 text-blue-700',
-  working: 'bg-indigo-100 text-indigo-700',
-  demo: 'bg-amber-100 text-amber-700',
-  finished: 'bg-emerald-100 text-emerald-700',
-  cancelled: 'bg-red-100 text-red-600',
-  active: 'bg-indigo-100 text-indigo-700',
-  completed: 'bg-emerald-100 text-emerald-700',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  const cls = STATUS_COLOR[status] ?? 'bg-slate-100 text-slate-600';
-  return (
-    <span
-      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${cls}`}
-    >
-      {status}
-    </span>
-  );
-}
 
 // ── Custom node data types (must extend Record<string, unknown> for @xyflow/react) ──
 

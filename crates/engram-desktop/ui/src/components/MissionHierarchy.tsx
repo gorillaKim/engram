@@ -1,11 +1,6 @@
 import type { Mission, Epic, Issue, Sprint } from '../ipc/types';
 import { EpicRow } from './EpicRow';
-
-const MISSION_STATUS_CLS: Record<string, string> = {
-  active: 'bg-indigo-50 text-indigo-700 border border-indigo-200/50',
-  completed: 'bg-emerald-50 text-emerald-700 border border-emerald-200/50',
-  cancelled: 'bg-red-50 text-red-600 border border-red-200/50',
-};
+import { StatusBadge } from './StatusBadge';
 
 interface GroupedMission {
   mission: Mission | null;
@@ -86,9 +81,7 @@ export function MissionHierarchy({
                   <h3 className="text-sm font-bold text-slate-800 truncate" title={gm.mission.title}>
                     {gm.mission.title}
                   </h3>
-                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide flex-shrink-0 ${MISSION_STATUS_CLS[gm.mission.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                    {gm.mission.status}
-                  </span>
+                  <StatusBadge status={gm.mission.status} type="mission" />
                   {readOnly && (
                     <span className="text-xs text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0">
                       완료 {missionIssuesCount}개

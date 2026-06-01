@@ -17,31 +17,18 @@ import { EditEpicModal } from '../components/EditEpicModal';
 import { EditSprintModal } from '../components/EditSprintModal';
 import { ConfirmCompleteSprintModal } from '../components/ConfirmCompleteSprintModal';
 import { MissionModal } from '../components/MissionModal';
-import type { Sprint, Epic, Issue, SprintStatus, Mission } from '../ipc/types';
+import type { Sprint, Epic, Issue, Mission } from '../ipc/types';
 import { clampSidebarWidth } from '../utils/sidebarHelper';
 import { toggleAllEpics } from '../utils/epicHelper';
 import { filterFinishedIssues } from '../utils/issueFilterHelper';
 import { MissionHierarchy } from '../components/MissionHierarchy';
 import { BulkActionBar } from '../components/BulkActionBar';
+import { StatusBadge } from '../components/StatusBadge';
 
 // ── Sprint sidebar ──────────────────────────────────────────────────────────
 
 /** 사이드바에서 "백로그(스프린트 미지정)" 를 선택했을 때 selectedSprintId 로 사용하는 sentinel */
 const BACKLOG_ID = 0;
-
-const STATUS_LABEL: Record<SprintStatus, string> = {
-  planning: '계획',
-  active: '활성',
-  completed: '완료',
-  cancelled: '취소',
-};
-
-const STATUS_CLS: Record<SprintStatus, string> = {
-  planning: 'bg-yellow-100 text-yellow-700',
-  active: 'bg-green-100 text-green-700',
-  completed: 'bg-slate-100 text-slate-500',
-  cancelled: 'bg-red-50 text-red-400',
-};
 
 function BacklogItem({
   selected, onClick, count,
@@ -90,9 +77,7 @@ function SprintItem({
       className={`p-3 rounded-lg cursor-pointer mb-1 ${selected ? 'bg-indigo-50 border border-indigo-200' : 'hover:bg-slate-50'}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_CLS[sprint.status]}`}>
-          {STATUS_LABEL[sprint.status]}
-        </span>
+        <StatusBadge status={sprint.status} type="sprint" variant="ko" />
         <div className="flex items-center gap-1">
           {sprint.status === 'planning' && (
             <button
