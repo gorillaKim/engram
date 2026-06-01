@@ -180,7 +180,7 @@ export function KanbanBoard() {
         </div>
 
         {filteredBoards.map((board) => (
-          <div key={board.project_key} className="overflow-x-auto pb-4">
+          <div key={board.project_key} className="overflow-x-auto pb-4 shrink-0">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
               <button
