@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { issueSetStatus } from '../ipc/invoke';
-import type { IssueBoardStatus, IssueStatus } from '../ipc/types';
+import { BOARD_COLUMNS, type IssueBoardStatus, type IssueStatus } from '../ipc/types';
 
 export function useIssueDnd(projectKey?: string | null) {
   const qc = useQueryClient();
@@ -17,7 +17,7 @@ export function useIssueDnd(projectKey?: string | null) {
 
       qc.setQueryData<IssueBoardStatus>(queryKey, (old) => {
         if (!old) return old;
-        const cols = ['required', 'ready', 'working', 'demo', 'finished', 'cancelled'] as const;
+        const cols = BOARD_COLUMNS;
         return {
           ...old,
           boards: old.boards.map((board) => {

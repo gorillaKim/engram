@@ -15,10 +15,10 @@ import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useEpics } from '../hooks/useEpics';
 import { useUIStore } from '../store/ui';
 import { missionList } from '../ipc/invoke';
-import type { Issue, IssueStatus, IssueProjectBoard, Mission } from '../ipc/types';
+import { BOARD_COLUMNS, type Issue, type IssueStatus, type IssueProjectBoard, type Mission } from '../ipc/types';
 
-type BoardColumn = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
-const STANDARD_COLUMNS: BoardColumn[] = ['required', 'ready', 'working', 'demo', 'finished'];
+type BoardColumn = IssueStatus;
+const STANDARD_COLUMNS = BOARD_COLUMNS.filter((c) => c !== 'cancelled');
 
 export function KanbanBoard() {
   const {
@@ -239,15 +239,11 @@ function applyFilters(
     result = result.map((board) => {
       const f = (issues: Issue[]) =>
         issues.filter((i) => i.mission_id != null && filters.missionIds.includes(i.mission_id)); // ADR-0014: Epic 에서 derive 된 값 사용
-      return {
-        ...board,
-        required: f(board.required),
-        ready: f(board.ready),
-        working: f(board.working),
-        demo: f(board.demo),
-        finished: f(board.finished),
-        cancelled: f(board.cancelled ?? []),
-      };
+      const next = { ...board };
+      for (const col of BOARD_COLUMNS) {
+        next[col] = f(next[col] ?? []);
+      }
+      return next;
     });
   }
 
@@ -256,15 +252,11 @@ function applyFilters(
     result = result.map((board) => {
       const f = (issues: Issue[]) =>
         issues.filter((i) => filters.epicIds.includes(i.epic_id));
-      return {
-        ...board,
-        required: f(board.required),
-        ready: f(board.ready),
-        working: f(board.working),
-        demo: f(board.demo),
-        finished: f(board.finished),
-        cancelled: f(board.cancelled ?? []),
-      };
+      const next = { ...board };
+      for (const col of BOARD_COLUMNS) {
+        next[col] = f(next[col] ?? []);
+      }
+      return next;
     });
   }
 
@@ -273,15 +265,11 @@ function applyFilters(
     result = result.map((board) => {
       const f = (issues: Issue[]) =>
         issues.filter((i) => filters.priorities.includes(i.priority));
-      return {
-        ...board,
-        required: f(board.required),
-        ready: f(board.ready),
-        working: f(board.working),
-        demo: f(board.demo),
-        finished: f(board.finished),
-        cancelled: f(board.cancelled ?? []),
-      };
+      const next = { ...board };
+      for (const col of BOARD_COLUMNS) {
+        next[col] = f(next[col] ?? []);
+      }
+      return next;
     });
   }
 

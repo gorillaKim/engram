@@ -1,4 +1,5 @@
-export type IssueStatus = 'required' | 'ready' | 'working' | 'demo' | 'finished' | 'cancelled';
+export const BOARD_COLUMNS = ['required', 'ready', 'working', 'demo', 'finished', 'cancelled'] as const;
+export type IssueStatus = typeof BOARD_COLUMNS[number];
 export type IssuePriority = 'critical' | 'high' | 'medium' | 'low';
 export type EpicStatus = 'active' | 'completed' | 'cancelled';
 export type SprintStatus = 'planning' | 'active' | 'completed' | 'cancelled';
@@ -156,16 +157,9 @@ export interface SessionSnapshot {
 
 // ── Board (Kanban UI) ─────────────────────────────────────────────────────────
 
-export interface IssueProjectBoard {
+export type IssueProjectBoard = {
   project_key: string;
-  required: Issue[];
-  ready: Issue[];
-  working: Issue[];
-  demo: Issue[];
-  finished: Issue[];
-  /** 취소된 이슈 모음 — 사용자가 "취소 보기" 를 켰을 때 노출 */
-  cancelled: Issue[];
-}
+} & Record<IssueStatus, Issue[]>;
 
 export interface StalledIssueBrief {
   id: number;
