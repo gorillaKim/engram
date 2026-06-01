@@ -168,7 +168,7 @@ export function KanbanBoard() {
         </div>
 
         {filteredBoards.map((board) => (
-          <div key={board.project_key}>
+          <div key={board.project_key} className="overflow-x-auto pb-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
               <button
@@ -179,7 +179,7 @@ export function KanbanBoard() {
                 + 이슈 추가
               </button>
             </div>
-            <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(0, 1fr))` }}>
+            <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))` }}>
               {visibleColumns.map((status) => (
                 <KanbanColumn
                   key={status}

@@ -137,17 +137,19 @@ export function IssueDetail() {
                     if (e.key === 'Escape') cancelEdit();
                   }}
                   onBlur={saveEdit}
-                  className="w-full text-base font-semibold text-slate-800 border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  className="w-full text-base font-semibold text-slate-800 border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 bg-white"
                 />
               ) : (
-                <div className="flex items-center gap-1 group">
-                  <h2 className="text-base font-semibold text-slate-800 truncate">
+                <div
+                  onClick={() => issue && startEdit('title', issue.title)}
+                  className="group flex items-center justify-between gap-1 w-full text-base font-semibold text-slate-800 border border-transparent rounded px-2 py-0.5 cursor-pointer hover:bg-slate-50 hover:border-slate-200 transition-all duration-200"
+                >
+                  <h2 className="truncate flex-1">
                     {issue ? `#${issue.id} ${issue.title}` : '…'}
                   </h2>
                   {issue && (
                     <button
-                      onClick={() => startEdit('title', issue.title)}
-                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 text-xs shrink-0"
+                      className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 text-xs shrink-0 transition-opacity"
                       title="제목 편집"
                     >
                       ✎
@@ -259,100 +261,110 @@ export function IssueDetail() {
             )}
 
             {/* Goal */}
-            <div className="bg-amber-50 rounded-md p-3 border border-amber-100">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">목표</p>
-                {editingField !== 'goal' && (
-                  <button
-                    onClick={() => startEdit('goal', issue.goal ?? '')}
-                    className="text-xs text-amber-500 hover:text-amber-700"
-                    title="목표 편집"
-                  >
-                    ✎
-                  </button>
-                )}
-              </div>
-              {editingField === 'goal' ? (
-                <div className="flex flex-col gap-2">
+            {editingField === 'goal' ? (
+              <div className="relative bg-amber-50 rounded-md p-3 border border-amber-300 shadow-sm min-h-[96px] flex flex-col">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">목표 편집</p>
+                </div>
+                <div className="relative flex-1 flex flex-col">
                   <textarea
                     autoFocus
                     value={draftValue}
                     onChange={(e) => setDraftValue(e.target.value)}
-                    rows={3}
-                    className="w-full text-sm border border-amber-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500/20 resize-y bg-white"
+                    className="w-full text-sm border-0 bg-transparent rounded p-0 pb-10 focus:outline-none focus:ring-0 resize-none text-amber-900"
+                    style={{ minHeight: '64px' }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        saveEdit();
+                      }
+                      if (e.key === 'Escape') cancelEdit();
+                    }}
                   />
-                  <div className="flex gap-2">
+                  <div className="absolute bottom-0 right-0 flex gap-1.5 z-10 bg-amber-50/90 pt-1 pl-2">
                     <button
                       onClick={saveEdit}
                       disabled={updateField.isPending}
-                      className="text-xs px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded disabled:opacity-50"
+                      className="text-[11px] px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded font-medium disabled:opacity-50 transition-colors"
                     >
-                      {updateField.isPending ? '저장 중…' : '저장'}
+                      {updateField.isPending ? '저장 중…' : '저장 (⌘↵)'}
                     </button>
-                    <button onClick={cancelEdit} className="text-xs px-3 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded">
+                    <button onClick={cancelEdit} className="text-[11px] px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded font-medium transition-colors">
                       취소
                     </button>
                   </div>
                 </div>
-              ) : issue.goal ? (
-                <Markdown>{issue.goal}</Markdown>
-              ) : (
-                <button
-                  onClick={() => startEdit('goal', '')}
-                  className="text-xs text-amber-500/70 hover:text-amber-600 italic"
-                >
-                  + 목표 추가
-                </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => startEdit('goal', issue.goal ?? '')}
+                className="group relative bg-amber-50 rounded-md p-3 border border-amber-100 hover:border-amber-300/80 cursor-pointer transition-all duration-200 min-h-[96px] flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">목표</p>
+                  <span className="opacity-0 group-hover:opacity-100 text-xs text-amber-500 transition-opacity">✎ 편집</span>
+                </div>
+                <div className="flex-1 text-sm text-amber-900">
+                  {issue.goal ? (
+                    <Markdown>{issue.goal}</Markdown>
+                  ) : (
+                    <span className="text-amber-500/70 italic">+ 목표 추가</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Description */}
-            <div className="bg-slate-50 rounded-md p-3 border border-slate-100">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">설명</p>
-                {editingField !== 'description' && (
-                  <button
-                    onClick={() => startEdit('description', issue.description ?? '')}
-                    className="text-xs text-slate-400 hover:text-slate-600"
-                    title="설명 편집"
-                  >
-                    ✎
-                  </button>
-                )}
-              </div>
-              {editingField === 'description' ? (
-                <div className="flex flex-col gap-2">
+            {editingField === 'description' ? (
+              <div className="relative bg-slate-50 rounded-md p-3 border border-indigo-300 shadow-sm min-h-[140px] flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">설명 편집</p>
+                </div>
+                <div className="relative flex-1 flex flex-col">
                   <textarea
                     autoFocus
                     value={draftValue}
                     onChange={(e) => setDraftValue(e.target.value)}
-                    rows={5}
-                    className="w-full text-sm border border-indigo-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 resize-y bg-white"
+                    className="w-full text-sm border-0 bg-transparent rounded p-0 pb-10 focus:outline-none focus:ring-0 resize-none text-slate-800"
+                    style={{ minHeight: '108px' }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        saveEdit();
+                      }
+                      if (e.key === 'Escape') cancelEdit();
+                    }}
                   />
-                  <div className="flex gap-2">
+                  <div className="absolute bottom-0 right-0 flex gap-1.5 z-10 bg-slate-50/90 pt-1 pl-2">
                     <button
                       onClick={saveEdit}
                       disabled={updateField.isPending}
-                      className="text-xs px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded disabled:opacity-50"
+                      className="text-[11px] px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium disabled:opacity-50 transition-colors"
                     >
-                      {updateField.isPending ? '저장 중…' : '저장'}
+                      {updateField.isPending ? '저장 중…' : '저장 (⌘↵)'}
                     </button>
-                    <button onClick={cancelEdit} className="text-xs px-3 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded">
+                    <button onClick={cancelEdit} className="text-[11px] px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded font-medium transition-colors">
                       취소
                     </button>
                   </div>
                 </div>
-              ) : issue.description ? (
-                <Markdown>{issue.description}</Markdown>
-              ) : (
-                <button
-                  onClick={() => startEdit('description', '')}
-                  className="text-xs text-slate-400 hover:text-indigo-500 italic"
-                >
-                  + 설명 추가
-                </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => startEdit('description', issue.description ?? '')}
+                className="group relative bg-slate-50 rounded-md p-3 border border-slate-100 hover:border-slate-300/80 cursor-pointer transition-all duration-200 min-h-[140px] flex flex-col justify-between"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">설명</p>
+                  <span className="opacity-0 group-hover:opacity-100 text-xs text-slate-400 transition-opacity">✎ 편집</span>
+                </div>
+                <div className="flex-1 text-sm text-slate-800">
+                  {issue.description ? (
+                    <Markdown>{issue.description}</Markdown>
+                  ) : (
+                    <span className="text-slate-400 hover:text-indigo-500 italic">+ 설명 추가</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Blocking Graph */}
             <section>

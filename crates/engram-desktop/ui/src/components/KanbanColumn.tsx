@@ -32,7 +32,7 @@ export function KanbanColumn({ projectKey, status, issues, onIssueClick, expansi
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col min-h-[400px] rounded-xl p-4 transition-all duration-200 border-2 ${
+      className={`flex flex-col min-h-[400px] min-w-[280px] shrink-0 rounded-xl p-4 transition-all duration-200 border-2 ${
         isOver ? 'bg-indigo-50/50 border-indigo-300 ring-4 ring-indigo-50' :
         isDemo ? 'bg-amber-50/40 border-amber-100' :
         isCancelled ? 'bg-slate-100/50 border-transparent opacity-60' : 
