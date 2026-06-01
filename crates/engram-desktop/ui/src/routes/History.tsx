@@ -28,7 +28,7 @@ export function History() {
 
   // 스프린트, 에픽, 미션 데이터 로드
   const { data: sprints = [] } = useSprints();
-  const { data: epics = [] } = useEpics();
+  const { data: epics = [] } = useEpics(undefined, true);
   const { data: missions = [] } = useQuery<Mission[]>({
     queryKey: ['missionList', 'all'],
     queryFn: () => missionList(true), // 완료된 미션도 히스토리를 위해 전체 로드
