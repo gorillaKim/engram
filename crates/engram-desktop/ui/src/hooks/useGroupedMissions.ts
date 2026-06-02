@@ -34,21 +34,28 @@ export function useGroupedMissions({
   debouncedQuery,
 }: UseGroupedMissionsParams): GroupedMission[] {
   // 3단계 계층형 가공 (Mission -> Epic -> Issue)
+  // 핵심: 에픽/미션 구조는 전체 이슈(unfiltered)로 결정하고,
+  //       각 에픽 내 표시 이슈만 필터링한다.
+  //       이전에는 필터링된 이슈로 역추적해서 에픽 멤버십을 결정했기 때문에,
+  //       모든 이슈가 finished/cancelled인 에픽→미션→프로젝트가 통째로 사라졌다.
   const groupedMissions = useMemo(() => {
     const filteredIssues = filterFinishedIssues(issuesInView, hideFinished);
     
-    // 1. epic_id -> issues mapping
-    const issuesByEpic = new Map<number, Issue[]>();
+    // 1. 전체 이슈로 에픽 멤버십 결정 (필터와 무관하게 에픽 구조 유지)
+    const allIssueEpicIds = new Set(issuesInView.map(i => i.epic_id));
+    
+    // 2. 필터링된 이슈를 epic_id별로 그룹핑 (실제 표시용)
+    const filteredIssuesByEpic = new Map<number, Issue[]>();
     for (const issue of filteredIssues) {
-      const list = issuesByEpic.get(issue.epic_id) ?? [];
+      const list = filteredIssuesByEpic.get(issue.epic_id) ?? [];
       list.push(issue);
-      issuesByEpic.set(issue.epic_id, list);
+      filteredIssuesByEpic.set(issue.epic_id, list);
     }
     
-    // 2. mission_id -> GroupedEpic[] mapping
+    // 3. mission_id -> GroupedEpic[] mapping (이슈가 존재하는 모든 에픽 포함)
     const epicsByMission = new Map<number | null, GroupedEpic[]>();
     
-    for (const [epicId, epicIssues] of issuesByEpic) {
+    for (const epicId of allIssueEpicIds) {
       const epic = allEpics.find((e) => e.id === epicId);
       if (!epic) continue;
       
@@ -58,14 +65,15 @@ export function useGroupedMissions({
       }
 
       const missionId = epic.mission_id ?? null;
+      const issues = filteredIssuesByEpic.get(epicId) ?? [];
       const list = epicsByMission.get(missionId) ?? [];
-      list.push({ epic, issues: epicIssues });
+      list.push({ epic, issues });
       epicsByMission.set(missionId, list);
     }
     
     const result: GroupedMission[] = [];
     
-    // 3. 미션 목록 기준으로 GroupedMission 빌드
+    // 4. 미션 목록 기준으로 GroupedMission 빌드
     for (const mission of missions) {
       const epics = epicsByMission.get(mission.id) ?? [];
       if (epics.length > 0 || mission.status === 'active') {
@@ -77,7 +85,7 @@ export function useGroupedMissions({
       }
     }
     
-    // 4. mission_id가 없거나 missions 목록에 없지만 leftover인 에픽들을 "미분류"로 수집
+    // 5. mission_id가 없거나 missions 목록에 없지만 leftover인 에픽들을 "미분류"로 수집
     const leftoverEpics: GroupedEpic[] = [];
     for (const [, epics] of epicsByMission) {
       leftoverEpics.push(...epics);
