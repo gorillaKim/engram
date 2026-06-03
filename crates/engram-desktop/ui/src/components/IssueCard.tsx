@@ -2,6 +2,19 @@ import { useDraggable } from '@dnd-kit/core';
 import type { Issue } from '../ipc/types';
 import { PriorityBadge } from './PriorityBadge';
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return '방금';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return '방금';
+  if (mins < 60) return `${mins}분 전`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}시간 전`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}일 전`;
+  return `${Math.floor(days / 30)}개월 전`;
+}
+
 interface Props {
   issue: Issue;
   epicTitle?: string;
@@ -29,7 +42,15 @@ function CardContent({ issue, epicTitle, scopeExpanded }: Pick<Props, 'issue' | 
       )}
 
       <div className="flex items-center justify-between gap-2 pt-1 min-w-0">
-        <span className="text-[11px] font-medium text-slate-400 flex-shrink-0">#{issue.id}</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[11px] font-medium text-slate-400 flex-shrink-0">#{issue.id}</span>
+          {issue.assigned_agent && (
+            <span className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0" title={issue.assigned_agent}>
+              🤖
+            </span>
+          )}
+          <span className="text-[10px] text-slate-300 flex-shrink-0">{relativeTime(issue.updated_at)}</span>
+        </div>
         {epicTitle && (
           <span className="inline-flex items-center gap-1 min-w-0 max-w-[140px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />

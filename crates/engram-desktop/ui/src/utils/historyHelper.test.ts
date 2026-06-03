@@ -14,6 +14,7 @@ function createMockIssue(id: number, title: string, priority: 'critical' | 'high
     goal: '',
     status: 'finished',
     priority,
+    assigned_agent: null,
     created_at: '2026-05-20 00:00:00',
     updated_at: updatedAt,
   };

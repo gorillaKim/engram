@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { DndContext, DragEndEvent, DragOverlay, MeasuringStrategy, PointerSensor, closestCenter, pointerWithin, rectIntersection, useSensor, useSensors, type CollisionDetection } from '@dnd-kit/core';
-import { KanbanColumn } from './KanbanColumn';
+import { toast } from 'sonner';
+import { KanbanColumn, KanbanColumnHeader } from './KanbanColumn';
 import { IssueCardView } from './IssueCard';
 import { FilterBar } from './FilterBar';
 import { ScopeExpansionBanner } from './ScopeExpansionBanner';
@@ -9,16 +10,26 @@ import { StalledWorkingBanner } from './StalledWorkingBanner';
 import { CreateIssueModal } from './CreateIssueModal';
 import { CreateEpicModal } from './CreateEpicModal';
 import { CreateSprintModal } from './CreateSprintModal';
+import { BulkFinishConfirmModal } from './BulkFinishConfirmModal';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import { useIssueDnd } from '../hooks/useIssueDnd';
 import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useEpics } from '../hooks/useEpics';
 import { useUIStore } from '../store/ui';
-import { missionList } from '../ipc/invoke';
+import { missionList, issueSetStatus } from '../ipc/invoke';
 import { BOARD_COLUMNS, type Issue, type IssueStatus, type IssueProjectBoard, type Mission } from '../ipc/types';
 
 type BoardColumn = IssueStatus;
 const STANDARD_COLUMNS = BOARD_COLUMNS.filter((c) => c !== 'cancelled');
+
+const COLUMN_LABELS: Record<BoardColumn, string> = {
+  required: 'Required',
+  ready: 'Ready',
+  working: 'Working',
+  demo: 'Demo',
+  finished: 'Finished',
+  cancelled: 'Cancelled',
+};
 
 const customCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
@@ -59,6 +70,30 @@ export function KanbanBoard() {
   const [issueModalProject, setIssueModalProject] = useState<string | null>(null);
   const [epicModalProject, setEpicModalProject] = useState<string | null>(null);
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
+  const [bulkFinishTarget, setBulkFinishTarget] = useState<{ projectKey: string; issues: Issue[] } | null>(null);
+
+  const queryClient = useQueryClient();
+  const bulkFinishMutation = useMutation({
+    mutationFn: async (issues: Issue[]) => {
+      const results = await Promise.allSettled(
+        issues.map((i) => issueSetStatus(i.id, 'finished')),
+      );
+      const failed = results.filter((r) => r.status === 'rejected');
+      if (failed.length > 0) {
+        throw new Error(`${failed.length}건 실패`);
+      }
+      return results;
+    },
+    onSuccess: (_data, vars) => {
+      toast.success(`${vars.length}건 완료 처리됨`);
+      queryClient.invalidateQueries({ queryKey: ['boardStatus'] });
+      setBulkFinishTarget(null);
+    },
+    onError: (err) => {
+      toast.error(`일괄 완료 실패: ${err.message}`);
+      queryClient.invalidateQueries({ queryKey: ['boardStatus'] });
+    },
+  });
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading board…</div>;
   if (error)    return <div className="p-8 text-red-500">Error loading board</div>;
@@ -78,6 +113,11 @@ export function KanbanBoard() {
     ...STANDARD_COLUMNS.filter((c) => !(hideFinished && c === 'finished')),
     ...(showCancelled ? (['cancelled'] as BoardColumn[]) : []),
   ];
+
+  // visible 컬럼에 이슈가 하나도 없는 빈 보드 제거 ("완료 숨기기" 버그 수정 포함)
+  filteredBoards = filteredBoards.filter((board) =>
+    visibleColumns.some((col) => ((board as unknown as Record<string, Issue[]>)[col] ?? []).length > 0)
+  );
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveIssue(null);
@@ -159,8 +199,22 @@ export function KanbanBoard() {
           <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>
         )}
 
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">{filteredBoards.length} 프로젝트</span>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-slate-400 font-medium">{filteredBoards.length} 프로젝트</span>
+            <div className="h-3 w-px bg-slate-200" />
+            {visibleColumns.map((col) => {
+              const count = filteredBoards.reduce(
+                (sum, b) => sum + ((b as unknown as Record<string, Issue[]>)[col]?.length ?? 0), 0
+              );
+              return (
+                <span key={col} className="text-[10px] text-slate-500">
+                  <span className="font-semibold">{COLUMN_LABELS[col]}</span>{' '}
+                  <span className={count > 0 ? 'text-slate-700 font-bold' : ''}>{count}</span>
+                </span>
+              );
+            })}
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
@@ -180,17 +234,40 @@ export function KanbanBoard() {
         </div>
 
         {filteredBoards.map((board) => (
-          <div key={board.project_key} className="overflow-x-auto pb-4 shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
-              <button
-                type="button"
-                onClick={() => setIssueModalProject(board.project_key)}
-                className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
-              >
-                + 이슈 추가
-              </button>
+          <div key={board.project_key} className="pb-4 shrink-0">
+            {/* Sticky header group: project name + column headers */}
+            <div className="sticky -top-6 z-20 bg-slate-50 pt-6 pb-2">
+              <div className="flex items-center justify-between mb-2 py-1">
+                <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
+                <button
+                  type="button"
+                  onClick={() => setIssueModalProject(board.project_key)}
+                  className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
+                >
+                  + 이슈 추가
+                </button>
+              </div>
+              <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))` }}>
+                {visibleColumns.map((status) => {
+                  const issues = (board as unknown as Record<string, Issue[]>)[status] ?? [];
+                  return (
+                    <KanbanColumnHeader
+                      key={status}
+                      status={status}
+                      issueCount={issues.length}
+                      onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
+                      onBulkFinish={status === 'demo' ? () => {
+                        const demoIssues = (board as unknown as Record<string, Issue[]>)['demo'] ?? [];
+                        if (demoIssues.length > 0) {
+                          setBulkFinishTarget({ projectKey: board.project_key, issues: demoIssues });
+                        }
+                      } : undefined}
+                    />
+                  );
+                })}
+              </div>
             </div>
+            {/* Cards grid */}
             <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))` }}>
               {visibleColumns.map((status) => (
                 <KanbanColumn
@@ -201,7 +278,6 @@ export function KanbanBoard() {
                   onIssueClick={(id) => selectIssue(id)}
                   expansionIds={expansionIds}
                   epicMap={epicMap}
-                  onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
                 />
               ))}
             </div>
@@ -222,6 +298,18 @@ export function KanbanBoard() {
         open={epicModalProject !== null}
         onClose={() => setEpicModalProject(null)}
         defaultProjectKey={epicModalProject ?? undefined}
+      />
+      <BulkFinishConfirmModal
+        open={bulkFinishTarget !== null}
+        issues={bulkFinishTarget?.issues ?? []}
+        projectKey={bulkFinishTarget?.projectKey ?? ''}
+        onConfirm={() => {
+          if (bulkFinishTarget) {
+            bulkFinishMutation.mutate(bulkFinishTarget.issues);
+          }
+        }}
+        onCancel={() => setBulkFinishTarget(null)}
+        isPending={bulkFinishMutation.isPending}
       />
 
       <DragOverlay>

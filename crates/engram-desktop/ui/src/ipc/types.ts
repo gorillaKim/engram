@@ -19,6 +19,7 @@ export interface Issue {
   goal: string | null;
   status: IssueStatus;
   priority: IssuePriority;
+  assigned_agent: string | null;
   created_at: string;
   updated_at: string;
 }
