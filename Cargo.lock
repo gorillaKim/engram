@@ -1198,7 +1198,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engram-cli"
-version = "0.1.36"
+version = "0.1.38"
 dependencies = [
  "anyhow",
  "clap",
@@ -1214,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "engram-core"
-version = "0.1.36"
+version = "0.1.38"
 dependencies = [
  "chrono",
  "serde",
@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "engram-desktop"
-version = "0.1.37"
+version = "0.1.38"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1253,7 +1253,7 @@ dependencies = [
 
 [[package]]
 name = "engram-mcp"
-version = "0.1.36"
+version = "0.1.38"
 dependencies = [
  "anyhow",
  "async-stream",
