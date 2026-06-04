@@ -236,7 +236,7 @@ export function KanbanBoard() {
         {filteredBoards.map((board) => (
           <div key={board.project_key} className="pb-4 shrink-0">
             {/* Sticky header group: project name + column headers */}
-            <div className="sticky -top-6 z-20 bg-slate-50 pt-6 pb-2">
+            <div className="sticky -top-6 z-20 bg-slate-50 pt-6 pb-2 -mx-6 px-6">
               <div className="flex items-center justify-between mb-2 py-1">
                 <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
                 <button
