@@ -12,6 +12,7 @@ import { missionList, missionGetTree, sprintCurrent, sprintList, epicList } from
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
 import { EditEpicModal } from '../components/EditEpicModal';
+import { CreateEpicModal } from '../components/CreateEpicModal';
 import { StatusBadge } from '../components/StatusBadge';
 import { MissionNode } from '../components/flow/MissionNode';
 import { EpicNode } from '../components/flow/EpicNode';
@@ -78,6 +79,7 @@ export function MissionsBoard() {
   const [treeLoading, setTreeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [createEpicOpen, setCreateEpicOpen] = useState(false);
   const [editingMission, setEditingMission] = useState<Mission | undefined>(undefined);
   const [editingEpic, setEditingEpic] = useState<Epic | null>(null);
 
@@ -314,16 +316,32 @@ export function MissionsBoard() {
           </div>
         )}
         {tree && !treeLoading && (
-          <div className="w-full h-full">
-            <FlowCanvas
-              key={tree.mission.id}
-              tree={tree}
-              sprints={sprints}
-              onIssueDoubleClick={handleIssueDoubleClick}
-              onEpicDoubleClick={handleEpicDoubleClick}
-              onMissionDoubleClick={handleMissionDoubleClick}
-            />
-          </div>
+          <>
+            <div className="w-full h-full">
+              <FlowCanvas
+                key={tree.mission.id}
+                tree={tree}
+                sprints={sprints}
+                onIssueDoubleClick={handleIssueDoubleClick}
+                onEpicDoubleClick={handleEpicDoubleClick}
+                onMissionDoubleClick={handleMissionDoubleClick}
+              />
+            </div>
+            {/* 플로팅 컨트롤러 */}
+            <div className="absolute top-4 right-4 z-10 flex items-center gap-3 bg-white/95 backdrop-blur-sm border border-slate-200 shadow-md px-4 py-2 rounded-xl">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Mission</span>
+                <span className="text-xs font-semibold text-slate-700">{tree.mission.title}</span>
+              </div>
+              <div className="w-px h-6 bg-slate-200" />
+              <button
+                onClick={() => setCreateEpicOpen(true)}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1"
+              >
+                <span className="text-sm leading-none">+</span> 에픽 추가
+              </button>
+            </div>
+          </>
         )}
         {!tree && !treeLoading && (
           <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400 text-sm">
@@ -352,6 +370,11 @@ export function MissionsBoard() {
       <EditEpicModal
         epic={editingEpic}
         onClose={() => { setEditingEpic(null); if (selectedId) loadTree(selectedId); }}
+      />
+      <CreateEpicModal
+        open={createEpicOpen}
+        onClose={() => { setCreateEpicOpen(false); if (selectedId) loadTree(selectedId); }}
+        defaultMissionId={selectedId ?? undefined}
       />
     </div>
   );

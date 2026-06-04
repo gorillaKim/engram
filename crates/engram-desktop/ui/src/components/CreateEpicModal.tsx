@@ -9,9 +9,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   defaultProjectKey?: string;
+  defaultMissionId?: number;
 }
 
-export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
+export function CreateEpicModal({ open, onClose, defaultProjectKey, defaultMissionId }: Props) {
   const qc = useQueryClient();
 
   const [projectKey, setProjectKey] = useState('');
@@ -39,10 +40,10 @@ export function CreateEpicModal({ open, onClose, defaultProjectKey }: Props) {
       setProjectKey(defaultProjectKey ?? '');
       setTitle('');
       setDescription('');
-      setSelectedMissionId(null);
+      setSelectedMissionId(defaultMissionId ?? null);
       setSelectedSprintId(null);
     }
-  }, [open, defaultProjectKey]);
+  }, [open, defaultProjectKey, defaultMissionId]);
 
   const create = useMutation({
     mutationFn: () =>
