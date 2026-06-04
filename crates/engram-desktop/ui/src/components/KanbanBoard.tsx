@@ -166,7 +166,8 @@ export function KanbanBoard() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveIssue(null)}
     >
-      <div className="flex flex-col gap-4 p-6 overflow-auto h-full">
+      <div className="p-6 overflow-auto h-full">
+        <div className="flex flex-col gap-4 w-fit min-w-full">
         {/* Filter bar */}
         <FilterBar
           boards={boards}
@@ -283,6 +284,7 @@ export function KanbanBoard() {
             </div>
           </div>
         ))}
+      </div>
       </div>
 
       <CreateSprintModal
