@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import type { IssueStatus, SprintStatus, EpicStatus, MissionStatus } from '../ipc/types';
 
 interface StatusBadgeProps {
@@ -5,6 +6,8 @@ interface StatusBadgeProps {
   type?: 'issue' | 'sprint' | 'epic' | 'mission' | 'task';
   variant?: 'ko' | 'en';
   className?: string;
+  onChange?: (newStatus: string) => void;
+  disabled?: boolean;
 }
 
 const ISSUE_STATUS_MAP: Record<string, { ko: string; en: string; cls: string }> = {
@@ -34,19 +37,38 @@ export function StatusBadge({
   type,
   variant = 'en',
   className = '',
+  onChange,
+  disabled = false,
 }: StatusBadgeProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
   const normStatus = status.toLowerCase();
 
   // 1. Determine which map to use based on type or status key heuristics
   let config = ISSUE_STATUS_MAP[normStatus];
+  let statusMap = ISSUE_STATUS_MAP;
 
-  if (type === 'sprint' || SPRINT_STATUS_MAP[normStatus] && type !== 'issue' && type !== 'task') {
+  if (type === 'sprint' || (SPRINT_STATUS_MAP[normStatus] && type !== 'issue' && type !== 'task')) {
+    statusMap = SPRINT_STATUS_MAP;
     if (normStatus === 'active' || normStatus === 'completed' || normStatus === 'cancelled') {
       config = type === 'sprint' ? SPRINT_STATUS_MAP[normStatus] : (EPIC_MISSION_STATUS_MAP[normStatus] || SPRINT_STATUS_MAP[normStatus]);
     } else {
       config = SPRINT_STATUS_MAP[normStatus];
     }
   } else if (type === 'epic' || type === 'mission' || EPIC_MISSION_STATUS_MAP[normStatus]) {
+    statusMap = EPIC_MISSION_STATUS_MAP;
     config = EPIC_MISSION_STATUS_MAP[normStatus];
   }
 
@@ -60,12 +82,48 @@ export function StatusBadge({
   }
 
   const label = variant === 'ko' ? config.ko : config.en;
+  const isInteractive = onChange != null && !disabled;
 
   return (
     <span
-      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${config.cls} ${className}`}
+      ref={containerRef}
+      className={`relative inline-block ${isInteractive ? 'cursor-pointer select-none' : ''}`}
+      onClick={(e) => {
+        if (isInteractive) {
+          e.stopPropagation();
+          setIsOpen(!isOpen);
+        }
+      }}
     >
-      {label}
+      <span
+        className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide shrink-0 transition-colors ${config.cls} ${isInteractive ? 'hover:brightness-95 active:brightness-90' : ''} ${className}`}
+      >
+        {label}
+        {isInteractive && <span className="text-[9px] opacity-60">▾</span>}
+      </span>
+
+      {isOpen && isInteractive && (
+        <span
+          className="absolute left-0 mt-1 z-50 min-w-[100px] py-1 bg-white border border-slate-200 rounded-md shadow-lg flex flex-col cursor-default"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {Object.entries(statusMap).map(([sKey, sConf]) => (
+            <button
+              key={sKey}
+              type="button"
+              onClick={() => {
+                onChange(sKey);
+                setIsOpen(false);
+              }}
+              className={`text-left px-2.5 py-1 text-[11px] hover:bg-slate-50 transition-colors w-full font-medium ${
+                normStatus === sKey ? 'text-indigo-600 font-semibold bg-indigo-50/40' : 'text-slate-600'
+              }`}
+            >
+              {variant === 'ko' ? sConf.ko : sConf.en}
+            </button>
+          ))}
+        </span>
+      )}
     </span>
   );
 }

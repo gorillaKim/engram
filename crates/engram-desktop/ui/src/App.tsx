@@ -112,6 +112,36 @@ function AppContent() {
     });
   }, []);
 
+  // URL 쿼리 스트링의 view 값을 기반으로 초기 탭 상태 설정
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    if (viewParam && ['board', 'missions', 'issues', 'history', 'mcp', 'settings'].includes(viewParam)) {
+      setView(viewParam as any);
+    }
+  }, [setView]);
+
+  const handleSetView = (key: 'board' | 'missions' | 'issues' | 'history' | 'mcp' | 'settings') => {
+    setView(key);
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', key);
+    
+    // issues 탭이 아닐 때는 다른 상세 필터 쿼리들을 정리하여 주소창을 깔끔하게 유지할 수 있음
+    if (key !== 'issues') {
+      params.delete('sprint');
+      params.delete('missions');
+      params.delete('epics');
+      params.delete('statuses');
+      params.delete('priorities');
+      params.delete('agents');
+      params.delete('q');
+    }
+    
+    const newSearch = params.toString();
+    const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`;
+    window.history.replaceState(null, '', newUrl);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-50/50">
       <header className="border-b border-slate-200 px-6 py-3 flex items-center justify-between bg-white flex-shrink-0 z-10 relative overflow-x-auto">
@@ -129,7 +159,7 @@ function AppContent() {
             ] as const).map(({ key, label }) => (
               <button
                 key={key}
-                onClick={() => setView(key)}
+                onClick={() => handleSetView(key)}
                 className={`text-sm px-4 py-1.5 rounded-md font-medium transition-all ${
                   view === key
                     ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200'

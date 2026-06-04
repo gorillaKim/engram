@@ -26,6 +26,8 @@ interface MissionHierarchyProps {
   onMissionEdit?: (mission: Mission) => void;
   renderMissionActions?: (mission: Mission | null) => React.ReactNode;
   renderIssueExtra?: (issue: Issue) => React.ReactNode;
+  onIssueStatusChange?: (issueId: number, status: string) => void;
+  onIssuePriorityChange?: (issueId: number, priority: any) => void;
 }
 
 export function MissionHierarchy({
@@ -44,6 +46,8 @@ export function MissionHierarchy({
   onMissionEdit,
   renderMissionActions,
   renderIssueExtra,
+  onIssueStatusChange,
+  onIssuePriorityChange,
 }: MissionHierarchyProps) {
   return (
     <div className="space-y-4">
@@ -158,6 +162,8 @@ export function MissionHierarchy({
                     checked={bulkSelectedEpics.has(epic.id)}
                     onCheck={onEpicCheck ? (c) => onEpicCheck(epic.id, c) : undefined}
                     renderIssueExtra={renderIssueExtra}
+                    onIssueStatusChange={onIssueStatusChange}
+                    onIssuePriorityChange={onIssuePriorityChange}
                   />
                 ))}
               </div>

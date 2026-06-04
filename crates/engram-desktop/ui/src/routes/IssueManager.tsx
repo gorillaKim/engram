@@ -8,6 +8,8 @@ import {
   issueList,
   missionList,
   epicUpdate,
+  issueSetStatus,
+  issueSetPriority,
 } from '../ipc/invoke';
 import { useUIStore } from '../store/ui';
 import type { Sprint, Epic, Issue, Mission } from '../ipc/types';
@@ -25,6 +27,18 @@ export function IssueManager() {
   const { selectedSprintId, selectSprint, selectIssue, setView } = useUIStore();
   const qc = useQueryClient();
 
+  const handleSelectSprint = (id: number | null) => {
+    setSearchQuery('');
+    setSelectedMissionIds([]);
+    setSelectedEpicIds([]);
+    setSelectedStatuses([]);
+    setSelectedPriorities([]);
+    setSelectedAgents([]);
+    setFilterOpen(false);
+    setBulkSelectedEpics(new Set());
+    selectSprint(id);
+  };
+
   // 미션 접기/펼치기 맵 상태
   const [missionExpandedMap, setMissionExpandedMap] = useState<Record<string, boolean>>({});
   const toggleMission = (key: string) => {
@@ -41,10 +55,37 @@ export function IssueManager() {
   const [hideFinished, setHideFinished] = useState(true);
   const [hideFinishedEpics, setHideFinishedEpics] = useState(true);
 
-  // 미션 / 에픽 필터 상태
-  const [selectedMissionIds, setSelectedMissionIds] = useState<number[]>([]);
-  const [selectedEpicIds, setSelectedEpicIds] = useState<number[]>([]);
-  const [filterOpen, setFilterOpen] = useState(false);
+  // URL 쿼리 파라미터 분석용 헬퍼
+  const parseCsvParam = (key: string): string[] => {
+    const params = new URLSearchParams(window.location.search);
+    const val = params.get(key);
+    return val ? val.split(',').filter(Boolean) : [];
+  };
+
+  const parseCsvIntParam = (key: string): number[] => {
+    const params = new URLSearchParams(window.location.search);
+    const val = params.get(key);
+    return val ? val.split(',').map(Number).filter(n => !isNaN(n)) : [];
+  };
+
+  // 미션 / 에픽 / 상태 / 우선순위 / 담당자 필터 상태 (URL 쿼리 파라미터 연동)
+  const [selectedMissionIds, setSelectedMissionIds] = useState<number[]>(() => parseCsvIntParam('missions'));
+  const [selectedEpicIds, setSelectedEpicIds] = useState<number[]>(() => parseCsvIntParam('epics'));
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(() => parseCsvParam('statuses'));
+  const [selectedPriorities, setSelectedPriorities] = useState<string[]>(() => parseCsvParam('priorities'));
+  const [selectedAgents, setSelectedAgents] = useState<string[]>(() => parseCsvParam('agents'));
+  
+  // 쿼리 파라미터에 필터링 조건이 지정되어 있다면 기본적으로 필터 영역을 확장하여 노출
+  const [filterOpen, setFilterOpen] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.has('missions') ||
+      params.has('epics') ||
+      params.has('statuses') ||
+      params.has('priorities') ||
+      params.has('agents')
+    );
+  });
 
   // 모달 상태
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
@@ -56,7 +97,10 @@ export function IssueManager() {
   const [editSprint, setEditSprint] = useState<Sprint | null>(null);
   const [completeSprintTarget, setCompleteSprintTarget] = useState<Sprint | null>(null);
   
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('q') || '';
+  });
   const debouncedQuery = useDebounce(searchQuery);
 
   // 1. Queries
@@ -75,6 +119,82 @@ export function IssueManager() {
     const active = sprints.find((s) => s.status === 'active') ?? sprints[0];
     selectSprint(active.id);
   }, [sprints, selectedSprintId, selectSprint]);
+
+  // URL에서 초기 sprint 읽어와 동기화
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const val = params.get('sprint');
+    if (val === 'backlog') {
+      selectSprint(BACKLOG_ID);
+    } else if (val !== null) {
+      const num = Number(val);
+      if (!isNaN(num)) {
+        selectSprint(num);
+      }
+    }
+  }, [selectSprint]);
+
+  // 필터 상태 변경 시 URL 동기화
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'issues');
+
+    if (selectedSprintId === BACKLOG_ID) {
+      params.set('sprint', 'backlog');
+    } else if (selectedSprintId !== null) {
+      params.set('sprint', String(selectedSprintId));
+    } else {
+      params.delete('sprint');
+    }
+
+    if (selectedMissionIds.length > 0) {
+      params.set('missions', selectedMissionIds.join(','));
+    } else {
+      params.delete('missions');
+    }
+
+    if (selectedEpicIds.length > 0) {
+      params.set('epics', selectedEpicIds.join(','));
+    } else {
+      params.delete('epics');
+    }
+
+    if (selectedStatuses.length > 0) {
+      params.set('statuses', selectedStatuses.join(','));
+    } else {
+      params.delete('statuses');
+    }
+
+    if (selectedPriorities.length > 0) {
+      params.set('priorities', selectedPriorities.join(','));
+    } else {
+      params.delete('priorities');
+    }
+
+    if (selectedAgents.length > 0) {
+      params.set('agents', selectedAgents.join(','));
+    } else {
+      params.delete('agents');
+    }
+
+    if (searchQuery) {
+      params.set('q', searchQuery);
+    } else {
+      params.delete('q');
+    }
+
+    const newSearch = params.toString();
+    const newUrl = `${window.location.pathname}${newSearch ? '?' + newSearch : ''}`;
+    window.history.replaceState(null, '', newUrl);
+  }, [
+    selectedSprintId,
+    selectedMissionIds,
+    selectedEpicIds,
+    selectedStatuses,
+    selectedPriorities,
+    selectedAgents,
+    searchQuery
+  ]);
 
   const { data: issuesInView = [], isLoading: issuesLoading } = useQuery<Issue[]>({
     queryKey: ['issueList', isBacklog ? 'backlog' : selectedSprintId],
@@ -133,6 +253,28 @@ export function IssueManager() {
     onError: (e) => toast.error(`일괄 변경 실패: ${e}`),
   });
 
+  const updateIssueStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) => issueSetStatus(id, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('이슈 상태가 변경되었습니다');
+    },
+    onError: (e) => toast.error(`상태 변경 실패: ${e}`),
+  });
+
+  const updateIssuePriority = useMutation({
+    mutationFn: ({ id, priority }: { id: number; priority: string }) => issueSetPriority(id, priority),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('이슈 우선순위가 변경되었습니다');
+    },
+    onError: (e) => toast.error(`우선순위 변경 실패: ${e}`),
+  });
+
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
     onSuccess: () => {
@@ -159,6 +301,23 @@ export function IssueManager() {
     onError: (e) => toast.error(`삭제 실패: ${e}`),
   });
 
+  const availableAgents = useMemo(() => {
+    const agents = new Set<string>();
+    let hasUnassigned = false;
+    for (const issue of issuesInView) {
+      if (issue.assigned_agent) {
+        agents.add(issue.assigned_agent);
+      } else {
+        hasUnassigned = true;
+      }
+    }
+    const list = Array.from(agents).sort();
+    if (hasUnassigned) {
+      list.push('unassigned');
+    }
+    return list;
+  }, [issuesInView]);
+
   // 3. Custom Hook (3단계 계층형 가공)
   const filteredGroupedMissions = useGroupedMissions({
     issuesInView,
@@ -169,16 +328,12 @@ export function IssueManager() {
     selectedMissionIds,
     selectedEpicIds,
     debouncedQuery,
+    selectedStatuses,
+    selectedPriorities,
+    selectedAgents,
   });
 
-  // 스프린트 전환 시 검색어, 필터 초기화
-  useEffect(() => {
-    setSearchQuery('');
-    setSelectedMissionIds([]);
-    setSelectedEpicIds([]);
-    setFilterOpen(false);
-    setBulkSelectedEpics(new Set());
-  }, [selectedSprintId]);
+
 
   // 해당 스프린트에 속한 미션들만 필터링
   const filteredMissionsForFilter = useMemo(() => {
@@ -228,42 +383,14 @@ export function IssueManager() {
         sprints={sprints}
         backlogCount={backlogIssues.length}
         selectedSprintId={selectedSprintId}
-        onSelectSprint={selectSprint}
+        onSelectSprint={handleSelectSprint}
         onActivateSprint={(id) => activateSprint.mutate(id)}
         onCompleteSprint={setCompleteSprintTarget}
         onDeleteSprint={(id) => deleteSprint.mutate(id)}
         onEditSprint={setEditSprint}
         onAddSprint={() => setSprintModalOpen(true)}
       >
-        {(filteredMissionsForFilter.length > 0 || filterAvailableEpics.length > 0) && (
-          <div className="mx-2 mb-2">
-            <button
-              type="button"
-              onClick={() => setFilterOpen((v) => !v)}
-              className="w-full flex items-center justify-between px-2 py-1 text-[11px] text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <span>필터</span>
-                {(selectedMissionIds.length > 0 || selectedEpicIds.length > 0) && (
-                  <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1.5 font-bold">
-                    {selectedMissionIds.length + selectedEpicIds.length}
-                  </span>
-                )}
-              </span>
-              <span className="text-[9px]">{filterOpen ? '▲' : '▼'}</span>
-            </button>
-            {filterOpen && (
-              <IssueFilterPanel
-                filteredMissions={filteredMissionsForFilter}
-                availableEpics={filterAvailableEpics}
-                selectedMissionIds={selectedMissionIds}
-                setSelectedMissionIds={setSelectedMissionIds}
-                selectedEpicIds={selectedEpicIds}
-                setSelectedEpicIds={setSelectedEpicIds}
-              />
-            )}
-          </div>
-        )}
+
       </SprintSidebar>
 
       {/* Main content */}
@@ -328,6 +455,26 @@ export function IssueManager() {
               </button>
             </div>
 
+            <button
+              type="button"
+              onClick={() => setFilterOpen((v) => !v)}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-2 sm:px-2.5 py-1.5 rounded-lg border transition-all select-none hover:bg-slate-200/50 shrink-0 ${
+                filterOpen
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100/50'
+                  : 'bg-slate-100 border-slate-200 text-slate-600'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v3.059a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.24 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+              </svg>
+              <span>필터</span>
+              {(selectedMissionIds.length > 0 || selectedEpicIds.length > 0 || selectedStatuses.length > 0 || selectedPriorities.length > 0 || selectedAgents.length > 0) && (
+                <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1.5 py-0.2 font-bold leading-normal">
+                  {selectedMissionIds.length + selectedEpicIds.length + selectedStatuses.length + selectedPriorities.length + selectedAgents.length}
+                </span>
+              )}
+            </button>
+
             <input
               type="text"
               placeholder="#ID 또는 이슈 검색…"
@@ -371,6 +518,33 @@ export function IssueManager() {
                 <span className="truncate min-w-0 font-semibold">새 이슈</span>
               </button>
             )}
+          </div>
+        </div>
+
+        <div
+          className={`grid transition-all duration-300 ease-in-out flex-shrink-0 ${
+            filterOpen && (filteredMissionsForFilter.length > 0 || filterAvailableEpics.length > 0 || availableAgents.length > 0)
+              ? 'grid-rows-[1fr] opacity-100'
+              : 'grid-rows-[0fr] opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="overflow-hidden">
+            <IssueFilterPanel
+              filteredMissions={filteredMissionsForFilter}
+              availableEpics={filterAvailableEpics}
+              selectedMissionIds={selectedMissionIds}
+              setSelectedMissionIds={setSelectedMissionIds}
+              selectedEpicIds={selectedEpicIds}
+              setSelectedEpicIds={setSelectedEpicIds}
+              selectedStatuses={selectedStatuses}
+              setSelectedStatuses={setSelectedStatuses}
+              selectedPriorities={selectedPriorities}
+              setSelectedPriorities={setSelectedPriorities}
+              selectedAgents={selectedAgents}
+              setSelectedAgents={setSelectedAgents}
+              availableAgents={availableAgents}
+              onClose={() => setFilterOpen(false)}
+            />
           </div>
         </div>
 
@@ -442,6 +616,8 @@ export function IssueManager() {
                 setEditMission(mission);
                 setMissionModalOpen(true);
               }}
+              onIssueStatusChange={(id, status) => updateIssueStatus.mutate({ id, status })}
+              onIssuePriorityChange={(id, priority) => updateIssuePriority.mutate({ id, priority })}
             />
           )}
         </div>

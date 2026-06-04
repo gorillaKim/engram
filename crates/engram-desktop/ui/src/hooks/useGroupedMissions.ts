@@ -21,6 +21,9 @@ interface UseGroupedMissionsParams {
   selectedMissionIds: number[];
   selectedEpicIds: number[];
   debouncedQuery: string;
+  selectedStatuses?: string[];
+  selectedPriorities?: string[];
+  selectedAgents?: string[];
 }
 
 export function useGroupedMissions({
@@ -32,6 +35,9 @@ export function useGroupedMissions({
   selectedMissionIds,
   selectedEpicIds,
   debouncedQuery,
+  selectedStatuses = [],
+  selectedPriorities = [],
+  selectedAgents = [],
 }: UseGroupedMissionsParams): GroupedMission[] {
   // 3단계 계층형 가공 (Mission -> Epic -> Issue)
   // 핵심: 에픽/미션 구조는 전체 이슈(unfiltered)로 결정하고,
@@ -39,7 +45,23 @@ export function useGroupedMissions({
   //       이전에는 필터링된 이슈로 역추적해서 에픽 멤버십을 결정했기 때문에,
   //       모든 이슈가 finished/cancelled인 에픽→미션→프로젝트가 통째로 사라졌다.
   const groupedMissions = useMemo(() => {
-    const filteredIssues = filterFinishedIssues(issuesInView, hideFinished);
+    let filteredIssues = filterFinishedIssues(issuesInView, hideFinished);
+    
+    // 상태 필터 적용
+    if (selectedStatuses.length > 0) {
+      filteredIssues = filteredIssues.filter((i) => selectedStatuses.includes(i.status));
+    }
+    // 우선순위 필터 적용
+    if (selectedPriorities.length > 0) {
+      filteredIssues = filteredIssues.filter((i) => selectedPriorities.includes(i.priority));
+    }
+    // 담당 에이전트 필터 적용
+    if (selectedAgents.length > 0) {
+      filteredIssues = filteredIssues.filter((i) => {
+        const agent = i.assigned_agent ?? 'unassigned';
+        return selectedAgents.includes(agent);
+      });
+    }
     
     // 1. 전체 이슈로 에픽 멤버십 결정 (필터와 무관하게 에픽 구조 유지)
     const allIssueEpicIds = new Set(issuesInView.map(i => i.epic_id));
@@ -99,7 +121,16 @@ export function useGroupedMissions({
     }
     
     return result;
-  }, [issuesInView, allEpics, missions, hideFinished, hideFinishedEpics]);
+  }, [
+    issuesInView,
+    allEpics,
+    missions,
+    hideFinished,
+    hideFinishedEpics,
+    selectedStatuses,
+    selectedPriorities,
+    selectedAgents,
+  ]);
 
   const filteredGroupedMissions = useMemo(() => {
     let list = groupedMissions;

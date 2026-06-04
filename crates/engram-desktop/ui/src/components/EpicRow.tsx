@@ -3,8 +3,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusBadge } from './StatusBadge';
-import type { Sprint, Epic, Issue } from '../ipc/types';
+import type { Sprint, Epic, Issue, IssuePriority } from '../ipc/types';
 import { epicDelete, issueCreate } from '../ipc/invoke';
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return '방금';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return '방금';
+  if (mins < 60) return `${mins}분 전`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}시간 전`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}일 전`;
+  return `${Math.floor(days / 30)}개월 전`;
+}
 
 interface EpicRowProps {
   epic: Epic;
@@ -20,6 +33,8 @@ interface EpicRowProps {
   checked?: boolean;
   onCheck?: (checked: boolean) => void;
   renderIssueExtra?: (issue: Issue) => React.ReactNode;
+  onIssueStatusChange?: (issueId: number, status: string) => void;
+  onIssuePriorityChange?: (issueId: number, priority: IssuePriority) => void;
 }
 
 export function EpicRow({
@@ -35,6 +50,8 @@ export function EpicRow({
   checked = false,
   onCheck,
   renderIssueExtra,
+  onIssueStatusChange,
+  onIssuePriorityChange,
 }: EpicRowProps) {
   const qc = useQueryClient();
   const [confirmDeleteEpic, setConfirmDeleteEpic] = useState(false);
@@ -84,6 +101,11 @@ export function EpicRow({
     addIssueMutation.mutate(quickTitle.trim());
   };
 
+  // 에픽 진행률 계산
+  const totalIssues = issues.length;
+  const finishedIssues = issues.filter(i => i.status === 'finished').length;
+  const progressPercent = totalIssues > 0 ? Math.round((finishedIssues / totalIssues) * 100) : 0;
+
   return (
     <div className="border border-slate-200/80 rounded-xl bg-white shadow-sm overflow-hidden select-none">
       {/* Epic Row Header */}
@@ -124,9 +146,26 @@ export function EpicRow({
               백로그
             </span>
           )}
-          <span className="text-xs text-slate-400 font-medium flex-shrink-0">
-            {issues.length}개 이슈
+          <span className="text-xs text-slate-400 font-semibold flex-shrink-0">
+            {totalIssues}개 이슈
           </span>
+
+          {/* 에픽 진행률 표시 바 */}
+          {totalIssues > 0 && (
+            <div className="flex items-center gap-1.5 flex-shrink-0 ml-1" title={`진행률: ${progressPercent}% (${finishedIssues}/${totalIssues})`}>
+              <div className="w-12 h-1.5 bg-slate-200 rounded-full overflow-hidden inline-block">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    progressPercent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'
+                  }`}
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+              <span className={`text-[10px] font-bold ${progressPercent === 100 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                {progressPercent}%
+              </span>
+            </div>
+          )}
         </div>
 
         {!readOnly && (
@@ -181,9 +220,37 @@ export function EpicRow({
               onClick={() => onIssueClick(issue.id)}
               className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-slate-100 last:border-b-0 transition-colors"
             >
-              <StatusBadge status={issue.status} type="issue" variant="ko" />
-              <PriorityBadge priority={issue.priority} />
-              <span className="text-xs text-slate-700 flex-1 truncate font-medium">{issue.title}</span>
+              {/* 인라인 상태 변경 배지 */}
+              <StatusBadge
+                status={issue.status}
+                type="issue"
+                variant="ko"
+                onChange={!readOnly && onIssueStatusChange ? (newStatus) => onIssueStatusChange(issue.id, newStatus) : undefined}
+              />
+              {/* 인라인 우선순위 변경 배지 */}
+              <PriorityBadge
+                priority={issue.priority}
+                onChange={!readOnly && onIssuePriorityChange ? (newPrio) => onIssuePriorityChange(issue.id, newPrio) : undefined}
+              />
+              <span className="text-xs text-slate-700 flex-1 truncate font-semibold">{issue.title}</span>
+
+              {/* 🤖 담당 에이전트 배지 */}
+              {issue.assigned_agent && (
+                <span
+                  className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0"
+                  title={`담당 에이전트: ${issue.assigned_agent}`}
+                >
+                  🤖 {issue.assigned_agent.slice(0, 8)}
+                </span>
+              )}
+
+              {/* ⏱️ 경과 시간 */}
+              <span
+                className="text-[10px] text-slate-400 flex-shrink-0 font-medium"
+                title={`최종 수정: ${issue.updated_at}`}
+              >
+                {relativeTime(issue.updated_at)}
+              </span>
 
               {/* Sprint Badge (read-only) */}
               {issue.sprint_id ? (
