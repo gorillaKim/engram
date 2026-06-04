@@ -144,7 +144,7 @@ function AppContent() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50/50">
-      <header className="border-b border-slate-200 px-6 py-3 flex items-center justify-between bg-white flex-shrink-0 z-10 relative overflow-x-auto">
+      <header className="border-b border-slate-200 px-6 py-3 flex items-center justify-between bg-white flex-shrink-0 z-30 relative overflow-x-auto">
         <div className="flex items-center gap-4">
           <span className="font-bold text-slate-900 text-xl tracking-tight">Engram</span>
           
