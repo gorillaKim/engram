@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { Sprint, Issue } from '../ipc/types';
+import type { Sprint, Issue, Epic } from '../ipc/types';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { epicSetSprint, sprintUpdate, issueList } from '../ipc/invoke';
-import { getUnfinishedIssues, getUnfinishedEpics } from '../utils/sprintCompleteHelper';
+import { epicSetSprint, sprintUpdate, issueList, epicList, epicSetStatus } from '../ipc/invoke';
+import { getUnfinishedIssues, classifyEpics } from '../utils/sprintCompleteHelper';
 import { toast } from 'sonner';
 import { BaseModal } from './BaseModal';
 
@@ -30,7 +30,17 @@ export function ConfirmCompleteSprintModal({
     enabled: isOpen,
   });
 
+  // 전체 에픽 목록 조회
+  const { data: epics = [], isLoading: isLoadingEpics } = useQuery<Epic[]>({
+    queryKey: ['epicList', 'all'],
+    queryFn: () => epicList(undefined, true),
+    enabled: isOpen,
+  });
+
   const unfinishedIssues = getUnfinishedIssues(issues);
+
+  // 현재 스프린트에 배정된 에픽 필터링
+  const sprintEpics = epics.filter((e) => e.sprint_id === sprint.id);
 
   // 다른 활성/기획 단계 스프린트 목록
   const otherActiveSprints = sprints.filter(
@@ -40,21 +50,24 @@ export function ConfirmCompleteSprintModal({
   // 일괄 이관 및 스프린트 완료 뮤테이션
   const completeMutation = useMutation({
     mutationFn: async () => {
-      // 1. 미완료 이슈 이관 (미션 단위)
-      if (unfinishedIssues.length > 0) {
-        const targetSprintId =
-          transferTarget === 'backlog'
-            ? null
-            : selectedTargetSprintId === ''
-            ? null
-            : selectedTargetSprintId;
+      const targetSprintId =
+        transferTarget === 'backlog'
+          ? null
+          : selectedTargetSprintId === ''
+          ? null
+          : selectedTargetSprintId;
 
-        const epicIds = getUnfinishedEpics(issues);
-        const promises = epicIds.map((epicId) =>
-          epicSetSprint(epicId, targetSprintId)
-        );
-        await Promise.all(promises);
-      }
+      // 이번 스프린트에 배정된 에픽들의 상태를 확인하고 이관 또는 완료 처리
+      const { toComplete, toTransfer } = classifyEpics(sprintEpics, issues);
+
+      const completePromises = toComplete.map((epic) =>
+        epicSetStatus(epic.id, 'completed')
+      );
+      const transferPromises = toTransfer.map((epic) =>
+        epicSetSprint(epic.id, targetSprintId)
+      );
+
+      await Promise.all([...completePromises, ...transferPromises]);
 
       // 2. 스프린트 상태를 completed로 갱신
       await sprintUpdate(sprint.id, 'completed');
@@ -86,8 +99,8 @@ export function ConfirmCompleteSprintModal({
           <span className="font-semibold text-slate-200">대상 스프린트:</span> {sprint.name}
         </div>
 
-        {isLoadingIssues ? (
-          <div className="text-xs text-slate-400 text-center py-4">이슈 정보를 불러오는 중…</div>
+        {isLoadingIssues || isLoadingEpics ? (
+          <div className="text-xs text-slate-400 text-center py-4">이슈 및 에픽 정보를 불러오는 중…</div>
         ) : (
           <>
             {unfinishedIssues.length > 0 ? (
@@ -192,6 +205,7 @@ export function ConfirmCompleteSprintModal({
           disabled={
             completeMutation.isPending ||
             isLoadingIssues ||
+            isLoadingEpics ||
             (transferTarget === 'sprint' && selectedTargetSprintId === '')
           }
           className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg disabled:opacity-50 font-medium"

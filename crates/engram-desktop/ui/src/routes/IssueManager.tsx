@@ -14,6 +14,8 @@ import {
 import { useUIStore } from '../store/ui';
 import type { Sprint, Epic, Issue, Mission } from '../ipc/types';
 import { toggleAllEpics } from '../utils/epicHelper';
+import { getUnfinishedIssuesForEpic } from '../utils/sprintCompleteHelper';
+import { ConfirmBulkActionModal } from '../components/ConfirmBulkActionModal';
 import { MissionHierarchy } from '../components/MissionHierarchy';
 import { BulkActionBar } from '../components/BulkActionBar';
 import { SprintSidebar } from '../components/SprintSidebar';
@@ -96,6 +98,11 @@ export function IssueManager() {
   const [editEpic, setEditEpic] = useState<Epic | null>(null);
   const [editSprint, setEditSprint] = useState<Sprint | null>(null);
   const [completeSprintTarget, setCompleteSprintTarget] = useState<Sprint | null>(null);
+  const [bulkActionTarget, setBulkActionTarget] = useState<{
+    type: 'epic' | 'mission';
+    id: number;
+    items: { id: number; title: string }[];
+  } | null>(null);
   
   const [searchQuery, setSearchQuery] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -274,6 +281,75 @@ export function IssueManager() {
     },
     onError: (e) => toast.error(`우선순위 변경 실패: ${e}`),
   });
+
+  const bulkCompleteIssues = useMutation({
+    mutationFn: async (issueIds: number[]) => {
+      const promises = issueIds.map(id => issueSetStatus(id, 'finished'));
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('에픽 하위의 모든 미완료 이슈가 완료되었습니다');
+      setBulkActionTarget(null);
+    },
+    onError: (e) => toast.error(`이슈 일괄 완료 실패: ${e}`),
+  });
+
+  const bulkCompleteMissionEpics = useMutation({
+    mutationFn: async (epicIds: number[]) => {
+      const promises = epicIds.map(id => epicUpdate(id, { status: 'completed' }));
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['epicList'] });
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('미션 하위의 모든 에픽이 완료되었습니다');
+      setBulkActionTarget(null);
+    },
+    onError: (e) => toast.error(`에픽 일괄 완료 실패: ${e}`),
+  });
+
+  const handleConfirmBulkAction = () => {
+    if (!bulkActionTarget) return;
+    const ids = bulkActionTarget.items.map(item => item.id);
+    if (bulkActionTarget.type === 'epic') {
+      bulkCompleteIssues.mutate(ids);
+    } else {
+      bulkCompleteMissionEpics.mutate(ids);
+    }
+  };
+
+  const handleTriggerMissionEpicsComplete = (missionId: number) => {
+    const targetEpics = allEpics.filter(
+      e => e.mission_id === missionId && e.status !== 'completed' && e.status !== 'cancelled'
+    );
+    if (targetEpics.length === 0) {
+      toast.info('완료 처리할 에픽이 없습니다.');
+      return;
+    }
+    setBulkActionTarget({
+      type: 'mission',
+      id: missionId,
+      items: targetEpics.map(e => ({ id: e.id, title: e.title })),
+    });
+  };
+
+  const handleTriggerEpicIssuesComplete = (epicId: number) => {
+    const unfinished = getUnfinishedIssuesForEpic(epicId, issuesInView);
+    if (unfinished.length === 0) {
+      toast.info('완료 처리할 이슈가 없습니다.');
+      return;
+    }
+    setBulkActionTarget({
+      type: 'epic',
+      id: epicId,
+      items: unfinished.map(i => ({ id: i.id, title: i.title })),
+    });
+  };
 
   const activateSprint = useMutation({
     mutationFn: (id: number) => sprintUpdate(id, 'active'),
@@ -618,6 +694,20 @@ export function IssueManager() {
               }}
               onIssueStatusChange={(id, status) => updateIssueStatus.mutate({ id, status })}
               onIssuePriorityChange={(id, priority) => updateIssuePriority.mutate({ id, priority })}
+              renderMissionActions={(mission) => {
+                if (!mission) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => handleTriggerMissionEpicsComplete(mission.id)}
+                    className="text-[11px] px-2 py-1 bg-violet-600 hover:bg-violet-700 text-white rounded font-semibold transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-0.5"
+                    title="미션 내 모든 에픽 완료 처리"
+                  >
+                    ✓ 에픽 일괄 완료
+                  </button>
+                );
+              }}
+              onBulkCompleteIssues={handleTriggerEpicIssuesComplete}
             />
           )}
         </div>
@@ -663,6 +753,23 @@ export function IssueManager() {
             })
           }
           isPending={bulkUpdateEpics.isPending}
+        />
+      )}
+
+      {bulkActionTarget && (
+        <ConfirmBulkActionModal
+          isOpen={!!bulkActionTarget}
+          onClose={() => setBulkActionTarget(null)}
+          onConfirm={handleConfirmBulkAction}
+          title={bulkActionTarget.type === 'epic' ? '에픽 하위 이슈 일괄 완료' : '미션 하위 에픽 일괄 완료'}
+          description={
+            bulkActionTarget.type === 'epic'
+              ? '에픽 하위의 다음 미완료 이슈들을 모두 완료(Finished) 처리하시겠습니까?'
+              : '미션 하위의 다음 미완료 에픽들을 모두 완료(Completed) 처리하시겠습니까?'
+          }
+          items={bulkActionTarget.items}
+          confirmText="일괄 완료"
+          isPending={bulkCompleteIssues.isPending || bulkCompleteMissionEpics.isPending}
         />
       )}
     </div>

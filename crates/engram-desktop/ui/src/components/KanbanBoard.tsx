@@ -16,8 +16,9 @@ import { useIssueDnd } from '../hooks/useIssueDnd';
 import { useSessionRestore } from '../hooks/useSessionRestore';
 import { useEpics } from '../hooks/useEpics';
 import { useUIStore } from '../store/ui';
-import { missionList, issueSetStatus } from '../ipc/invoke';
-import { BOARD_COLUMNS, type Issue, type IssueStatus, type IssueProjectBoard, type Mission } from '../ipc/types';
+import { missionList, issueSetStatus, sprintList } from '../ipc/invoke';
+import { BOARD_COLUMNS, type Issue, type IssueStatus, type IssueProjectBoard, type Mission, type Sprint } from '../ipc/types';
+import { ConfirmCompleteSprintModal } from './ConfirmCompleteSprintModal';
 
 type BoardColumn = IssueStatus;
 const STANDARD_COLUMNS = BOARD_COLUMNS.filter((c) => c !== 'cancelled');
@@ -58,6 +59,11 @@ export function KanbanBoard() {
     queryKey: ['missionList'],
     queryFn: () => missionList(true),
   }); // ADR-0014: Issue.mission_id 는 Epic 에서 derive 된 값. 백엔드 JOIN 결과로 일관성 보장.
+  const { data: sprints = [] } = useQuery<Sprint[]>({
+    queryKey: ['sprintList'],
+    queryFn: sprintList,
+    refetchInterval: 30_000,
+  });
   const dnd = useIssueDnd(null);
 
   const epicMap = new Map(epics.map((e) => [e.id, e.title]));
@@ -71,6 +77,7 @@ export function KanbanBoard() {
   const [epicModalProject, setEpicModalProject] = useState<string | null>(null);
   const [sprintModalOpen, setSprintModalOpen] = useState(false);
   const [bulkFinishTarget, setBulkFinishTarget] = useState<{ projectKey: string; issues: Issue[] } | null>(null);
+  const [completeSprintTarget, setCompleteSprintTarget] = useState<Sprint | null>(null);
 
   const queryClient = useQueryClient();
   const bulkFinishMutation = useMutation({
@@ -102,6 +109,7 @@ export function KanbanBoard() {
   const warnings = session?.warnings ?? [];
   const expansionIds = new Set<number>(session?.scope_expansion_ids ?? []);
   const stalledIssues = data?.stalled_issues ?? [];
+  const activeSprint = sprints.find((s) => s.id === data?.sprint_id && s.status === 'active');
 
   // Apply client-side filters
   let filteredBoards = applyFilters(boards, boardFilters);
@@ -217,6 +225,16 @@ export function KanbanBoard() {
             })}
           </div>
           <div className="flex gap-2">
+            {activeSprint && (
+              <button
+                type="button"
+                onClick={() => setCompleteSprintTarget(activeSprint)}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-0.5"
+                title="현재 활성화된 스프린트 완료 처리"
+              >
+                스프린트 완료
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSprintModalOpen(true)}
@@ -291,6 +309,14 @@ export function KanbanBoard() {
         open={sprintModalOpen}
         onClose={() => setSprintModalOpen(false)}
       />
+      {completeSprintTarget && (
+        <ConfirmCompleteSprintModal
+          isOpen={!!completeSprintTarget}
+          onClose={() => setCompleteSprintTarget(null)}
+          sprint={completeSprintTarget}
+          sprints={sprints}
+        />
+      )}
       <CreateIssueModal
         open={issueModalProject !== null}
         onClose={() => setIssueModalProject(null)}

@@ -35,6 +35,7 @@ interface EpicRowProps {
   renderIssueExtra?: (issue: Issue) => React.ReactNode;
   onIssueStatusChange?: (issueId: number, status: string) => void;
   onIssuePriorityChange?: (issueId: number, priority: IssuePriority) => void;
+  onBulkCompleteIssues?: (epicId: number) => void;
 }
 
 export function EpicRow({
@@ -52,6 +53,7 @@ export function EpicRow({
   renderIssueExtra,
   onIssueStatusChange,
   onIssuePriorityChange,
+  onBulkCompleteIssues,
 }: EpicRowProps) {
   const qc = useQueryClient();
   const [confirmDeleteEpic, setConfirmDeleteEpic] = useState(false);
@@ -105,6 +107,7 @@ export function EpicRow({
   const totalIssues = issues.length;
   const finishedIssues = issues.filter(i => i.status === 'finished').length;
   const progressPercent = totalIssues > 0 ? Math.round((finishedIssues / totalIssues) * 100) : 0;
+  const unfinishedCount = issues.filter(i => i.status !== 'finished' && i.status !== 'cancelled').length;
 
   return (
     <div className="border border-slate-200/80 rounded-xl bg-white shadow-sm overflow-hidden select-none">
@@ -170,6 +173,17 @@ export function EpicRow({
 
         {!readOnly && (
           <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+            {unfinishedCount > 0 && onBulkCompleteIssues && (
+              <button
+                type="button"
+                onClick={() => onBulkCompleteIssues(epic.id)}
+                title="하위 이슈 일괄 완료"
+                className="text-xs px-2 py-1 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded font-semibold transition-colors flex items-center gap-0.5"
+              >
+                ✓ 일괄 완료
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsAdding(true)}

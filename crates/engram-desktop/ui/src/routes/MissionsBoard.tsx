@@ -8,7 +8,10 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { Mission, MissionTree, Epic, Sprint } from '../ipc/types';
-import { missionList, missionGetTree, sprintCurrent, sprintList, epicList } from '../ipc/invoke';
+import { missionList, missionGetTree, sprintCurrent, sprintList, epicList, epicUpdate } from '../ipc/invoke';
+import { useMutation } from '@tanstack/react-query';
+import { ConfirmBulkActionModal } from '../components/ConfirmBulkActionModal';
+import { toast } from 'sonner';
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
 import { EditEpicModal } from '../components/EditEpicModal';
@@ -88,6 +91,41 @@ export function MissionsBoard() {
   const [activeSprint, setActiveSprint] = useState<Sprint | null>(null);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [selectedFilterSprintId, setSelectedFilterSprintId] = useState<number | 'all' | 'backlog'>('all');
+  const [bulkActionTarget, setBulkActionTarget] = useState<{
+    type: 'epic';
+    id: number;
+    items: { id: number; title: string }[];
+  } | null>(null);
+
+  const bulkCompleteMissionEpics = useMutation({
+    mutationFn: async (epicIds: number[]) => {
+      const promises = epicIds.map((id) => epicUpdate(id, { status: 'completed' }));
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      toast.success('미션 하위의 모든 에픽이 완료되었습니다');
+      setBulkActionTarget(null);
+      if (selectedId) loadTree(selectedId);
+    },
+    onError: (e) => toast.error(`에픽 일괄 완료 실패: ${e}`),
+  });
+
+  const handleTriggerMissionEpicsComplete = () => {
+    if (!tree) return;
+    const targetEpics = tree.epics
+      .map((ew) => ew.epic)
+      .filter((e) => e.status !== 'completed' && e.status !== 'cancelled');
+
+    if (targetEpics.length === 0) {
+      toast.info('완료 처리할 에픽이 없습니다.');
+      return;
+    }
+    setBulkActionTarget({
+      type: 'epic',
+      id: tree.mission.id,
+      items: targetEpics.map(e => ({ id: e.id, title: e.title })),
+    });
+  };
 
   const { selectIssue, selectProject } = useUIStore();
 
@@ -335,6 +373,13 @@ export function MissionsBoard() {
               </div>
               <div className="w-px h-6 bg-slate-200" />
               <button
+                onClick={handleTriggerMissionEpicsComplete}
+                className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1"
+                title="미션 내 모든 에픽 완료 처리"
+              >
+                ✓ 에픽 일괄 완료
+              </button>
+              <button
                 onClick={() => setCreateEpicOpen(true)}
                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center gap-1"
               >
@@ -376,6 +421,22 @@ export function MissionsBoard() {
         onClose={() => { setCreateEpicOpen(false); if (selectedId) loadTree(selectedId); }}
         defaultMissionId={selectedId ?? undefined}
       />
+      {bulkActionTarget && (
+        <ConfirmBulkActionModal
+          isOpen={!!bulkActionTarget}
+          onClose={() => setBulkActionTarget(null)}
+          onConfirm={() => {
+            if (bulkActionTarget) {
+              bulkCompleteMissionEpics.mutate(bulkActionTarget.items.map(i => i.id));
+            }
+          }}
+          title="미션 하위 에픽 일괄 완료"
+          description="미션 하위의 다음 미완료 에픽들을 모두 완료(Completed) 처리하시겠습니까?"
+          items={bulkActionTarget.items}
+          confirmText="일괄 완료"
+          isPending={bulkCompleteMissionEpics.isPending}
+        />
+      )}
     </div>
   );
 }

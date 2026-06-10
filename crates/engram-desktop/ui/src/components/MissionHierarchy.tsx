@@ -28,6 +28,7 @@ interface MissionHierarchyProps {
   renderIssueExtra?: (issue: Issue) => React.ReactNode;
   onIssueStatusChange?: (issueId: number, status: string) => void;
   onIssuePriorityChange?: (issueId: number, priority: any) => void;
+  onBulkCompleteIssues?: (epicId: number) => void;
 }
 
 export function MissionHierarchy({
@@ -48,6 +49,7 @@ export function MissionHierarchy({
   renderIssueExtra,
   onIssueStatusChange,
   onIssuePriorityChange,
+  onBulkCompleteIssues,
 }: MissionHierarchyProps) {
   return (
     <div className="space-y-4">
@@ -164,6 +166,7 @@ export function MissionHierarchy({
                     renderIssueExtra={renderIssueExtra}
                     onIssueStatusChange={onIssueStatusChange}
                     onIssuePriorityChange={onIssuePriorityChange}
+                    onBulkCompleteIssues={onBulkCompleteIssues}
                   />
                 ))}
               </div>

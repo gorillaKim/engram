@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { epicUpdate, epicDelete, missionList, sprintList } from '../ipc/invoke';
-import type { Epic, EpicStatus } from '../ipc/types';
+import { epicUpdate, epicDelete, missionList, sprintList, issueList, issueSetStatus } from '../ipc/invoke';
+import type { Epic, EpicStatus, Issue } from '../ipc/types';
 import { BaseModal } from './BaseModal';
+import { ConfirmBulkActionModal } from './ConfirmBulkActionModal';
+import { getUnfinishedIssuesForEpic } from '../utils/sprintCompleteHelper';
 
 const STATUS_OPTIONS: { value: EpicStatus; label: string }[] = [
   { value: 'active',    label: '진행' },
@@ -24,6 +26,30 @@ export function EditEpicModal({ epic, onClose }: Props) {
   const [missionIdInput, setMissionIdInput] = useState<number | null>(null);
   const [sprintIdInput, setSprintIdInput] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmBulkIssuesOpen, setConfirmBulkIssuesOpen] = useState(false);
+
+  const { data: issues = [] } = useQuery<Issue[]>({
+    queryKey: ['issueList', 'epic', epic?.id],
+    queryFn: () => issueList({ epic_id: epic?.id } as any),
+    enabled: epic != null,
+  });
+
+  const unfinishedIssues = getUnfinishedIssuesForEpic(epic?.id ?? 0, issues);
+
+  const bulkCompleteIssues = useMutation({
+    mutationFn: async (issueIds: number[]) => {
+      const promises = issueIds.map(id => issueSetStatus(id, 'finished'));
+      return Promise.all(promises);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['issueList'] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['sessionRestore'] });
+      toast.success('에픽 하위의 모든 미완료 이슈가 완료되었습니다');
+      setConfirmBulkIssuesOpen(false);
+    },
+    onError: (e) => toast.error(`이슈 일괄 완료 실패: ${e}`),
+  });
 
   const { data: missions = [] } = useQuery({
     queryKey: ['missionList'],
@@ -200,14 +226,25 @@ export function EditEpicModal({ epic, onClose }: Props) {
                 </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={remove.isPending}
-                className="px-3 py-2 text-xs rounded-lg border border-red-500/50 hover:bg-red-950/20 text-red-400 disabled:opacity-50"
-              >
-                에픽 삭제
-              </button>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={remove.isPending}
+                  className="px-3 py-2 text-xs rounded-lg border border-red-500/50 hover:bg-red-950/20 text-red-400 disabled:opacity-50"
+                >
+                  에픽 삭제
+                </button>
+                {unfinishedIssues.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmBulkIssuesOpen(true)}
+                    className="px-3 py-2 text-xs rounded-lg border border-emerald-500/50 hover:bg-emerald-950/20 text-emerald-400 font-medium ml-2 transition-colors"
+                  >
+                    하위 이슈 일괄 완료
+                  </button>
+                )}
+              </div>
             )}
             <div className="flex gap-2">
               <button
@@ -228,6 +265,18 @@ export function EditEpicModal({ epic, onClose }: Props) {
             </div>
           </div>
         </div>
+      )}
+      {confirmBulkIssuesOpen && epic && (
+        <ConfirmBulkActionModal
+          isOpen={confirmBulkIssuesOpen}
+          onClose={() => setConfirmBulkIssuesOpen(false)}
+          onConfirm={() => bulkCompleteIssues.mutate(unfinishedIssues.map(i => i.id))}
+          title="에픽 하위 이슈 일괄 완료"
+          description="에픽 하위의 다음 미완료 이슈들을 모두 완료(Finished) 처리하시겠습니까?"
+          items={unfinishedIssues.map(i => ({ id: i.id, title: i.title }))}
+          confirmText="일괄 완료"
+          isPending={bulkCompleteIssues.isPending}
+        />
       )}
     </BaseModal>
   );
