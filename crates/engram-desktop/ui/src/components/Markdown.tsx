@@ -17,8 +17,8 @@ export function Markdown({ children, className = '' }: Props) {
         h2: ({ children }) => <h2 className="text-sm font-bold text-slate-700 mb-1">{children}</h2>,
         h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-700 mb-1">{children}</h3>,
         p: ({ children }) => <p className="text-sm text-slate-600 leading-relaxed mb-2 last:mb-0">{children}</p>,
-        ul: ({ children }) => <ul className="text-sm text-slate-600 list-disc list-inside space-y-0.5 mb-2">{children}</ul>,
-        ol: ({ children }) => <ol className="text-sm text-slate-600 list-decimal list-inside space-y-0.5 mb-2">{children}</ol>,
+        ul: ({ children }) => <ul className="text-sm text-slate-600 list-disc list-outside pl-5 space-y-0.5 mb-2">{children}</ul>,
+        ol: ({ children }) => <ol className="text-sm text-slate-600 list-decimal list-outside pl-5 space-y-0.5 mb-2">{children}</ol>,
         li: ({ children }) => <li className="leading-relaxed">{children}</li>,
         code: ({ children, className }) => {
           const isBlock = className?.includes('language-');
