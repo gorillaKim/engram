@@ -63,8 +63,8 @@ pub async fn run(db: Db, args: MissionArgs, fmt: OutputFormat, agent_id: &str) -
     match args.command {
         MissionCommand::Create { title, description, jira_key } => {
             let mission = db.mission_create(CreateMissionInput {
-                title,
-                description,
+                title: crate::commands::unescape_newlines(title),
+                description: crate::commands::unescape_newlines_opt(description),
                 jira_key,
             }).await?;
             output::print_value(&mission, fmt)?;
@@ -83,8 +83,8 @@ pub async fn run(db: Db, args: MissionArgs, fmt: OutputFormat, agent_id: &str) -
         }
         MissionCommand::Update { id, title, description, status, jira_key } => {
             let mission = db.mission_update(id, UpdateMissionInput {
-                title,
-                description,
+                title: crate::commands::unescape_newlines_opt(title),
+                description: crate::commands::unescape_newlines_opt(description),
                 jira_key,
                 status: status.as_deref().map(parse_mission_status).transpose()?,
             }, agent_id).await?;

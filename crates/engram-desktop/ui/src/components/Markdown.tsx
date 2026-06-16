@@ -7,6 +7,7 @@ interface Props {
 }
 
 export function Markdown({ children, className = '' }: Props) {
+  const formattedChildren = children.replace(/\\n/g, '\n');
   return (
     <div className={`break-words ${className}`}>
     <ReactMarkdown
@@ -40,7 +41,7 @@ export function Markdown({ children, className = '' }: Props) {
         td: ({ children }) => <td className="px-2 py-1 border-b border-r last:border-r-0 border-slate-200 text-slate-600 whitespace-nowrap">{children}</td>,
       }}
     >
-      {children}
+      {formattedChildren}
     </ReactMarkdown>
     </div>
   );

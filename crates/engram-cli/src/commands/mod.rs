@@ -11,3 +11,11 @@ pub mod session;
 pub mod sprint;
 pub mod stalled;
 pub mod task;
+
+pub fn unescape_newlines(s: String) -> String {
+    s.replace("\\n", "\n")
+}
+
+pub fn unescape_newlines_opt(s: Option<String>) -> Option<String> {
+    s.map(unescape_newlines)
+}

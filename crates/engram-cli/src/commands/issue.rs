@@ -151,7 +151,11 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
     match args.command {
         IssueCommand::Create { epic, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
-                epic_id: epic, title, description, goal, priority: None,
+                epic_id: epic,
+                title: crate::commands::unescape_newlines(title),
+                description: crate::commands::unescape_newlines_opt(description),
+                goal: crate::commands::unescape_newlines_opt(goal),
+                priority: None,
             }).await?;
             output::print_value(&issue, fmt)?;
         }
@@ -198,9 +202,9 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
             let issue = db.issue_update(id, UpdateIssueInput {
                 status: status.as_deref().map(parse_status).transpose()?,
                 priority: priority.as_deref().map(parse_priority).transpose()?,
-                title,
-                description,
-                goal,
+                title: crate::commands::unescape_newlines_opt(title),
+                description: crate::commands::unescape_newlines_opt(description),
+                goal: crate::commands::unescape_newlines_opt(goal),
                 epic_id: None,
             }, agent_id).await?;
             output::print_value(&issue, fmt)?;

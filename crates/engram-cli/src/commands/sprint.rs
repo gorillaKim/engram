@@ -33,7 +33,10 @@ pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat, agent_id: &str) ->
     match args.command {
         SprintCommand::Create { name, goal, start, end } => {
             let sprint = db.sprint_create(CreateSprintInput {
-                name, goal, start_date: start, end_date: end,
+                name: crate::commands::unescape_newlines(name),
+                goal: crate::commands::unescape_newlines_opt(goal),
+                start_date: start,
+                end_date: end,
             }).await?;
             output::print_value(&sprint, fmt)?;
         }
@@ -56,7 +59,11 @@ pub async fn run(db: Db, args: SprintArgs, fmt: OutputFormat, agent_id: &str) ->
                 other       => Err(anyhow::anyhow!("알 수 없는 status: {other}")),
             }).transpose()?;
             let sprint = db.sprint_update(id, UpdateSprintInput {
-                name, status: parsed_status, goal, start_date: None, end_date: None,
+                name: crate::commands::unescape_newlines_opt(name),
+                status: parsed_status,
+                goal: crate::commands::unescape_newlines_opt(goal),
+                start_date: None,
+                end_date: None,
             }, agent_id).await?;
             output::print_value(&sprint, fmt)?;
         }

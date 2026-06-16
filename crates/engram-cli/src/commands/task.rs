@@ -48,7 +48,12 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> a
     match args.command {
         TaskCommand::Create { issue, title, goal } => {
             let task = db.task_create(CreateTaskInput {
-                issue_id: issue, title, description: None, goal, after_task_id: None, source: None,
+                issue_id: issue,
+                title: crate::commands::unescape_newlines(title),
+                description: None,
+                goal: crate::commands::unescape_newlines_opt(goal),
+                after_task_id: None,
+                source: None,
             }).await?;
             output::print_value(&task, fmt)?;
         }
@@ -68,7 +73,7 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> a
         TaskCommand::Update { id, status, title } => {
             let task = db.task_update(id, UpdateTaskInput {
                 status: status.as_deref().map(parse_task_status).transpose()?,
-                title,
+                title: crate::commands::unescape_newlines_opt(title),
                 ..Default::default()
             }, agent_id).await?;
             output::print_value(&task, fmt)?;
@@ -76,7 +81,7 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> a
         TaskCommand::InsertAfter { issue, after_task_id, title } => {
             let task = db.task_create(CreateTaskInput {
                 issue_id: issue,
-                title,
+                title: crate::commands::unescape_newlines(title),
                 description: None,
                 goal: None,
                 after_task_id: Some(after_task_id),

@@ -60,7 +60,11 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> a
     match args.command {
         EpicCommand::Create { project, title, mission_id, sprint } => {
             let epic = db.epic_create(CreateEpicInput {
-                project_key: project, mission_id, sprint_id: sprint, title, description: None,
+                project_key: project,
+                mission_id,
+                sprint_id: sprint,
+                title: crate::commands::unescape_newlines(title),
+                description: None,
             }).await?;
             output::print_value(&epic, fmt)?;
         }
@@ -76,8 +80,8 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> a
         EpicCommand::Update { id, status, title, description } => {
             let epic = db.epic_update(id, UpdateEpicInput {
                 status: status.as_deref().map(parse_epic_status).transpose()?,
-                title,
-                description,
+                title: crate::commands::unescape_newlines_opt(title),
+                description: crate::commands::unescape_newlines_opt(description),
                 mission_id: None,
                 sprint_id: None,
                 update_sprint_id: false,
