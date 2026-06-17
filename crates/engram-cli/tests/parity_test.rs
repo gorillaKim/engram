@@ -934,6 +934,233 @@ async fn test_all_mcp_tools_have_cli_counterpart() {
     }
 }
 
+async fn seed_large_via_db(db: &Arc<Db>) {
+    let s = db.sprint_create(CreateSprintInput {
+        name: "S_large".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db.sprint_update(s.id, UpdateSprintInput {
+        name: None, status: Some(SprintStatus::Active),
+        goal: None, start_date: None, end_date: None,
+    }, "test").await.unwrap();
+    
+    let m = db.mission_create(CreateMissionInput {
+        title: "M_large".into(), description: None, jira_key: None,
+    }).await.unwrap();
+
+    // 에픽 3개
+    for i in 1..=3 {
+        let e = db.epic_create(CreateEpicInput {
+            project_key: "p".into(), mission_id: Some(m.id), sprint_id: Some(s.id),
+            title: format!("E{}", i), description: Some("에픽 설명글입니다. ".repeat(10)),
+        }).await.unwrap();
+
+        // 각 에픽에 이슈 3개 (총 9개)
+        for j in 1..=3 {
+            let issue = db.issue_create(CreateIssueInput {
+                epic_id: e.id, title: format!("I{}-{}", i, j),
+                description: Some("이슈 상세 설명글입니다. ".repeat(5)), goal: Some("목표".into()), priority: None,
+            }).await.unwrap();
+
+            // ready 상태로 변경
+            db.issue_update(issue.id, engram_core::models::issue::UpdateIssueInput {
+                status: Some(engram_core::models::issue::IssueStatus::Ready),
+                ..Default::default()
+            }, "test").await.unwrap();
+
+            // 각 이슈에 태스크 2개
+            for k in 1..=2 {
+                db.task_create(CreateTaskInput {
+                    issue_id: issue.id, title: format!("T{}-{}-{}", i, j, k), description: None,
+                    goal: None, after_task_id: None, source: None,
+                }).await.unwrap();
+            }
+
+            // 각 이슈에 caveat 1개, decision 1개
+            db.note_add(CreateNoteInput {
+                issue_id: issue.id, task_id: None, note_type: NoteType::Caveat,
+                summary: format!("C{}-{}", i, j), detail: Some("상세 함정 내용".into()),
+                author: Some("agent".into()), agent_id: Some("test".into()),
+                scope: None, scope_target_id: None, project_key: None,
+            }).await.unwrap();
+
+            db.note_add(CreateNoteInput {
+                issue_id: issue.id, task_id: None, note_type: NoteType::Decision,
+                summary: format!("D{}-{}", i, j), detail: Some("상세 결정 내용".into()),
+                author: Some("agent".into()), agent_id: Some("test".into()),
+                scope: None, scope_target_id: None, project_key: None,
+            }).await.unwrap();
+        }
+
+        // 각 에픽에 required 상태인 draft 이슈 1개씩 추가 (총 3개)
+        db.issue_create(CreateIssueInput {
+            epic_id: e.id, title: format!("Draft-{}", i),
+            description: None, goal: None, priority: None,
+        }).await.unwrap();
+    }
+
+    // 전역 caveat note 3개 추가 (scope=epic, scope_target_id=epic_id)
+    let epics = db.epic_list(Some("p"), false).await.unwrap();
+    for (idx, epic) in epics.iter().enumerate() {
+        db.note_add(CreateNoteInput {
+            issue_id: 0, task_id: None, note_type: NoteType::Caveat,
+            summary: format!("GlobalCaveat-{}", idx), detail: Some("전역 주의사항 상세".into()),
+            author: Some("agent".into()), agent_id: Some("test".into()),
+            scope: Some(engram_core::models::note::NoteScope::Epic), scope_target_id: Some(epic.id), project_key: None,
+        }).await.unwrap();
+    }
+}
+
+async fn seed_large_via_dispatch(db: &Arc<Db>) {
+    let s = dispatch(Arc::clone(db), "sprint_create", &json!({"name": "S_large"})).await.unwrap();
+    let sid = s["id"].as_i64().unwrap();
+    dispatch(Arc::clone(db), "sprint_update", &json!({"id": sid, "status": "active", "agent_id": "test"})).await.unwrap();
+
+    let m = dispatch(Arc::clone(db), "mission_create", &json!({"title": "M_large"})).await.unwrap();
+    let mid = m["id"].as_i64().unwrap();
+
+    for i in 1..=3 {
+        let e = dispatch(Arc::clone(db), "epic_create", &json!({
+            "project_key": "p", "mission_id": mid, "sprint_id": sid,
+            "title": format!("E{}", i), "description": "에픽 설명글입니다. ".repeat(10),
+        })).await.unwrap();
+        let eid = e["id"].as_i64().unwrap();
+
+        for j in 1..=3 {
+            let issue = dispatch(Arc::clone(db), "issue_create", &json!({
+                "epic_id": eid, "title": format!("I{}-{}", i, j),
+                "description": "이슈 상세 설명글입니다. ".repeat(5), "goal": "목표",
+            })).await.unwrap();
+            let iid = issue["id"].as_i64().unwrap();
+
+            dispatch(Arc::clone(db), "issue_update", &json!({
+                "id": iid, "status": "ready", "agent_id": "test",
+            })).await.unwrap();
+
+            for k in 1..=2 {
+                dispatch(Arc::clone(db), "task_create", &json!({
+                    "issue_id": iid, "title": format!("T{}-{}-{}", i, j, k),
+                })).await.unwrap();
+            }
+
+            dispatch(Arc::clone(db), "note_add", &json!({
+                "issue_id": iid, "note_type": "caveat", "summary": format!("C{}-{}", i, j),
+                "detail": "상세 함정 내용", "agent_id": "test",
+            })).await.unwrap();
+
+            dispatch(Arc::clone(db), "note_add", &json!({
+                "issue_id": iid, "note_type": "decision", "summary": format!("D{}-{}", i, j),
+                "detail": "상세 결정 내용", "agent_id": "test",
+            })).await.unwrap();
+        }
+
+        dispatch(Arc::clone(db), "issue_create", &json!({
+            "epic_id": eid, "title": format!("Draft-{}", i),
+        })).await.unwrap();
+    }
+
+    // 전역 caveat note 추가
+    let epics = dispatch(Arc::clone(db), "epic_list", &json!({"project_key": "p"})).await.unwrap();
+    for (idx, epic) in epics.as_array().unwrap().iter().enumerate() {
+        let eid = epic["id"].as_i64().unwrap();
+        dispatch(Arc::clone(db), "note_add", &json!({
+            "note_type": "caveat", "summary": format!("GlobalCaveat-{}", idx),
+            "detail": "전역 주의사항 상세", "agent_id": "test",
+            "scope": "epic", "scope_target_id": eid,
+        })).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn test_parity_session_restore_size_guard_matrix() {
+    let db_a = fresh_db().await;
+    seed_large_via_db(&db_a).await;
+
+    let db_b = fresh_db().await;
+    seed_large_via_dispatch(&db_b).await;
+
+    let compacts = vec![true, false];
+    let limits = vec![500, 3000, 50000];
+
+    for compact in compacts {
+        for limit in limits.iter().copied() {
+            let cli_val = db_a.session_restore(None, compact, 120, Some(limit)).await.unwrap();
+            let cli = normalize(serde_json::to_value(&cli_val).unwrap());
+
+            let mcp = normalize(dispatch(
+                Arc::clone(&db_b),
+                "session_restore",
+                &json!({"compact": compact, "size_limit": limit}),
+            ).await.unwrap());
+
+            assert_eq!(
+                cli, mcp,
+                "session_restore 동치 실패 (compact={}, limit={})",
+                compact, limit
+            );
+
+            // size_limit 가 작을 때 절단 검증
+            if limit == 500 {
+                assert!(cli["truncated"].as_bool().unwrap(), "limit=500 일 때는 잘려야 함");
+                assert!(cli["truncated_count"].as_i64().unwrap() > 0);
+                assert!(!cli["warnings"].as_array().unwrap().is_empty());
+            }
+
+            // size_limit 가 충분히 클 때 절단되지 않아야 함
+            if limit == 50000 {
+                assert!(!cli["truncated"].as_bool().unwrap(), "limit=50000 일 때는 안 잘려야 함");
+                assert!(cli["truncated_count"].is_null() || cli.get("truncated_count").is_none());
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_session_restore_default_limit_korean_truncation() {
+    let db = fresh_db().await;
+    let s = db.sprint_create(CreateSprintInput {
+        name: "S_korean".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db.sprint_update(s.id, UpdateSprintInput {
+        name: None, status: Some(SprintStatus::Active),
+        goal: None, start_date: None, end_date: None,
+    }, "test").await.unwrap();
+    
+    let m = db.mission_create(CreateMissionInput {
+        title: "M_korean".into(), description: None, jira_key: None,
+    }).await.unwrap();
+
+    // 아주 긴 한글 문자열 (3000번 반복 = 약 21,000자 = 63,000바이트)
+    let long_korean = "한글설명내용입니다".repeat(3000); 
+
+    let e = db.epic_create(CreateEpicInput {
+        project_key: "p".into(), mission_id: Some(m.id), sprint_id: Some(s.id),
+        title: "한글 에픽".into(), description: Some(long_korean.clone()),
+    }).await.unwrap();
+
+    // 1개 이슈 생성 및 ready로 변경
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id: e.id, title: "한글 이슈".into(), 
+        description: Some(long_korean.clone()), goal: Some(long_korean), priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, engram_core::models::issue::UpdateIssueInput {
+        status: Some(engram_core::models::issue::IssueStatus::Ready),
+        ..Default::default()
+    }, "test").await.unwrap();
+
+    // 기본 한도(25000자 = 25000바이트)로 project_key="p" session_restore 호출
+    // size_limit=None 이면 기본값 25000을 써야 함.
+    // project_key="p"로 필터링해야 epic.description 과 issue.description 이 200글자로 잘리지 않아
+    // 대용량 페이로드가 구성되고, 최종적으로 size limit 가드에 걸려 잘려나가게 됩니다.
+    let snap = db.session_restore(Some("p"), false, 120, None).await.unwrap();
+    
+    assert!(snap.truncated, "한글 대용량 데이터가 포함되었으므로 기본 한도 25000바이트에서 잘려야 함");
+    assert!(snap.truncated_count.unwrap() > 0);
+    
+    let serialized = serde_json::to_string(&snap).unwrap();
+    assert!(serialized.len() <= 25000, "잘린 후 직렬화된 크기가 25000바이트 이하여야 함. 실제 크기: {}", serialized.len());
+}
+
+
 
 
 

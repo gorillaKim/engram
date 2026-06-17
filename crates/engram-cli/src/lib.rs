@@ -58,6 +58,8 @@ pub enum Commands {
     SnapshotText {
         #[arg(long)]
         project: Option<String>,
+        #[arg(long)]
+        compact: bool,
     },
 }
 
@@ -79,11 +81,12 @@ pub async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
         Commands::Mission(args) => commands::mission::run(db, args, fmt, agent_id).await?,
         Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,
         Commands::Hook(args)    => commands::hook::run(args, fmt).await?,
-        Commands::SnapshotText { project } => {
-            commands::session::snapshot_text(db, project, fmt).await?;
+        Commands::SnapshotText { project, compact } => {
+            commands::session::snapshot_text(db, project, compact, fmt).await?;
         }
     }
 
     Ok(())
 }
+
 

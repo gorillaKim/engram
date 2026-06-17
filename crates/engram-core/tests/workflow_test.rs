@@ -2967,3 +2967,47 @@ async fn test_note_add_epic_scope_missing_target_id_returns_structured_error() {
     assert!(err.contains("expected_fields"), "에러에 expected_fields 포함 필요: {err}");
     assert!(err.contains("\"scope\":\"epic\""), "에러에 scope 값 포함 필요: {err}");
 }
+
+#[tokio::test]
+async fn test_compact_session_restore_size_guard_truncated_false_bug() {
+    let db = setup().await;
+    let (sprint_id, epic_id, mission_id) = seed_sprint_epic(&db).await;
+
+    // 한글이 다량 포함된 대용량 Mock 데이터 생성 (이슈 30개 생성)
+    // description과 goal은 None으로 하여 chars().count()가 limit(25000)을 넘지 않게 조절
+    let korean_text = "한글대용량테스트문장입니다".repeat(30); // 약 360자 (chars), 1080바이트
+    for i in 1..=30 {
+        let title = format!("이슈 {}: {}", i, korean_text);
+        let issue = db.issue_create(CreateIssueInput {
+            epic_id,
+            title,
+            description: None,
+            goal: None,
+            priority: None,
+        }).await.unwrap();
+        
+        db.issue_update(issue.id, UpdateIssueInput {
+            status: Some(IssueStatus::Ready),
+            ..Default::default()
+        }, "agent").await.unwrap();
+    }
+
+    // compact=true, size_limit=None (기본 25000자)로 호출
+    let snap = db.session_restore(Some("test-project"), true, 120, None).await.unwrap();
+
+    let serialized = serde_json::to_string(&snap).unwrap();
+    let byte_len = serialized.len();
+    let char_count = serialized.chars().count();
+    
+    println!("DEBUG: Byte Length = {}, Char Count = {}, Truncated = {}, Count = {:?}", 
+             byte_len, char_count, snap.truncated, snap.truncated_count);
+
+    // 버그 수정 후 검증 단언
+    assert!(snap.truncated, "용량 한도 초과로 truncated 플래그가 true여야 합니다.");
+    assert_eq!(snap.truncated_count, Some(31), "누락 항목 개수가 31(에픽 1 + 이슈 30)이어야 합니다. 실제: {:?}", snap.truncated_count);
+}
+
+
+
+
+

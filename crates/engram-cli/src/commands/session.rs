@@ -15,6 +15,8 @@ pub enum SessionCommand {
         #[arg(long)] project: Option<String>,
         /// 노트/태스크를 count만 반환해 페이로드를 70%+ 줄인다
         #[arg(long)] compact: bool,
+        /// 응답 크기 한도 (기본 25000자)
+        #[arg(long)] size_limit: Option<usize>,
     },
     /// 세션 종료 체크리스트 — context note 누락 시 경고
     End {
@@ -24,8 +26,8 @@ pub enum SessionCommand {
 
 pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result<()> {
     match args.command {
-        SessionCommand::Restore { project, compact } => {
-            let snapshot = db.session_restore(project.as_deref(), compact, 120, None).await?;
+        SessionCommand::Restore { project, compact, size_limit } => {
+            let snapshot = fetch_session_snapshot(&db, project.as_deref(), compact, size_limit).await?;
             output::print_value(&snapshot, fmt)?;
         }
         SessionCommand::End { project } => {
@@ -52,9 +54,10 @@ pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result
 pub async fn snapshot_text(
     db: Db,
     project: Option<String>,
+    compact: bool,
     fmt: OutputFormat,
 ) -> anyhow::Result<()> {
-    let snapshot = db.session_restore(project.as_deref(), false, 120, None).await?;
+    let snapshot = fetch_session_snapshot(&db, project.as_deref(), compact, None).await?;
 
     if matches!(fmt, OutputFormat::Json) {
         output::print_value(&snapshot, fmt)?;
@@ -82,3 +85,16 @@ pub async fn snapshot_text(
     println!("==============================");
     Ok(())
 }
+
+/// CLI 와 snapshot_text 에서 사용하는 session_restore 공통 호출부
+async fn fetch_session_snapshot(
+    db: &Db,
+    project: Option<&str>,
+    compact: bool,
+    size_limit: Option<usize>,
+) -> anyhow::Result<engram_core::repository::session::SessionSnapshot> {
+    let limit = size_limit.or(Some(25000));
+    let snap = db.session_restore(project, compact, 120, limit).await?;
+    Ok(snap)
+}
+
