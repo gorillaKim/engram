@@ -540,7 +540,12 @@ impl Db {
         let active_workers = self.fetch_active_workers(sprint.id, project_key).await?;
 
         let active_epic_ids: Vec<i64> = active_epics.iter().map(|e| e.epic.id).collect();
-        let active_caveats = self.fetch_active_caveats(sprint.id, &active_epic_ids, project_key).await?;
+        let mut active_caveats = self.fetch_active_caveats(sprint.id, &active_epic_ids, project_key).await?;
+        if compact {
+            for caveat in &mut active_caveats {
+                caveat.detail = None;
+            }
+        }
 
         let active_missions = self.fetch_active_missions_summary(project_key).await?;
 

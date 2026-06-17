@@ -641,3 +641,67 @@ async fn test_all_defined_tools_are_dispatchable() {
         }
     }
 }
+
+#[tokio::test]
+async fn test_note_add_and_bulk_omit_detail_via_dispatch() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+
+    // 1. note_add omit_detail=false 일 때 detail 반환해야 함
+    let res_full = dispatch(
+        Arc::clone(&db),
+        "note_add",
+        &json!({
+            "issue_id": issue_id,
+            "note_type": "decision",
+            "summary": "결정사항",
+            "detail": "매우 상세한 의사결정 본문",
+            "agent_id": "test",
+            "omit_detail": false
+        })
+    ).await.unwrap();
+    assert_eq!(res_full["detail"].as_str(), Some("매우 상세한 의사결정 본문"));
+
+    // 2. note_add omit_detail=true 일 때 detail 생략해야 함
+    let res_omit = dispatch(
+        Arc::clone(&db),
+        "note_add",
+        &json!({
+            "issue_id": issue_id,
+            "note_type": "decision",
+            "summary": "결정사항2",
+            "detail": "매우 상세한 의사결정 본문2",
+            "agent_id": "test",
+            "omit_detail": true
+        })
+    ).await.unwrap();
+    assert!(res_omit["detail"].is_null() || res_omit.get("detail").is_none(), "detail 필드가 생략되어야 함");
+
+    // 3. note_add_bulk omit_detail=true 일 때 detail 생략해야 함
+    let res_bulk = dispatch(
+        Arc::clone(&db),
+        "note_add_bulk",
+        &json!({
+            "agent_id": "test",
+            "omit_detail": true,
+            "notes": [
+                {
+                    "issue_id": issue_id,
+                    "note_type": "decision",
+                    "summary": "B1",
+                    "detail": "Bulk Detail 1"
+                },
+                {
+                    "issue_id": issue_id,
+                    "note_type": "caveat",
+                    "summary": "B2",
+                    "detail": "Bulk Detail 2"
+                }
+            ]
+        })
+    ).await.unwrap();
+    let arr = res_bulk.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert!(arr[0]["detail"].is_null() || arr[0].get("detail").is_none());
+    assert!(arr[1]["detail"].is_null() || arr[1].get("detail").is_none());
+}

@@ -3007,6 +3007,54 @@ async fn test_compact_session_restore_size_guard_truncated_false_bug() {
     assert_eq!(snap.truncated_count, Some(31), "누락 항목 개수가 31(에픽 1 + 이슈 30)이어야 합니다. 실제: {:?}", snap.truncated_count);
 }
 
+#[tokio::test]
+async fn test_compact_session_restore_omits_active_caveats_detail() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    // active_epics에 포함되기 위해 이슈 생성 및 ready로 승격
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "테스트 이슈".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // unresolved caveat 추가 (scope=epic)
+    let caveat = db.note_add(CreateNoteInput {
+        issue_id: 0,
+        task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "주의사항 요약".into(),
+        detail: Some("매우 상세하고 긴 주의사항 본문입니다.".into()),
+        author: Some("agent".into()),
+        agent_id: Some("test-agent".into()),
+        scope: Some(NoteScope::Epic),
+        scope_target_id: Some(epic_id),
+        project_key: None,
+    }).await.unwrap();
+
+    // 1. compact=false 호출 시 detail이 존재해야 함
+    let snap_full = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
+    let found_caveat_full = snap_full.active_caveats.iter().find(|c| c.id == caveat.id).expect("caveat 존재해야 함");
+    assert_eq!(found_caveat_full.detail.as_deref(), Some("매우 상세하고 긴 주의사항 본문입니다."));
+
+    // 2. compact=true 호출 시 detail이 None이어야 함
+    let snap_compact = db.session_restore(Some("test-project"), true, 120, None).await.unwrap();
+    let found_caveat_compact = snap_compact.active_caveats.iter().find(|c| c.id == caveat.id).expect("caveat 존재해야 함");
+    assert!(found_caveat_compact.detail.is_none(), "compact 모드에서는 caveat detail이 None이어야 함");
+
+    // 3. 직렬화 시 detail 필드가 JSON에서 완전히 생략되었는지 확인
+    let serialized = serde_json::to_string(&snap_compact).unwrap();
+    assert!(!serialized.contains("매우 상세하고 긴 주의사항 본문입니다"), "직렬화 데이터에 detail 본문이 없어야 함");
+    assert!(!serialized.contains("\"detail\""), "skip_serializing_if에 의해 detail 키 자체가 없어야 함");
+}
+
 
 
 

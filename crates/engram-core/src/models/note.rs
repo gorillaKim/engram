@@ -8,6 +8,7 @@ pub struct Note {
     pub task_id: Option<i64>,
     pub note_type: NoteType,
     pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>, // note_get(id) 호출 시만 로드
     pub author: String,
     /// 작성 에이전트 인스턴스 식별자 (예: "claude-opus@sess-abc").

@@ -19,6 +19,10 @@
 | 0009 | Multi-Agent Concurrency | Accepted |
 | 0010 | CLI ↔ MCP 패리티 컨벤션 | Accepted |
 | 0011 | CLI 배포 경로 (cargo install + GitHub Releases) | Accepted |
+| 0012 | Mission 계층 구조 도입 | Accepted |
+| 0013 | Mission-Sprint 간 SSOT 단일화 | Accepted |
+| 0014 | Epic-Sprint 간 SSOT 단일화 | Accepted |
+| 0015 | SSE 및 미확정 프로토콜 계약의 단일 정정 지점 설계 | Accepted |
 
 ## 작성 규칙
 

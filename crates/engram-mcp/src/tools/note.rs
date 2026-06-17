@@ -27,6 +27,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
                     "summary":   { "type": "string", "description": "한 줄 요약 (session_restore에서 항상 표시)" },
                     "detail":    { "type": "string", "description": "상세 내용 (길어도 됨, note_get으로만 로드)" },
+                    "omit_detail": { "type": "boolean", "description": "true인 경우 반환값에서 detail 필드를 생략하여 대역폭 절약" },
                     "author":    { "type": "string", "description": "작성자 역할. 기본 'agent', 사용자 작성은 'user'." },
                     "agent_id":  { "type": "string", "description": "작성 에이전트 인스턴스 식별자 (예: 'claude-opus@sess-abc')." },
                     "scope":     { "type": "string", "enum": ["project","sprint","epic","issue","task"], "description": "노트 적용 범위. 생략 시 issue 또는 task 자동 판정." },
@@ -74,6 +75,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
             "inputSchema": { "type": "object", "required": ["notes", "agent_id"],
                 "properties": {
                     "agent_id": { "type": "string", "description": "호출 액터 식별자" },
+                    "omit_detail": { "type": "boolean", "description": "true인 경우 반환값들에서 detail 필드를 생략하여 대역폭 절약" },
                     "notes": {
                         "type": "array",
                         "items": {
@@ -137,7 +139,12 @@ pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         scope_target_id: args["scope_target_id"].as_i64(),
         project_key:     args["project_key"].as_str().map(String::from),
     };
-    Ok(serde_json::to_value(db.note_add(input).await?).unwrap())
+    let omit_detail = args["omit_detail"].as_bool().unwrap_or(false);
+    let mut note = db.note_add(input).await?;
+    if omit_detail {
+        note.detail = None;
+    }
+    Ok(serde_json::to_value(note).unwrap())
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -219,5 +226,12 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
             project_key:     v["project_key"].as_str().map(String::from),
         });
     }
-    Ok(serde_json::to_value(db.note_add_bulk(inputs).await?).unwrap())
+    let omit_detail = args["omit_detail"].as_bool().unwrap_or(false);
+    let mut notes = db.note_add_bulk(inputs).await?;
+    if omit_detail {
+        for note in &mut notes {
+            note.detail = None;
+        }
+    }
+    Ok(serde_json::to_value(notes).unwrap())
 }
