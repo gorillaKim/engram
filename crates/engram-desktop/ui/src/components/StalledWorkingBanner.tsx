@@ -28,11 +28,11 @@ export function StalledWorkingBanner({ issues, onIssueClick }: Props) {
             key={issue.id}
             type="button"
             onClick={() => onIssueClick?.(issue.id)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-xs text-red-300 transition-colors cursor-default"
+            className="flex items-center gap-1.5 px-2 py-1 rounded bg-red-600/25 hover:bg-red-600/40 text-xs transition-colors cursor-default"
           >
-            <span className="font-mono text-red-400/70">#{issue.id}</span>
-            <span className="max-w-[160px] truncate">{issue.title}</span>
-            <span className="text-red-400/50 ml-1">{formatElapsed(issue.secs_since_activity)}</span>
+            <span className="font-mono text-white/60">#{issue.id}</span>
+            <span className="max-w-[160px] truncate text-white/90">{issue.title}</span>
+            <span className="text-white/50 ml-1">{formatElapsed(issue.secs_since_activity)}</span>
           </button>
         ))}
       </div>
