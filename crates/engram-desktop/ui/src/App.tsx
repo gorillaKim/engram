@@ -8,6 +8,7 @@ import { IssueManager } from './routes/IssueManager';
 import { McpManager } from './routes/McpManager';
 import { MissionsBoard } from './routes/MissionsBoard';
 import { Settings } from './routes/Settings';
+import { Guide } from './routes/Guide';
 import { useUIStore } from './store/ui';
 import {
   checkForUpdates,
@@ -116,12 +117,12 @@ function AppContent() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view');
-    if (viewParam && ['board', 'missions', 'issues', 'history', 'mcp', 'settings'].includes(viewParam)) {
+    if (viewParam && ['board', 'missions', 'issues', 'history', 'mcp', 'settings', 'guide'].includes(viewParam)) {
       setView(viewParam as any);
     }
   }, [setView]);
 
-  const handleSetView = (key: 'board' | 'missions' | 'issues' | 'history' | 'mcp' | 'settings') => {
+  const handleSetView = (key: 'board' | 'missions' | 'issues' | 'history' | 'mcp' | 'settings' | 'guide') => {
     setView(key);
     const params = new URLSearchParams(window.location.search);
     params.set('view', key);
@@ -155,6 +156,7 @@ function AppContent() {
               { key: 'issues',   label: '이슈관리' },
               { key: 'history',  label: '히스토리' },
               { key: 'mcp',      label: 'MCP 서버' },
+              { key: 'guide',    label: '사용 가이드' },
               { key: 'settings', label: '설정' },
             ] as const).map(({ key, label }) => (
               <button
@@ -182,6 +184,7 @@ function AppContent() {
         {view === 'issues' && <IssueManager />}
         {view === 'mcp' && <McpManager />}
         {view === 'missions' && <MissionsBoard />}
+        {view === 'guide' && <Guide />}
         {view === 'settings' && <Settings />}
       </main>
       {selectedIssueId != null && <IssueDetail />}
