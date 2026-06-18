@@ -8,6 +8,7 @@
 //! - exit code 매핑은 `error_exit_code()` 참조.
 
 use serde::Serialize;
+use engram_core::models::CoreResponse;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -34,6 +35,23 @@ pub fn print_value<T: Serialize>(value: &T, fmt: OutputFormat) -> anyhow::Result
         OutputFormat::Pretty => serde_json::to_string_pretty(value)?,
     };
     println!("{s}");
+    Ok(())
+}
+
+pub fn print_core_response<T: Serialize>(res: CoreResponse<T>, fmt: OutputFormat) -> anyhow::Result<()> {
+    match res {
+        CoreResponse::Text(text) => {
+            if fmt == OutputFormat::Json {
+                let json_val = serde_json::Value::String(text);
+                println!("{}", serde_json::to_string(&json_val)?);
+            } else {
+                println!("{}", text);
+            }
+        }
+        CoreResponse::Json(data) => {
+            print_value(&data, fmt)?;
+        }
+    }
     Ok(())
 }
 

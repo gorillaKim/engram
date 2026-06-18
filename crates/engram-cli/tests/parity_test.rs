@@ -134,7 +134,7 @@ async fn test_parity_epic_list() {
     let db_a = fresh_db().await; seed_via_db(&db_a).await;
     let db_b = fresh_db().await; seed_via_dispatch(&db_b).await;
     let cli = normalize(serde_json::to_value(db_a.epic_list(Some("p"), false).await.unwrap()).unwrap());
-    let mcp = normalize(dispatch(Arc::clone(&db_b), "epic_list", &json!({"project_key": "p"})).await.unwrap());
+    let mcp = normalize(dispatch(Arc::clone(&db_b), "epic_list", &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "epic_list 동치 실패");
 }
 
@@ -148,7 +148,7 @@ async fn test_parity_issue_list_and_get() {
         db_a.issue_list(IssueFilter { project_key: Some("p".into()), ..Default::default() }).await.unwrap()
     ).unwrap());
     let mcp_list = normalize(dispatch(Arc::clone(&db_b), "issue_list",
-        &json!({"project_key": "p"})).await.unwrap());
+        &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     assert_eq!(cli_list, mcp_list, "issue_list 동치 실패");
 
     // 복수 status 동치 테스트
@@ -160,11 +160,11 @@ async fn test_parity_issue_list_and_get() {
         }).await.unwrap()
     ).unwrap());
     let mcp_multi = normalize(dispatch(Arc::clone(&db_b), "issue_list",
-        &json!({"project_key": "p", "status": ["ready", "required"]})).await.unwrap());
+        &json!({"project_key": "p", "status": ["ready", "required"], "mode": "normal"})).await.unwrap());
     assert_eq!(cli_multi, mcp_multi, "issue_list 복수 status 동치 실패");
 
     let cli_get = normalize(serde_json::to_value(db_a.issue_get(iid, false).await.unwrap()).unwrap());
-    let mcp_get = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid})).await.unwrap());
+    let mcp_get = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid, "mode": "normal"})).await.unwrap());
     assert_eq!(cli_get, mcp_get, "issue_get 동치 실패");
 }
 
@@ -174,12 +174,12 @@ async fn test_parity_task_list_and_next() {
     let db_b = fresh_db().await; let (_, _, _, _)   = seed_via_dispatch(&db_b).await;
 
     let cli = normalize(serde_json::to_value(db_a.task_list(iid, None).await.unwrap()).unwrap());
-    let mcp = normalize(dispatch(Arc::clone(&db_b), "task_list", &json!({"issue_id": iid})).await.unwrap());
+    let mcp = normalize(dispatch(Arc::clone(&db_b), "task_list", &json!({"issue_id": iid, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "task_list 동치 실패");
 
     // task_next 는 ready 큐 기반 — 둘 다 ready 없으니 동시에 null/None 이어야 함
     let cli = normalize(serde_json::to_value(db_a.task_next(Some("p"), None).await.unwrap()).unwrap());
-    let mcp = normalize(dispatch(Arc::clone(&db_b), "task_next", &json!({"project_key": "p"})).await.unwrap());
+    let mcp = normalize(dispatch(Arc::clone(&db_b), "task_next", &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "task_next 동치 실패");
 }
 
@@ -202,7 +202,7 @@ async fn test_parity_note_list_and_get() {
         db_a.note_list(Some(iid), None, None, false, false, None, None, None, None, None).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_list",
-        &json!({"issue_id": iid_b})).await.unwrap());
+        &json!({"issue_id": iid_b, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "note_list 동치 실패");
 }
 
@@ -213,7 +213,7 @@ async fn test_parity_session_restore_and_end() {
 
     let cli = normalize(serde_json::to_value(db_a.session_restore(Some("p"), false, 120, None).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "session_restore",
-        &json!({"project_key": "p"})).await.unwrap());
+        &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "session_restore 동치 실패");
 
     let cli = normalize(serde_json::to_value(db_a.session_end(Some("p")).await.unwrap()).unwrap());
@@ -230,19 +230,19 @@ async fn test_parity_board_status_and_blocked_graph() {
     // 1. 기본 조회 (compact=false, include_chains=true)
     let cli = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), false, true).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "board_status",
-        &json!({"project_key": "p"})).await.unwrap());
+        &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "board_status 동치 실패");
 
     // 2. compact 조회 (compact=true, include_chains=true)
     let cli_compact = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), true, true).await.unwrap()).unwrap());
     let mcp_compact = normalize(dispatch(Arc::clone(&db_b), "board_status",
-        &json!({"project_key": "p", "compact": true})).await.unwrap());
+        &json!({"project_key": "p", "compact": true, "mode": "compact"})).await.unwrap());
     assert_eq!(cli_compact, mcp_compact, "board_status compact 동치 실패");
 
     // 3. chains 제외 조회 (compact=false, include_chains=false)
     let cli_no_chains = normalize(serde_json::to_value(db_a.board_status_query(Some("p"), false, false).await.unwrap()).unwrap());
     let mcp_no_chains = normalize(dispatch(Arc::clone(&db_b), "board_status",
-        &json!({"project_key": "p", "include_chains": false})).await.unwrap());
+        &json!({"project_key": "p", "include_chains": false, "mode": "normal"})).await.unwrap());
     assert_eq!(cli_no_chains, mcp_no_chains, "board_status no chains 동치 실패");
     assert!(cli_no_chains["blocked_chains"].is_null() || cli_no_chains.get("blocked_chains").is_none());
 
@@ -287,7 +287,7 @@ async fn test_parity_stalled_issues_empty() {
         db_a.stalled_issues(Some("p"), engram_core::models::issue::IssueStatus::Working, 1).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "stalled_issues",
-        &json!({"project_key": "p", "status": "working", "threshold_minutes": 1})).await.unwrap());
+        &json!({"project_key": "p", "status": "working", "threshold_minutes": 1, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "stalled_issues 동치 실패 (둘 다 빈 결과)");
 }
 
@@ -320,7 +320,7 @@ async fn test_parity_full_lifecycle_issue_state_machine() {
 
     let cli = normalize(serde_json::to_value(db_a.issue_get(iid_a, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "issue_get",
-        &json!({"id": iid_b})).await.unwrap());
+        &json!({"id": iid_b, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "issue 상태 머신 동치 실패 (ready→working→demo)");
     assert_eq!(cli["status"], "demo");
     assert!(cli["assigned_agent"].is_null(), "release 후 점유자 해제");
@@ -357,7 +357,7 @@ async fn test_parity_link_unlink_roundtrip() {
         db_a.issue_links_for(a1).await.unwrap()
     ).unwrap());
     let mcp_links = normalize(dispatch(Arc::clone(&db_b), "issue_list",
-        &json!({"project_key": "p"})).await.unwrap());
+        &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
     // unlink 후 양쪽 모두 링크가 비어있어야 함 (issue_list 가 아닌 links_for 를 양쪽에서)
     assert_eq!(cli_links, json!([]), "unlink 후 CLI 링크 비어야 함");
     assert!(mcp_links["items"].is_array(), "issue_list 응답 형태 유지");
@@ -424,7 +424,7 @@ async fn test_parity_note_add_broadcast_and_resolve() {
 
     let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_get",
-        &json!({"id": n_b["id"].as_i64().unwrap()})).await.unwrap());
+        &json!({"id": n_b["id"].as_i64().unwrap(), "mode": "normal"})).await.unwrap());
     assert_eq!(cli["resolved"], mcp["resolved"], "resolved 플래그 동치");
     assert_eq!(cli["resolved"], true);
 }
@@ -445,7 +445,7 @@ async fn test_parity_task_insert_after_and_delete() {
     db_a.task_delete(t_a).await.unwrap();
 
     let list_b = dispatch(Arc::clone(&db_b), "task_list",
-        &json!({"issue_id": iid_b})).await.unwrap();
+        &json!({"issue_id": iid_b, "mode": "normal"})).await.unwrap();
     let t_b = list_b[0]["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "task_insert_after",
         &json!({"issue_id": iid_b, "after_task_id": t_b, "title": "T2"})).await.unwrap();
@@ -453,7 +453,7 @@ async fn test_parity_task_insert_after_and_delete() {
 
     let cli = normalize(serde_json::to_value(db_a.task_list(iid_a, None).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "task_list",
-        &json!({"issue_id": iid_b})).await.unwrap());
+        &json!({"issue_id": iid_b, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "task insert_after + delete 동치 실패");
 }
 
@@ -1059,7 +1059,7 @@ async fn seed_large_via_dispatch(db: &Arc<Db>) {
     }
 
     // 전역 caveat note 추가
-    let epics = dispatch(Arc::clone(db), "epic_list", &json!({"project_key": "p"})).await.unwrap();
+    let epics = dispatch(Arc::clone(db), "epic_list", &json!({"project_key": "p", "mode": "normal"})).await.unwrap();
     for (idx, epic) in epics.as_array().unwrap().iter().enumerate() {
         let eid = epic["id"].as_i64().unwrap();
         dispatch(Arc::clone(db), "note_add", &json!({
@@ -1089,7 +1089,11 @@ async fn test_parity_session_restore_size_guard_matrix() {
             let mcp = normalize(dispatch(
                 Arc::clone(&db_b),
                 "session_restore",
-                &json!({"compact": compact, "size_limit": limit}),
+                &json!({
+                    "compact": compact,
+                    "size_limit": limit,
+                    "mode": if compact { "compact" } else { "normal" }
+                }),
             ).await.unwrap());
 
             assert_eq!(

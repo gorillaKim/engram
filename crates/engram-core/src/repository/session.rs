@@ -1,6 +1,13 @@
 use serde::{Deserialize, Serialize};
-use crate::models::{Epic, Issue, Note, NoteSummary, Task, MissionSummary};
+use crate::models::{Epic, Issue, Note, NoteSummary, Task, MissionSummary, OutputMode, CoreResponse};
 use crate::{Db, Result};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SessionResponse {
+    Json(SessionSnapshot),
+    Text(String),
+}
 
 /// session_restore 전체 응답 구조
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,8 +55,40 @@ pub struct ActiveWorker {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionEpic {
+    pub id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_key: Option<String>,
+    pub mission_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sprint_id: Option<i64>,
+    pub title: String,
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<crate::models::epic::EpicStatus>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl SessionEpic {
+    pub fn from_epic(epic: Epic, compact: bool) -> Self {
+        Self {
+            id: epic.id,
+            project_key: if compact { None } else { Some(epic.project_key) },
+            mission_id: epic.mission_id,
+            sprint_id: if compact { None } else { epic.sprint_id },
+            title: epic.title,
+            description: epic.description,
+            status: if compact { None } else { Some(epic.status) },
+            created_at: epic.created_at,
+            updated_at: epic.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpicSnapshot {
-    pub epic: Epic,
+    pub epic: SessionEpic,
     pub active_issues: Vec<IssueSnapshot>,
     pub progress: EpicProgress,
     /// compact=true 시 active_issues 대신 채워진다. compact=false 시 None.
@@ -421,14 +460,13 @@ impl Db {
         Ok(rows.into_iter().map(|r| MissionSummary {
             id: r.id,
             title: r.title,
-            status: r.status,
+            status: Some(r.status),
             progress_rate: r.progress_rate.unwrap_or(0.0),
             epic_count: r.epic_count,
         }).collect())
     }
 
-    /// 세션 복원 — 현재 active sprint + project_key 기준 에픽/이슈 조회.
-    /// `compact=true` 이면 per-issue notes/tasks fetch 를 COUNT 쿼리로 대체해 페이로드를 70%+ 줄인다.
+    /// 세션 복원 — 하위 호환용 래퍼
     pub async fn session_restore(
         &self,
         project_key: Option<&str>,
@@ -436,9 +474,26 @@ impl Db {
         stall_minutes: i64,
         size_limit: Option<usize>,
     ) -> Result<SessionSnapshot> {
+        let mode = if compact { OutputMode::Compact } else { OutputMode::Normal };
+        let resp = self.session_restore_mode(project_key, mode, stall_minutes, size_limit).await?;
+        match resp {
+            SessionResponse::Json(snap) => Ok(snap),
+            _ => Err(crate::Error::Validation("Expected JSON response".to_string())),
+        }
+    }
+
+    /// 세션 복원 — 지정된 OutputMode에 의거해 JSON 스냅샷 혹은 에이전트 전용 영어 마크다운 텍스트 반환
+    pub async fn session_restore_mode(
+        &self,
+        project_key: Option<&str>,
+        mode: OutputMode,
+        stall_minutes: i64,
+        size_limit: Option<usize>,
+    ) -> Result<SessionResponse> {
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
         let sprint = self.sprint_current().await?;
         let Some(sprint) = sprint else {
-            return Ok(SessionSnapshot {
+            let snap = SessionSnapshot {
                 sprint_id: 0,
                 sprint_name: "활성 스프린트 없음".to_string(),
                 sprint_goal: None,
@@ -454,6 +509,11 @@ impl Db {
                 stalled_working: vec![],
                 truncated: false,
                 truncated_count: None,
+            };
+            return Ok(if matches!(mode, OutputMode::Agent) {
+                SessionResponse::Text(format_agent_session_text(&snap))
+            } else {
+                SessionResponse::Json(snap)
             });
         };
 
@@ -521,7 +581,7 @@ impl Db {
             };
 
             active_epics.push(EpicSnapshot {
-                epic,
+                epic: SessionEpic::from_epic(epic, compact),
                 active_issues: full_issues,
                 active_issues_compact: compact_issues,
                 progress: EpicProgress { done, in_progress: in_prog, todo: todo_cnt, total },
@@ -550,7 +610,12 @@ impl Db {
             }
         }
 
-        let active_missions = self.fetch_active_missions_summary(project_key).await?;
+        let mut active_missions = self.fetch_active_missions_summary(project_key).await?;
+        if compact {
+            for mission in &mut active_missions {
+                mission.status = None;
+            }
+        }
 
         let stalled_working = self.stalled_working_issues(project_key, stall_minutes).await.unwrap_or_default();
 
@@ -606,7 +671,11 @@ impl Db {
             ));
         }
 
-        Ok(snapshot)
+        if matches!(mode, OutputMode::Agent) {
+            Ok(SessionResponse::Text(format_agent_session_text(&snapshot)))
+        } else {
+            Ok(SessionResponse::Json(snapshot))
+        }
     }
 
     /// 세션 종료 체크리스트 — context note 누락 경고
@@ -798,6 +867,75 @@ impl Db {
         })
     }
 
+    pub async fn board_status_mode(
+        &self,
+        project_key: Option<&str>,
+        mode: OutputMode,
+        include_chains: bool,
+    ) -> Result<CoreResponse<BoardStatus>> {
+        let status = self.board_status_query(project_key, matches!(mode, OutputMode::Compact), include_chains).await?;
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== BOARD STATUS ===\n");
+            out.push_str(&format!("Sprint: {} (ID: {})\n", status.sprint_name, status.sprint_id));
+            if let Some(pk) = &status.project_key {
+                out.push_str(&format!("Project: {}\n", pk));
+            }
+            
+            // 프로젝트 요약 집계
+            out.push_str("\n[Summary]\n");
+            for p in &status.projects {
+                out.push_str(&format!(
+                    "- {}: {} total (required:{}, ready:{}, working:{}, demo:{}, finished:{}, cancelled:{})\n",
+                    p.project_key, p.total, p.required, p.ready, p.working, p.demo, p.finished, p.cancelled
+                ));
+            }
+
+            // 활성 이슈 리스트 가져와서 상태별로 출력 (토큰을 줄이기 위해 완료된 finished, cancelled 제외)
+            let sprint_id = status.sprint_id;
+            if sprint_id > 0 {
+                let filter = crate::models::issue::IssueFilter {
+                    sprint_id: Some(sprint_id),
+                    project_key: project_key.map(String::from),
+                    compact: Some(true),
+                    ..Default::default()
+                };
+                let issue_resp = self.issue_list(filter).await?;
+                
+                out.push_str("\n[Active Issues]\n");
+                let mut has_active = false;
+                for issue in &issue_resp.items {
+                    if !matches!(issue.status, crate::models::issue::IssueStatus::Finished | crate::models::issue::IssueStatus::Cancelled) {
+                        let status_val = serde_json::to_value(&issue.status).unwrap();
+                        let status_str = status_val.as_str().unwrap_or("ready");
+                        out.push_str(&format!("- #{} ({}): {}\n", issue.id, status_str, issue.title));
+                        has_active = true;
+                    }
+                }
+                if !has_active {
+                    out.push_str("No active issues.\n");
+                }
+            }
+
+            // 블로킹 관계도 출력
+            if let Some(chains_val) = &status.blocked_chains {
+                if let Ok(chains) = serde_json::from_value::<Vec<BlockedChain>>(chains_val.clone()) {
+                    if !chains.is_empty() {
+                        out.push_str("\n[Blocking Relations]\n");
+                        for c in chains {
+                            out.push_str(&format!("- #{} ({}) BLOCKS #{} ({})\n", c.blocker_id, c.blocker_title, c.blocked_id, c.blocked_title));
+                        }
+                    }
+                }
+            }
+
+            out.push_str("====================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(status))
+        }
+    }
+
     /// Kanban UI 용 — 상태별 Issue 배열을 프로젝트별로 반환
     pub async fn board_issues_query(
         &self,
@@ -962,4 +1100,100 @@ impl Db {
             secs_since_activity: r.secs_since_activity,
         }).collect())
     }
+}
+
+fn format_agent_session_text(snapshot: &SessionSnapshot) -> String {
+    let mut out = String::new();
+    out.push_str("=== ENGRAM SESSION CONTEXT ===\n");
+    out.push_str(&format!("- Sprint: {} (Active)\n", snapshot.sprint_name));
+    out.push_str(&format!("- Project: {}\n\n", snapshot.project_key.as_deref().unwrap_or("All")));
+
+    out.push_str("📋 [NEXT ACTION]\n");
+    if let Some(next) = &snapshot.next_action {
+        out.push_str(&format!("- Task: {} (ID: {})\n", next.task_title, next.task_id));
+        out.push_str(&format!("  Issue: #{} {}\n", next.issue_id, next.issue_title));
+    } else {
+        out.push_str("- None\n");
+    }
+    out.push_str("\n");
+
+    out.push_str("⚠️ [ACTIVE CAVEATS]\n");
+    if snapshot.active_caveats.is_empty() {
+        out.push_str("- None\n");
+    } else {
+        for caveat in &snapshot.active_caveats {
+            let scope_str = serde_json::to_value(&caveat.scope).unwrap().as_str().unwrap_or("sprint").to_string();
+            let scope_cap = if !scope_str.is_empty() {
+                let mut c = scope_str.chars();
+                match c.next() {
+                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                    None => String::new(),
+                }
+            } else {
+                "Sprint".to_string()
+            };
+            out.push_str(&format!("- [{}] {} (ID: {})\n", scope_cap, caveat.summary, caveat.id));
+        }
+    }
+    out.push_str("\n");
+
+    out.push_str("🎯 [ACTIVE MISSIONS]\n");
+    if snapshot.active_missions.is_empty() {
+        out.push_str("- None\n");
+    } else {
+        for mission in &snapshot.active_missions {
+            out.push_str(&format!(
+                "- Mission #{}: {} (Progress: {:.1}%)\n",
+                mission.id,
+                mission.title,
+                mission.progress_rate * 100.0
+            ));
+        }
+    }
+    out.push_str("\n");
+
+    out.push_str("⚡ [ACTIVE EPICS & ISSUES]\n");
+    if snapshot.active_epics.is_empty() {
+        out.push_str("- None\n");
+    } else {
+        for epic_snap in &snapshot.active_epics {
+            out.push_str(&format!(
+                "- Epic #{}: {} (Progress: {}/{} Done)\n",
+                epic_snap.epic.id,
+                epic_snap.epic.title,
+                epic_snap.progress.done,
+                epic_snap.progress.total
+            ));
+            
+            if let Some(issues_iter) = &epic_snap.active_issues_compact {
+                for issue_snap in issues_iter {
+                    let status_str = serde_json::to_value(&issue_snap.issue.status).unwrap();
+                    let status_name = status_str.as_str().unwrap_or("ready");
+                    out.push_str(&format!(
+                        "  - #{} ({}): {} (Tasks: {} | Notes: {})\n",
+                        issue_snap.issue.id,
+                        status_name,
+                        issue_snap.issue.title,
+                        issue_snap.task_count,
+                        issue_snap.note_count
+                    ));
+                }
+            }
+            for issue_snap in &epic_snap.active_issues {
+                let status_str = serde_json::to_value(&issue_snap.issue.status).unwrap();
+                let status_name = status_str.as_str().unwrap_or("ready");
+                let t_count = issue_snap.current_task.as_ref().map(|_| 1).unwrap_or(0);
+                out.push_str(&format!(
+                    "  - #{} ({}): {} (Tasks: {} | Notes: {})\n",
+                    issue_snap.issue.id,
+                    status_name,
+                    issue_snap.issue.title,
+                    t_count,
+                    issue_snap.active_notes.len()
+                ));
+            }
+        }
+    }
+    out.push_str("==============================");
+    out
 }

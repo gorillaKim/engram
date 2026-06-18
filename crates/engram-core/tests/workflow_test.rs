@@ -243,12 +243,12 @@ async fn test_session_restore_filters_by_project() {
     // proj-a 조회 → proj-a 에픽만
     let snap_a = db.session_restore(Some("proj-a"), false, 120, None).await.unwrap();
     assert_eq!(snap_a.active_epics.len(), 1, "proj-a: active_epics는 1개여야 함");
-    assert_eq!(snap_a.active_epics[0].epic.project_key, "proj-a");
+    assert_eq!(snap_a.active_epics[0].epic.project_key.as_deref(), Some("proj-a"));
 
     // proj-b 조회 → proj-b 에픽만
     let snap_b = db.session_restore(Some("proj-b"), false, 120, None).await.unwrap();
     assert_eq!(snap_b.active_epics.len(), 1, "proj-b: active_epics는 1개여야 함");
-    assert_eq!(snap_b.active_epics[0].epic.project_key, "proj-b");
+    assert_eq!(snap_b.active_epics[0].epic.project_key.as_deref(), Some("proj-b"));
 }
 
 #[tokio::test]
@@ -3108,6 +3108,187 @@ async fn test_session_restore_excludes_finished_issues() {
     let active_ids: Vec<i64> = epic_snap.active_issues.iter().map(|s| s.issue.id).collect();
     assert!(active_ids.contains(&issue_ready.id), "Ready 이슈는 포함되어야 함");
     assert!(!active_ids.contains(&issue_fin.id), "Finished 이슈는 제외되어야 함");
+}
+
+#[tokio::test]
+async fn test_session_restore_output_mode_agent() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "Test Issue for Agent Mode".into(),
+        description: Some("상세 설명 한글".into()),
+        goal: Some("목표 한글".into()),
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // 1. OutputMode::Agent 로 호출하면 String 형태로 영문 마크다운 포맷이 반환되어야 함.
+    let response = db.session_restore_mode(Some("test-project"), engram_core::models::OutputMode::Agent, 120, None).await.unwrap();
+    
+    // agent 텍스트 결과 검증
+    match response {
+        engram_core::repository::session::SessionResponse::Text(text) => {
+            assert!(text.contains("=== ENGRAM SESSION CONTEXT ==="));
+            assert!(text.contains("NEXT ACTION"));
+            assert!(text.contains("Test Issue for Agent Mode"));
+            assert!(!text.contains("상세 설명 한글"), "에이전트 텍스트 모드에서는 본문이 출력되지 않거나 콤팩트해야 함");
+        },
+        _ => panic!("Expected text response for Agent mode"),
+    }
+}
+
+#[tokio::test]
+async fn test_issue_and_epic_get_list_output_mode_agent() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "Test Issue For Spec".into(),
+        description: Some("상세 본문".into()),
+        goal: Some("성공 목표".into()),
+        priority: None,
+    }).await.unwrap();
+
+    // 1. issue_get_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    let issue_resp = db.issue_get_mode(issue.id, engram_core::models::OutputMode::Agent).await.unwrap();
+    match issue_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== ISSUE SPECIFICATION ==="));
+            assert!(text.contains("Test Issue For Spec"));
+            assert!(text.contains("상세 본문"));
+        },
+        _ => panic!("Expected text response for issue_get agent mode"),
+    }
+
+    // 2. epic_get_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    let epic_resp = db.epic_get_mode(epic_id, engram_core::models::OutputMode::Agent).await.unwrap();
+    match epic_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== EPIC SPECIFICATION ==="));
+            assert!(text.contains("Test Epic"));
+        },
+        _ => panic!("Expected text response for epic_get agent mode"),
+    }
+}
+
+#[tokio::test]
+async fn test_other_get_list_output_mode_agent() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "Test Issue for Tasks".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+
+    let task = db.task_create(CreateTaskInput {
+        issue_id: issue.id,
+        title: "Test Task".into(),
+        description: None,
+        goal: None,
+        after_task_id: None,
+        source: None,
+    }).await.unwrap();
+
+    // 1. task_list_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    let task_list_resp = db.task_list_mode(issue.id, engram_core::models::OutputMode::Agent).await.unwrap();
+    match task_list_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== TASK LIST ==="));
+            assert!(text.contains("Test Task"));
+        },
+        _ => panic!("Expected text response for task_list agent mode"),
+    }
+
+    // 2. task_next_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    // task를 ready로 전환해야 task_next에 잡힘
+    db.task_update(task.id, UpdateTaskInput {
+        status: Some(TaskStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    // issue 도 ready 여야 함
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    let task_next_resp = db.task_next_mode(Some("test-project"), None, engram_core::models::OutputMode::Agent).await.unwrap();
+    match task_next_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== NEXT TASK ==="));
+            assert!(text.contains("Test Task"));
+        },
+        _ => panic!("Expected text response for task_next agent mode"),
+    }
+
+    // 3. note_list_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    let _note = db.note_add(CreateNoteInput {
+        issue_id: issue.id,
+        task_id: None,
+        note_type: NoteType::Caveat,
+        summary: "Test Caveat Note".into(),
+        detail: None,
+        author: None,
+        agent_id: None,
+        scope: None,
+        scope_target_id: None,
+        project_key: None,
+    }).await.unwrap();
+
+    let note_list_resp = db.note_list_mode(
+        Some(issue.id),
+        None,
+        None,
+        false,
+        true,
+        None,
+        None,
+        None,
+        None,
+        engram_core::models::OutputMode::Agent,
+    ).await.unwrap();
+    match note_list_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== NOTE LIST ==="));
+            assert!(text.contains("Test Caveat Note"));
+        },
+        _ => panic!("Expected text response for note_list agent mode"),
+    }
+
+    // 4. board_status_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    let board_resp = db.board_status_mode(Some("test-project"), engram_core::models::OutputMode::Agent, true).await.unwrap();
+    match board_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== BOARD STATUS ==="));
+            assert!(text.contains("Test Issue for Tasks"));
+        },
+        _ => panic!("Expected text response for board_status agent mode"),
+    }
+
+    // 5. stalled_issues_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
+    // issue 상태를 working으로
+    db.issue_update(issue.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    let stalled_resp = db.stalled_issues_mode(Some("test-project"), IssueStatus::Working, 0, engram_core::models::OutputMode::Agent).await.unwrap();
+    match stalled_resp {
+        engram_core::models::CoreResponse::Text(text) => {
+            assert!(text.contains("=== STALLED ISSUES ==="));
+            assert!(text.contains("Test Issue for Tasks"));
+        },
+        _ => panic!("Expected text response for stalled_issues agent mode"),
+    }
 }
 
 

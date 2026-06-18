@@ -1,6 +1,7 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::issue::*;
 use crate::models::PaginatedResponse;
+use crate::models::{OutputMode, CoreResponse};
 use crate::{Db, Error, Result};
 
 const DESCRIPTION_EXCERPT_CHARS: usize = 100;
@@ -53,6 +54,52 @@ impl Db {
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| Error::NotFound(format!("issue:{id}")))
+    }
+
+    pub async fn issue_get_mode(&self, id: i64, mode: OutputMode) -> Result<crate::models::CoreResponse<Issue>> {
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
+        let cols = issue_select_columns(compact);
+        let issue = sqlx::query_as::<_, Issue>(&format!(
+            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE i.id = ?"
+        ))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("issue:{id}")))?;
+
+        if matches!(mode, OutputMode::Agent) {
+            Ok(crate::models::CoreResponse::Text(format_agent_issue_text(&issue)))
+        } else {
+            Ok(crate::models::CoreResponse::Json(issue))
+        }
+    }
+
+    pub async fn issue_list_mode(&self, filter: IssueFilter, mode: OutputMode) -> Result<crate::models::CoreResponse<PaginatedResponse<Issue>>> {
+        let is_agent = matches!(mode, OutputMode::Agent);
+        let is_compact = matches!(mode, OutputMode::Compact) || is_agent;
+        let mut filter_cloned = filter;
+        if is_compact {
+            filter_cloned.compact = Some(true);
+        }
+        let paginated = self.issue_list(filter_cloned).await?;
+        if is_agent {
+            let mut out = String::new();
+            out.push_str("=== ISSUE LIST ===\n");
+            if paginated.items.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for issue in &paginated.items {
+                    let status_str = serde_json::to_value(&issue.status).unwrap();
+                    let status_name = status_str.as_str().unwrap_or("ready");
+                    out.push_str(&format!("- #{} ({}): {}\n", issue.id, status_name, issue.title));
+                }
+            }
+            out.push_str(&format!("Total: {} | Has More: {}\n", paginated.total, paginated.has_more));
+            out.push_str("==================");
+            Ok(crate::models::CoreResponse::Text(out))
+        } else {
+            Ok(crate::models::CoreResponse::Json(paginated))
+        }
     }
 
     pub async fn issue_list(&self, filter: IssueFilter) -> Result<PaginatedResponse<Issue>> {
@@ -527,6 +574,38 @@ impl Db {
         q.fetch_all(&self.pool).await.map_err(Into::into)
     }
 
+    pub async fn stalled_issues_mode(
+        &self,
+        project_key: Option<&str>,
+        status: IssueStatus,
+        threshold_minutes: i64,
+        mode: OutputMode,
+    ) -> Result<CoreResponse<Vec<StalledIssue>>> {
+        let stalled = self.stalled_issues(project_key, status, threshold_minutes).await?;
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== STALLED ISSUES ===\n");
+            if stalled.is_empty() {
+                out.push_str("No stalled issues found.\n");
+            } else {
+                for issue in &stalled {
+                    let status_val = serde_json::to_value(&issue.status).unwrap();
+                    let status_str = status_val.as_str().unwrap_or("working");
+                    let priority_val = serde_json::to_value(&issue.priority).unwrap();
+                    let priority_str = priority_val.as_str().unwrap_or("medium");
+                    out.push_str(&format!(
+                        "- #{} ({}, priority:{}, minutes:{}): {}\n",
+                        issue.id, status_str, priority_str, issue.minutes_in_status, issue.title
+                    ));
+                }
+            }
+            out.push_str("======================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(stalled))
+        }
+    }
+
     pub async fn issue_links_for(&self, issue_id: i64) -> Result<Vec<IssueLink>> {
         sqlx::query_as::<_, IssueLink>(
             "SELECT id, source_id, target_id, link_type, created_at FROM issue_links WHERE source_id = ? OR target_id = ? ORDER BY id ASC",
@@ -662,6 +741,31 @@ impl Db {
 
         Ok(BulkUpdateResult { succeeded, failed })
     }
+}
+
+fn format_agent_issue_text(issue: &Issue) -> String {
+    let mut out = String::new();
+    out.push_str("=== ISSUE SPECIFICATION ===\n");
+    out.push_str(&format!("ID: #{}\n", issue.id));
+    out.push_str(&format!("Title: {}\n", issue.title));
+    let status_val = serde_json::to_value(&issue.status).unwrap();
+    let status_str = status_val.as_str().unwrap_or("unknown");
+    out.push_str(&format!("Status: {}\n", status_str));
+    let priority_val = serde_json::to_value(&issue.priority).unwrap();
+    let priority_str = priority_val.as_str().unwrap_or("unknown");
+    out.push_str(&format!("Priority: {}\n", priority_str));
+    out.push_str(&format!("Epic ID: {}\n", issue.epic_id));
+    out.push_str(&format!("Mission ID: {}\n", issue.mission_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
+    out.push_str(&format!("Sprint ID: {}\n", issue.sprint_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
+    out.push_str(&format!("Assigned Agent: {}\n", issue.assigned_agent.as_deref().unwrap_or("None")));
+    out.push_str(&format!("Created At: {}\n", issue.created_at));
+    out.push_str(&format!("Updated At: {}\n", issue.updated_at));
+    out.push_str("\n[Goal]\n");
+    out.push_str(issue.goal.as_deref().unwrap_or("None"));
+    out.push_str("\n\n[Description]\n");
+    out.push_str(issue.description.as_deref().unwrap_or("None"));
+    out.push_str("\n==========================");
+    out
 }
 
 #[cfg(test)]

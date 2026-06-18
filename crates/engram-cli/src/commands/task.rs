@@ -44,7 +44,7 @@ pub enum TaskCommand {
     },
 }
 
-pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         TaskCommand::Create { issue, title, goal } => {
             let task = db.task_create(CreateTaskInput {
@@ -58,7 +58,8 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> a
             output::print_value(&task, fmt)?;
         }
         TaskCommand::List { issue } => {
-            output::print_value(&db.task_list(issue, None).await?, fmt)?;
+            let res = db.task_list_mode(issue, mode).await?;
+            output::print_core_response(res, fmt)?;
         }
         TaskCommand::Finish { id } => {
             let task = db.task_update(id, UpdateTaskInput {
@@ -67,8 +68,8 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str) -> a
             output::print_value(&task, fmt)?;
         }
         TaskCommand::Next { project } => {
-            let next = db.task_next(project.as_deref(), None).await?;
-            output::print_value(&next, fmt)?;
+            let res = db.task_next_mode(project.as_deref(), None, mode).await?;
+            output::print_core_response(res, fmt)?;
         }
         TaskCommand::Update { id, status, title } => {
             let task = db.task_update(id, UpdateTaskInput {

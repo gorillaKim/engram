@@ -24,11 +24,29 @@ pub enum SessionCommand {
     },
 }
 
-pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: SessionArgs, fmt: OutputFormat, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         SessionCommand::Restore { project, compact, size_limit } => {
-            let snapshot = fetch_session_snapshot(&db, project.as_deref(), compact, size_limit).await?;
-            output::print_value(&snapshot, fmt)?;
+            let actual_mode = if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                mode
+            };
+            let limit = size_limit.or(Some(25000));
+            let response = db.session_restore_mode(project.as_deref(), actual_mode, 120, limit).await?;
+            match response {
+                engram_core::repository::session::SessionResponse::Text(text) => {
+                    if fmt == OutputFormat::Json {
+                        let json_val = serde_json::Value::String(text);
+                        output::print_value(&json_val, fmt)?;
+                    } else {
+                        println!("{}", text);
+                    }
+                }
+                engram_core::repository::session::SessionResponse::Json(snap) => {
+                    output::print_value(&snap, fmt)?;
+                }
+            }
         }
         SessionCommand::End { project } => {
             let result = db.session_end(project.as_deref()).await?;

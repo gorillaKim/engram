@@ -16,7 +16,15 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "task_list", "description": "이슈의 태스크 목록을 순서대로 조회합니다.",
             "inputSchema": { "type": "object", "required": ["issue_id"],
-                "properties": { "issue_id": { "type": "integer" }, "status": { "type": "string" } }
+                "properties": {
+                    "issue_id": { "type": "integer" },
+                    "status": { "type": "string" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
+                }
             }
         }),
         json!({ "name": "task_update", "description": "태스크 상태/정보를 수정합니다. agent_id 를 명시하면 history.changed_by 로 저장됩니다.",
@@ -49,7 +57,12 @@ pub fn tool_definitions() -> Vec<Value> {
             "inputSchema": { "type": "object",
                 "properties": {
                     "project_key": { "type": "string" },
-                    "issue_id":    { "type": "integer", "description": "특정 이슈로 제한" }
+                    "issue_id":    { "type": "integer", "description": "특정 이슈로 제한" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -70,7 +83,18 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let issue_id = args["issue_id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_list(issue_id, None).await?).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        engram_core::models::OutputMode::Agent
+    };
+    let response = db.task_list_mode(issue_id, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -103,7 +127,18 @@ pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Valu
 pub async fn next(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let issue_id    = args["issue_id"].as_i64();
-    Ok(serde_json::to_value(db.task_next(project_key, issue_id).await?).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        engram_core::models::OutputMode::Agent
+    };
+    let response = db.task_next_mode(project_key, issue_id, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

@@ -22,6 +22,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub agent_id: Option<String>,
 
+    /// 출력 모드. (normal, compact, agent). 기본값은 agent (단, --json 지정 시 compact)
+    #[arg(long, global = true, value_parser = ["normal", "compact", "agent"])]
+    pub mode: Option<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -67,16 +71,29 @@ pub async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
     let db = engram_core::Db::open_default().await?;
     let agent_id = cli.agent_id.as_deref().unwrap_or("user");
 
+    let output_mode = match cli.mode.as_deref() {
+        Some("normal") => engram_core::models::OutputMode::Normal,
+        Some("compact") => engram_core::models::OutputMode::Compact,
+        Some("agent") => engram_core::models::OutputMode::Agent,
+        _ => {
+            if cli.json {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Agent
+            }
+        }
+    };
+
     match cli.command {
         Commands::Sprint(args)  => commands::sprint::run(db, args, fmt, agent_id).await?,
-        Commands::Epic(args)    => commands::epic::run(db, args, fmt, agent_id).await?,
-        Commands::Issue(args)   => commands::issue::run(db, args, fmt, agent_id).await?,
-        Commands::Task(args)    => commands::task::run(db, args, fmt, agent_id).await?,
-        Commands::Note(args)    => commands::note::run(db, args, fmt, agent_id).await?,
-        Commands::Session(args) => commands::session::run(db, args, fmt).await?,
-        Commands::Board(args)   => commands::board::run(db, args, fmt).await?,
+        Commands::Epic(args)    => commands::epic::run(db, args, fmt, agent_id, output_mode).await?,
+        Commands::Issue(args)   => commands::issue::run(db, args, fmt, agent_id, output_mode).await?,
+        Commands::Task(args)    => commands::task::run(db, args, fmt, agent_id, output_mode).await?,
+        Commands::Note(args)    => commands::note::run(db, args, fmt, agent_id, output_mode).await?,
+        Commands::Session(args) => commands::session::run(db, args, fmt, output_mode).await?,
+        Commands::Board(args)   => commands::board::run(db, args, fmt, output_mode).await?,
         Commands::Blocked(args) => commands::blocked::run(db, args, fmt).await?,
-        Commands::Stalled(args) => commands::stalled::run(db, args, fmt).await?,
+        Commands::Stalled(args) => commands::stalled::run(db, args, fmt, output_mode).await?,
         Commands::History(args) => commands::history::run(db, args, fmt).await?,
         Commands::Mission(args) => commands::mission::run(db, args, fmt, agent_id).await?,
         Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,

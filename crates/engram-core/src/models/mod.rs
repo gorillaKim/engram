@@ -16,6 +16,21 @@ pub use sprint::{Sprint, SprintStatus, CreateSprintInput, UpdateSprintInput};
 pub use task::{Task, TaskStatus, TaskSource, CreateTaskInput, UpdateTaskInput};
 pub use task_test::TaskTest;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputMode {
+    Normal,
+    Compact,
+    Agent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CoreResponse<T> {
+    Json(T),
+    Text(String),
+}
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

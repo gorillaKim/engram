@@ -18,11 +18,16 @@ pub enum BoardCommand {
     },
 }
 
-pub async fn run(db: Db, args: BoardArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: BoardArgs, fmt: OutputFormat, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         BoardCommand::Status { project, compact, no_chains } => {
-            let board = db.board_status_query(project.as_deref(), compact, !no_chains).await?;
-            output::print_value(&board, fmt)?;
+            let actual_mode = if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                mode
+            };
+            let res = db.board_status_mode(project.as_deref(), actual_mode, !no_chains).await?;
+            output::print_core_response(res, fmt)?;
         }
     }
     Ok(())

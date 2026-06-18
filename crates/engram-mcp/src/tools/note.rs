@@ -50,7 +50,12 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "limit":            { "type": "integer" },
                     "offset":           { "type": "integer" },
                     "compact":          { "type": "boolean" },
-                    "projection":       { "type": "array", "items": { "type": "string" } }
+                    "projection":       { "type": "array", "items": { "type": "string" } },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -157,9 +162,26 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let sprint_id = args["sprint_id"].as_i64();
     let limit = args["limit"].as_i64();
     let offset = args["offset"].as_i64();
-    let compact = args["compact"].as_bool();
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        if let Some(compact) = args["compact"].as_bool() {
+            if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Normal
+            }
+        } else {
+            engram_core::models::OutputMode::Agent
+        }
+    };
 
-    let paginated = db.note_list(
+    let response = db.note_list_mode(
         issue_id,
         task_id,
         note_type,
@@ -169,10 +191,10 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         sprint_id,
         limit,
         offset,
-        compact,
+        mode,
     ).await?;
 
-    let mut val = serde_json::to_value(&paginated).unwrap();
+    let mut val = serde_json::to_value(&response).unwrap();
     if let Some(arr) = args["projection"].as_array() {
         let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
         val = engram_core::apply_projection(val, &fields);

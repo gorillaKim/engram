@@ -107,13 +107,20 @@ impl EngramMcpServer {
         let result = crate::tools::dispatch(Arc::clone(&self.db), tool_name, args).await;
 
         match result {
-            Ok(content) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "content": [{ "type": "text", "text": serde_json::to_string_pretty(&content).unwrap() }]
-                }
-            }),
+            Ok(content) => {
+                let text_val = if let Some(s) = content.as_str() {
+                    s.to_string()
+                } else {
+                    serde_json::to_string_pretty(&content).unwrap()
+                };
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "content": [{ "type": "text", "text": text_val }]
+                    }
+                })
+            }
             Err(e) => json!({
                 "jsonrpc": "2.0",
                 "id": id,

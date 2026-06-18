@@ -147,7 +147,7 @@ pub enum IssueCommand {
     },
 }
 
-pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         IssueCommand::Create { epic, title, goal, description } => {
             let issue = db.issue_create(CreateIssueInput {
@@ -161,13 +161,13 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
         }
         IssueCommand::List {
             project, epic, mission, sprint, backlog_only, status, priority,
-            limit, offset, compact, projection,
+            limit, offset, compact: _, projection,
         } => {
             let mut target_statuses = Vec::new();
             for s in status {
                 target_statuses.push(parse_status(&s)?);
             }
-            let paginated = db.issue_list(IssueFilter {
+            let res = db.issue_list_mode(IssueFilter {
                 epic_id: epic,
                 mission_id: mission,
                 sprint_id: sprint,
@@ -176,21 +176,27 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str) -> 
                 status: None,
                 statuses: if target_statuses.is_empty() { None } else { Some(target_statuses) },
                 priority: priority.as_deref().map(parse_priority).transpose()?,
-                compact,
+                compact: None,
                 limit,
                 offset,
-            }).await?;
+            }, mode).await?;
  
             if let Some(ref fields) = projection {
-                let val = serde_json::to_value(&paginated).unwrap();
+                let val = serde_json::to_value(&res).unwrap();
                 let filtered = engram_core::apply_projection(val, fields);
                 output::print_value(&filtered, fmt)?;
             } else {
-                output::print_value(&paginated, fmt)?;
+                output::print_core_response(res, fmt)?;
             }
         }
         IssueCommand::Get { id, compact } => {
-            output::print_value(&db.issue_get(id, compact).await?, fmt)?;
+            let actual_mode = if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                mode
+            };
+            let res = db.issue_get_mode(id, actual_mode).await?;
+            output::print_core_response(res, fmt)?;
         }
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {

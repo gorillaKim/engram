@@ -21,6 +21,11 @@ pub fn tool_definitions() -> Vec<Value> {
                     "size_limit": {
                         "type": "integer",
                         "description": "응답 크기 한도 (기본 25000자)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }
             }
@@ -55,6 +60,11 @@ pub fn tool_definitions() -> Vec<Value> {
                     "include_chains": {
                         "type": "boolean",
                         "description": "false 시 blocked_chains 필드를 응답에서 제외 (기본값 true)"
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }
             }
@@ -64,11 +74,30 @@ pub fn tool_definitions() -> Vec<Value> {
 
 pub async fn restore(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    let compact = args["compact"].as_bool().unwrap_or(false);
     let stall_minutes = args["stall_minutes"].as_i64().unwrap_or(120);
     let size_limit = args["size_limit"].as_u64().map(|n| n as usize);
-    let snapshot = db.session_restore(project_key, compact, stall_minutes, size_limit).await?;
-    Ok(serde_json::to_value(snapshot).unwrap())
+
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        if let Some(compact) = args["compact"].as_bool() {
+            if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Normal
+            }
+        } else {
+            engram_core::models::OutputMode::Agent
+        }
+    };
+
+    let response = db.session_restore_mode(project_key, mode, stall_minutes, size_limit).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn end(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -79,8 +108,27 @@ pub async fn end(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn board_status(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    let compact = args["compact"].as_bool().unwrap_or(false);
+    
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        if let Some(compact) = args["compact"].as_bool() {
+            if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Normal
+            }
+        } else {
+            engram_core::models::OutputMode::Agent
+        }
+    };
+
     let include_chains = args["include_chains"].as_bool().unwrap_or(true);
-    let board = db.board_status_query(project_key, compact, include_chains).await?;
+    let board = db.board_status_mode(project_key, mode, include_chains).await?;
     Ok(serde_json::to_value(board).unwrap())
 }

@@ -1,5 +1,6 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::task::*;
+use crate::models::{OutputMode, CoreResponse};
 use crate::{Db, Error, Result};
 
 impl Db {
@@ -41,6 +42,52 @@ impl Db {
         .fetch_all(&self.pool)
         .await
         .map_err(Into::into)
+    }
+
+    pub async fn task_list_mode(&self, issue_id: i64, mode: OutputMode) -> Result<CoreResponse<Vec<Task>>> {
+        let mut tasks = self.task_list(issue_id, None).await?;
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
+        if compact {
+            for task in &mut tasks {
+                if let Some(ref desc) = task.description {
+                    if desc.chars().count() > 200 {
+                        let mut truncated: String = desc.chars().take(200).collect();
+                        truncated.push_str("...");
+                        task.description = Some(truncated);
+                    }
+                }
+                if let Some(ref goal) = task.goal {
+                    if goal.chars().count() > 200 {
+                        let mut truncated: String = goal.chars().take(200).collect();
+                        truncated.push_str("...");
+                        task.goal = Some(truncated);
+                    }
+                }
+            }
+        }
+
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== TASK LIST ===\n");
+            if tasks.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for task in &tasks {
+                    let status_val = serde_json::to_value(&task.status).unwrap();
+                    let status_str = status_val.as_str().unwrap_or("required");
+                    let source_val = serde_json::to_value(&task.source).unwrap();
+                    let source_str = source_val.as_str().unwrap_or("planned");
+                    out.push_str(&format!(
+                        "- #{} ({}, source:{}): {}\n",
+                        task.id, status_str, source_str, task.title
+                    ));
+                }
+            }
+            out.push_str("==================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(tasks))
+        }
     }
 
     /// 태스크 삭제.
@@ -137,6 +184,38 @@ impl Db {
             epic_id: r.epic_id, epic_title: r.epic_title, project_key: r.project_key,
             reason: format!("priority_ord:{} + status_ord:{}", r.priority_ord, r.status_ord),
         }))
+    }
+
+    pub async fn task_next_mode(
+        &self,
+        project_key: Option<&str>,
+        issue_id: Option<i64>,
+        mode: OutputMode,
+    ) -> Result<CoreResponse<Option<NextTask>>> {
+        let next = self.task_next(project_key, issue_id).await?;
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== NEXT TASK ===\n");
+            match &next {
+                None => {
+                    out.push_str("No ready tasks available.\n");
+                }
+                Some(nt) => {
+                    out.push_str(&format!("Task ID: #{}\n", nt.task_id));
+                    out.push_str(&format!("Task Title: {}\n", nt.task_title));
+                    out.push_str(&format!("Issue ID: #{}\n", nt.issue_id));
+                    out.push_str(&format!("Issue Title: {}\n", nt.issue_title));
+                    out.push_str(&format!("Epic ID: #{}\n", nt.epic_id));
+                    out.push_str(&format!("Epic Title: {}\n", nt.epic_title));
+                    out.push_str(&format!("Project Key: {}\n", nt.project_key));
+                    out.push_str(&format!("Reason: {}\n", nt.reason));
+                }
+            }
+            out.push_str("=================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(next))
+        }
     }
 
     async fn next_ord(&self, issue_id: i64, after_task_id: Option<i64>) -> Result<f64> {

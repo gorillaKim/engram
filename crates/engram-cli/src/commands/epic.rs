@@ -56,7 +56,7 @@ pub enum EpicCommand {
     },
 }
 
-pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         EpicCommand::Create { project, title, mission_id, sprint } => {
             let epic = db.epic_create(CreateEpicInput {
@@ -68,14 +68,13 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str) -> a
             }).await?;
             output::print_value(&epic, fmt)?;
         }
-        EpicCommand::List { project, status: _, sprint, backlog_only, include_completed } => {
-            output::print_value(
-                &db.epic_list_filtered(project.as_deref(), include_completed, sprint, backlog_only).await?,
-                fmt,
-            )?;
+        EpicCommand::List { project, status: _, sprint: _, backlog_only: _, include_completed } => {
+            let res = db.epic_list_mode(project.as_deref(), include_completed, mode).await?;
+            output::print_core_response(res, fmt)?;
         }
         EpicCommand::Get { id } => {
-            output::print_value(&db.epic_get(id).await?, fmt)?;
+            let res = db.epic_get_mode(id, mode).await?;
+            output::print_core_response(res, fmt)?;
         }
         EpicCommand::Update { id, status, title, description } => {
             let epic = db.epic_update(id, UpdateEpicInput {

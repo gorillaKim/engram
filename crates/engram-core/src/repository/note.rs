@@ -1,6 +1,7 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::note::*;
 use crate::models::PaginatedResponse;
+use crate::models::{OutputMode, CoreResponse};
 use crate::{Db, Error, Result};
 
 impl Db {
@@ -208,6 +209,58 @@ impl Db {
         let has_more = (off + items.len() as i64) < total;
 
         Ok(PaginatedResponse { items, total, has_more })
+    }
+
+    pub async fn note_list_mode(
+        &self,
+        issue_id: Option<i64>,
+        task_id: Option<i64>,
+        note_type: Option<NoteType>,
+        include_resolved: bool,
+        include_detail: bool,
+        project_key: Option<&str>,
+        sprint_id: Option<i64>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+        mode: OutputMode,
+    ) -> Result<CoreResponse<PaginatedResponse<Note>>> {
+        let is_agent = matches!(mode, OutputMode::Agent);
+        let is_compact = matches!(mode, OutputMode::Compact) || is_agent;
+        let paginated = self.note_list(
+            issue_id,
+            task_id,
+            note_type,
+            include_resolved,
+            if is_compact { false } else { include_detail },
+            project_key,
+            sprint_id,
+            limit,
+            offset,
+            if is_compact { Some(true) } else { None },
+        ).await?;
+
+        if is_agent {
+            let mut out = String::new();
+            out.push_str("=== NOTE LIST ===\n");
+            if paginated.items.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for note in &paginated.items {
+                    let type_val = serde_json::to_value(&note.note_type).unwrap();
+                    let type_str = type_val.as_str().unwrap_or("general");
+                    let resolved_mark = if note.resolved { "[Resolved] " } else { "" };
+                    out.push_str(&format!(
+                        "- #{} ({}{}): {}\n",
+                        note.id, resolved_mark, type_str, note.summary
+                    ));
+                }
+            }
+            out.push_str(&format!("Total: {} | Has More: {}\n", paginated.total, paginated.has_more));
+            out.push_str("=================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(paginated))
+        }
     }
 
     pub async fn note_resolve(&self, id: i64, changed_by: &str) -> Result<Note> {

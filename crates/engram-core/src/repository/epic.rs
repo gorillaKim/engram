@@ -1,5 +1,6 @@
 use crate::models::epic::*;
 use crate::models::history::{CreateHistoryInput, EntityType};
+use crate::models::{OutputMode, CoreResponse};
 use crate::{Db, Error, Result};
 
 const EPIC_COLS: &str = "id, project_key, mission_id, sprint_id, title, description, status, created_at, updated_at";
@@ -30,6 +31,15 @@ impl Db {
             .ok_or_else(|| Error::NotFound(format!("epic:{id}")))
     }
 
+    pub async fn epic_get_mode(&self, id: i64, mode: OutputMode) -> Result<CoreResponse<Epic>> {
+        let epic = self.epic_get(id).await?;
+        if matches!(mode, OutputMode::Agent) {
+            Ok(CoreResponse::Text(format_agent_epic_text(&epic)))
+        } else {
+            Ok(CoreResponse::Json(epic))
+        }
+    }
+
     /// 에픽 목록. project_key, status, sprint_id 로 필터.
     pub async fn epic_list(
         &self,
@@ -37,6 +47,45 @@ impl Db {
         include_completed: bool,
     ) -> Result<Vec<Epic>> {
         self.epic_list_filtered(project_key, include_completed, None, false).await
+    }
+
+    pub async fn epic_list_mode(
+        &self,
+        project_key: Option<&str>,
+        include_completed: bool,
+        mode: OutputMode,
+    ) -> Result<CoreResponse<Vec<Epic>>> {
+        let mut epics = self.epic_list(project_key, include_completed).await?;
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
+        if compact {
+            for epic in &mut epics {
+                if let Some(ref desc) = epic.description {
+                    if desc.chars().count() > 200 {
+                        let mut truncated: String = desc.chars().take(200).collect();
+                        truncated.push_str("...");
+                        epic.description = Some(truncated);
+                    }
+                }
+            }
+        }
+
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== EPIC LIST ===\n");
+            if epics.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for epic in &epics {
+                    let status_val = serde_json::to_value(&epic.status).unwrap();
+                    let status_str = status_val.as_str().unwrap_or("active");
+                    out.push_str(&format!("- #{} ({}): {}\n", epic.id, status_str, epic.title));
+                }
+            }
+            out.push_str("==================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(epics))
+        }
     }
 
     /// 에픽 목록 (sprint 필터 포함).
@@ -245,6 +294,25 @@ impl Db {
         }
         Ok(())
     }
+}
+
+fn format_agent_epic_text(epic: &Epic) -> String {
+    let mut out = String::new();
+    out.push_str("=== EPIC SPECIFICATION ===\n");
+    out.push_str(&format!("ID: #{}\n", epic.id));
+    out.push_str(&format!("Project Key: {}\n", epic.project_key));
+    out.push_str(&format!("Mission ID: {}\n", epic.mission_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
+    out.push_str(&format!("Sprint ID: {}\n", epic.sprint_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
+    out.push_str(&format!("Title: {}\n", epic.title));
+    let status_val = serde_json::to_value(&epic.status).unwrap();
+    let status_str = status_val.as_str().unwrap_or("active");
+    out.push_str(&format!("Status: {}\n", status_str));
+    out.push_str(&format!("Created At: {}\n", epic.created_at));
+    out.push_str(&format!("Updated At: {}\n", epic.updated_at));
+    out.push_str("\n[Description]\n");
+    out.push_str(epic.description.as_deref().unwrap_or("None"));
+    out.push_str("\n==========================");
+    out
 }
 
 #[cfg(test)]

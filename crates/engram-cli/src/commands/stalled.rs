@@ -22,10 +22,10 @@ pub struct StalledArgs {
     #[arg(long)] pub project: Option<String>,
 }
 
-pub async fn run(db: Db, args: StalledArgs, fmt: OutputFormat) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: StalledArgs, fmt: OutputFormat, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     let st = parse_stalled_status(&args.status)?;
-    let list = db.stalled_issues(args.project.as_deref(), st, args.threshold_minutes).await?;
-    output::print_value(&list, fmt)?;
+    let res = db.stalled_issues_mode(args.project.as_deref(), st, args.threshold_minutes, mode).await?;
+    output::print_core_response(res, fmt)?;
     Ok(())
 }
 

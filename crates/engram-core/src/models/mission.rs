@@ -71,7 +71,8 @@ pub struct MissionTree {
 pub struct MissionSummary {
     pub id: i64,
     pub title: String,
-    pub status: MissionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<MissionStatus>,
     pub progress_rate: f64,
     pub epic_count: i64,
 }

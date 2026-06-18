@@ -18,7 +18,14 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "epic_get", "description": "에픽 상세를 조회합니다.",
             "inputSchema": { "type": "object", "required": ["id"],
-                "properties": { "id": { "type": "integer" } }
+                "properties": {
+                    "id": { "type": "integer" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
+                }
             }
         }),
         json!({ "name": "epic_list",
@@ -28,7 +35,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     "project_key":       { "type": "string" },
                     "sprint_id":         { "type": "integer", "description": "특정 스프린트의 에픽만" },
                     "backlog_only":      { "type": "boolean", "description": "sprint_id IS NULL 만. 기본 false" },
-                    "include_completed": { "type": "boolean", "description": "기본 false. true 시 completed 에픽도 포함" }
+                    "include_completed": { "type": "boolean", "description": "기본 false. true 시 completed 에픽도 포함" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -91,17 +103,35 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.epic_get(id).await?).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        engram_core::models::OutputMode::Agent
+    };
+    let response = db.epic_get_mode(id, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let include_completed = args["include_completed"].as_bool().unwrap_or(false);
-    let sprint_id = args["sprint_id"].as_i64();
-    let backlog_only = args["backlog_only"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(
-        db.epic_list_filtered(project_key, include_completed, sprint_id, backlog_only).await?
-    ).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        engram_core::models::OutputMode::Agent
+    };
+    let response = db.epic_list_mode(project_key, include_completed, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

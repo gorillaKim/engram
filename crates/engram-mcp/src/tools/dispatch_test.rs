@@ -187,7 +187,7 @@ async fn test_issue_link_and_unlink_roundtrip() {
 async fn test_session_restore_via_dispatch() {
     let db = setup().await;
     let (_, _, _) = seed(&db).await;
-    let snap: Value = dispatch(Arc::clone(&db), "session_restore", &json!({"project_key": "p"}))
+    let snap: Value = dispatch(Arc::clone(&db), "session_restore", &json!({"project_key": "p", "mode": "normal"}))
         .await
         .unwrap();
     assert!(snap["sprint_id"].as_i64().unwrap() > 0);
@@ -412,7 +412,7 @@ async fn test_session_restore_compact_default_is_full() {
     let (sprint_id, _, issue_id) = seed(&db).await;
     promote_to_ready(&db, issue_id, sprint_id).await;
 
-    let default_resp = dispatch(Arc::clone(&db), "session_restore", &json!({"project_key": "p"}))
+    let default_resp = dispatch(Arc::clone(&db), "session_restore", &json!({"project_key": "p", "mode": "normal"}))
         .await
         .unwrap();
     let explicit_full = dispatch(
@@ -595,7 +595,7 @@ async fn test_session_restore_size_limit_via_dispatch() {
     let snap = dispatch(
         Arc::clone(&db),
         "session_restore",
-        &json!({"project_key": "p", "size_limit": 100}),
+        &json!({"project_key": "p", "size_limit": 100, "mode": "normal"}),
     )
     .await
     .unwrap();

@@ -33,7 +33,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     "id": { "type": "integer" },
                     "include_tasks": { "type": "boolean" },
                     "include_notes": { "type": "boolean" },
-                    "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 200자로 잘라서 반환 (기본값 false)" }
+                    "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 200자로 잘라서 반환 (기본값 false)" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -55,7 +60,12 @@ pub fn tool_definitions() -> Vec<Value> {
                     "limit":        { "type": "integer" },
                     "offset":       { "type": "integer" },
                     "compact":      { "type": "boolean" },
-                    "projection":   { "type": "array", "items": { "type": "string" } }
+                    "projection":   { "type": "array", "items": { "type": "string" } },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -65,7 +75,12 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "project_key":       { "type": "string" },
                     "status":            { "type": "string", "enum": IssueStatus::ALL, "default": "working" },
-                    "threshold_minutes": { "type": "integer", "minimum": 1 }
+                    "threshold_minutes": { "type": "integer", "minimum": 1 },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["normal", "compact", "agent"],
+                        "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
+                    }
                 }
             }
         }),
@@ -222,8 +237,26 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    let compact = args["compact"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.issue_get(id, compact).await?).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        if let Some(compact) = args["compact"].as_bool() {
+            if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Normal
+            }
+        } else {
+            engram_core::models::OutputMode::Agent
+        }
+    };
+    let response = db.issue_get_mode(id, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -244,6 +277,25 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         statuses = Some(list);
     }
 
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        if let Some(compact) = args["compact"].as_bool() {
+            if compact {
+                engram_core::models::OutputMode::Compact
+            } else {
+                engram_core::models::OutputMode::Normal
+            }
+        } else {
+            engram_core::models::OutputMode::Agent
+        }
+    };
+
     let filter = IssueFilter {
         epic_id:      args["epic_id"].as_i64(),
         mission_id:   args["mission_id"].as_i64(),
@@ -257,9 +309,9 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         limit:        args["limit"].as_i64(),
         offset:       args["offset"].as_i64(),
     };
-    let paginated = db.issue_list(filter).await?;
+    let response = db.issue_list_mode(filter, mode).await?;
 
-    let mut val = serde_json::to_value(&paginated).unwrap();
+    let mut val = serde_json::to_value(&response).unwrap();
     if let Some(arr) = args["projection"].as_array() {
         let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
         val = engram_core::apply_projection(val, &fields);
@@ -274,7 +326,18 @@ pub async fn stalled(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
         .unwrap_or(IssueStatus::Working);
     let project_key = args["project_key"].as_str();
-    Ok(serde_json::to_value(db.stalled_issues(project_key, status, threshold).await?).unwrap())
+    let mode = if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else {
+        engram_core::models::OutputMode::Agent
+    };
+    let response = db.stalled_issues_mode(project_key, status, threshold, mode).await?;
+    Ok(serde_json::to_value(response).unwrap())
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

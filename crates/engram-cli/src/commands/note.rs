@@ -83,7 +83,7 @@ pub enum NoteCommand {
     },
 }
 
-pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &str) -> anyhow::Result<()> {
+pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &str, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
     match args.command {
         NoteCommand::Add {
             issue, task, r#type, summary, detail,
@@ -105,10 +105,10 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
         }
         NoteCommand::List {
             issue, task, r#type, include_resolved, include_detail,
-            project_key, sprint_id, limit, offset, compact, projection,
+            project_key, sprint_id, limit, offset, compact: _, projection,
         } => {
             let nt = r#type.as_deref().map(parse_note_type_filter).transpose()?;
-            let paginated = db.note_list(
+            let res = db.note_list_mode(
                 issue,
                 task,
                 nt,
@@ -118,15 +118,15 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
                 sprint_id,
                 limit,
                 offset,
-                Some(compact),
+                mode,
             ).await?;
-
+ 
             if let Some(ref fields) = projection {
-                let val = serde_json::to_value(&paginated).unwrap();
+                let val = serde_json::to_value(&res).unwrap();
                 let filtered = engram_core::apply_projection(val, fields);
                 output::print_value(&filtered, fmt)?;
             } else {
-                output::print_value(&paginated, fmt)?;
+                output::print_core_response(res, fmt)?;
             }
         }
         NoteCommand::Resolve { id } => {
