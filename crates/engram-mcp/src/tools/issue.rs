@@ -33,7 +33,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "id": { "type": "integer" },
                     "include_tasks": { "type": "boolean" },
                     "include_notes": { "type": "boolean" },
-                    "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 NULL로 채워서 반환 (기본값 false)" }
+                    "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 200자로 잘라서 반환 (기본값 false)" }
                 }
             }
         }),

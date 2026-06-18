@@ -576,6 +576,16 @@ impl Db {
             snapshot.truncated = true;
             let mut truncated_count = 0;
 
+            while !snapshot.active_caveats.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
+                snapshot.active_caveats.pop();
+                truncated_count += 1;
+            }
+
+            while !snapshot.pending_drafts.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
+                snapshot.pending_drafts.pop();
+                truncated_count += 1;
+            }
+
             while !snapshot.active_epics.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
                 let removed = snapshot.active_epics.pop().unwrap();
                 let issue_cnt = if compact {
@@ -584,16 +594,6 @@ impl Db {
                     removed.active_issues.len()
                 };
                 truncated_count += issue_cnt + 1;
-            }
-
-            while !snapshot.pending_drafts.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
-                snapshot.pending_drafts.pop();
-                truncated_count += 1;
-            }
-
-            while !snapshot.active_caveats.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
-                snapshot.active_caveats.pop();
-                truncated_count += 1;
             }
 
             snapshot.truncated_count = Some(truncated_count);
