@@ -344,14 +344,18 @@ async fn test_parity_link_unlink_roundtrip() {
     let link_b = dispatch(Arc::clone(&db_b), "issue_link",
         &json!({"source_id": b1, "target_id": b2, "link_type": "blocks", "agent_id": "test"})).await.unwrap();
 
-    let cli = normalize(serde_json::to_value(&link_a).unwrap());
-    let mcp = normalize(link_b.clone());
-    assert_eq!(cli, mcp, "issue_link 결과 동치 실패");
+    // issue_link: MCP minimal {link_id, source_id, target_id, ok} ≠ CLI full struct — 설계상 의도된 차이
+    // id 일치 및 ok 확인
+    let link_id_b = link_b["link_id"].as_i64().unwrap();
+    assert_eq!(link_a.id, link_id_b, "link id 일치");
+    assert_eq!(link_b["source_id"].as_i64().unwrap(), b1);
+    assert_eq!(link_b["target_id"].as_i64().unwrap(), b2);
+    assert_eq!(link_b["status"], "ok");
 
     // unlink
     db_a.issue_unlink(link_a.id).await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_unlink",
-        &json!({"link_id": link_b["id"].as_i64().unwrap(), "agent_id": "test"})).await.unwrap();
+        &json!({"link_id": link_id_b, "agent_id": "test"})).await.unwrap();
 
     let cli_links = normalize(serde_json::to_value(
         db_a.issue_links_for(a1).await.unwrap()
@@ -414,17 +418,25 @@ async fn test_parity_note_add_broadcast_and_resolve() {
         "agent_id": "leader@s", "scope": "epic", "scope_target_id": eid_b
     })).await.unwrap();
 
-    let cli = normalize(serde_json::to_value(&n_a).unwrap());
-    let mcp = normalize(n_b.clone());
-    assert_eq!(cli, mcp, "broadcast note_add 동치 실패");
+    // note_add: MCP minimal {id, ok} ≠ CLI full struct — 설계상 의도된 차이
+    // id 일치 및 ok 확인 후 note_get으로 최종 상태 동치 검증
+    let nid_b = n_b["id"].as_i64().unwrap();
+    assert_eq!(n_a.id, nid_b, "note id 일치");
+    assert_eq!(n_b["status"], "ok");
+
+    // note_get으로 실제 내용 동치 비교
+    let cli_note = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
+    let mcp_note = normalize(dispatch(Arc::clone(&db_b), "note_get",
+        &json!({"id": nid_b})).await.unwrap());
+    assert_eq!(cli_note, mcp_note, "note_get 동치 실패 (note_add 결과 상태)");
 
     db_a.note_resolve(n_a.id, "user").await.unwrap();
     dispatch(Arc::clone(&db_b), "note_resolve",
-        &json!({"id": n_b["id"].as_i64().unwrap(), "agent_id": "test"})).await.unwrap();
+        &json!({"id": nid_b, "agent_id": "test"})).await.unwrap();
 
     let cli = normalize(serde_json::to_value(db_a.note_get(n_a.id, false).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_get",
-        &json!({"id": n_b["id"].as_i64().unwrap(), "mode": "normal"})).await.unwrap());
+        &json!({"id": nid_b})).await.unwrap());
     assert_eq!(cli["resolved"], mcp["resolved"], "resolved 플래그 동치");
     assert_eq!(cli["resolved"], true);
 }
@@ -468,7 +480,7 @@ async fn test_mission_crud_parity() {
     let db_b = fresh_db().await;
 
     // CLI 쪽: sprint 생성 후 mission 생성
-    let s_a = db_a.sprint_create(CreateSprintInput {
+    let _s_a = db_a.sprint_create(CreateSprintInput {
         name: "MS1".into(), goal: None, start_date: None, end_date: None,
     }).await.unwrap();
     let m_a = db_a.mission_create(CreateMissionInput {
@@ -480,7 +492,7 @@ async fn test_mission_crud_parity() {
     // MCP 쪽: dispatch로 동일 시퀀스
     let s_b = dispatch(Arc::clone(&db_b), "sprint_create",
         &json!({"name": "MS1"})).await.unwrap();
-    let sid_b = s_b["id"].as_i64().unwrap();
+    let _sid_b = s_b["id"].as_i64().unwrap();
     let m_b = dispatch(Arc::clone(&db_b), "mission_create", &json!({
         "title": "테스트 미션",
         "description": "미션 설명",
@@ -488,16 +500,15 @@ async fn test_mission_crud_parity() {
     })).await.unwrap();
     let mid_b = m_b["id"].as_i64().unwrap();
 
-    // mission_get 동치 검증
+    // mission_get 동치 검증 (create 반환값이 아닌 최종 상태로 비교)
     let cli_get = normalize(serde_json::to_value(db_a.mission_get(m_a.id).await.unwrap()).unwrap());
     let mcp_get = normalize(dispatch(Arc::clone(&db_b), "mission_get",
         &json!({"id": mid_b})).await.unwrap());
     assert_eq!(cli_get, mcp_get, "mission_get 동치 실패");
 
-    // create 반환값 자체도 동치
-    let cli_created = normalize(serde_json::to_value(&m_a).unwrap());
-    let mcp_created = normalize(m_b);
-    assert_eq!(cli_created, mcp_created, "mission_create 반환값 동치 실패");
+    // create 반환값 형태 확인 (MCP minimal: {id, ok}, CLI: full struct — 설계상 다름)
+    assert_eq!(m_b["id"].as_i64().unwrap(), m_a.id, "mission id 일치");
+    assert_eq!(m_b["status"], "ok", "MCP mission_create status=ok");
 }
 
 /// mission_list 동치 검증.
@@ -508,7 +519,7 @@ async fn test_mission_list_parity() {
     let db_b = fresh_db().await;
 
     // CLI 쪽: sprint + mission 2개 생성
-    let s_a = db_a.sprint_create(CreateSprintInput {
+    let _s_a = db_a.sprint_create(CreateSprintInput {
         name: "ML1".into(), goal: None, start_date: None, end_date: None,
     }).await.unwrap();
     db_a.mission_create(CreateMissionInput {
@@ -521,7 +532,7 @@ async fn test_mission_list_parity() {
     // MCP 쪽: dispatch로 동일 시퀀스
     let s_b = dispatch(Arc::clone(&db_b), "sprint_create",
         &json!({"name": "ML1"})).await.unwrap();
-    let sid_b = s_b["id"].as_i64().unwrap();
+    let _sid_b = s_b["id"].as_i64().unwrap();
     dispatch(Arc::clone(&db_b), "mission_create",
         &json!({"title": "미션 A"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "mission_create",
@@ -659,18 +670,19 @@ async fn test_parity_issue_finish_and_cancel() {
     dispatch(Arc::clone(&db_b), "issue_claim", &json!({"id": iid_b, "agent_id": "agent_a"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "issue_release", &json!({"id": iid_b, "agent_id": "agent_a", "transition_to": "demo"})).await.unwrap();
 
-    // 2. issue_finish 호출 및 동치 검증
-    let cli_finish = normalize(serde_json::to_value(db_a.issue_finish(iid_a, "user").await.unwrap()).unwrap());
+    // 2. issue_finish 호출 — MCP minimal {id, status, ok} ≠ CLI full struct (설계상 의도)
+    db_a.issue_finish(iid_a, "user").await.unwrap();
     let mcp_finish = normalize(dispatch(Arc::clone(&db_b), "issue_finish", &json!({"id": iid_b, "agent_id": "user"})).await.unwrap());
-    assert_eq!(cli_finish, mcp_finish, "issue_finish 결과 동치 실패");
-    assert_eq!(cli_finish["status"], "finished");
+    // MCP minimal 응답 검증
+    assert_eq!(mcp_finish["id"].as_i64().unwrap(), iid_b);
+    assert_eq!(mcp_finish["status"], "finished");
+    // issue_get으로 최종 상태 동치 검증
+    let cli_after_finish = normalize(serde_json::to_value(db_a.issue_get(iid_a, false).await.unwrap()).unwrap());
+    let mcp_after_finish = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid_b, "mode": "normal"})).await.unwrap());
+    assert_eq!(cli_after_finish, mcp_after_finish, "issue_finish 후 issue_get 동치 실패");
+    assert_eq!(cli_after_finish["status"], "finished");
 
     // 3. cancel 검증을 위해 새로운 이슈 생성
-    let epic_a = db_a.epic_get(eid_a).await.unwrap();
-    let mid_a = epic_a.mission_id;
-    let epic_b = dispatch(Arc::clone(&db_b), "epic_get", &json!({"id": eid_b})).await.unwrap();
-    let mid_b = epic_b["mission_id"].as_i64();
-
     let iid_a2 = db_a.issue_create(CreateIssueInput {
         epic_id: eid_a,
         title: "I2".into(),
@@ -681,11 +693,16 @@ async fn test_parity_issue_finish_and_cancel() {
     let iid_b2 = dispatch(Arc::clone(&db_b), "issue_create", &json!({"epic_id": eid_b, "title": "I2"})).await.unwrap()["id"].as_i64().unwrap();
     assert_eq!(iid_a2, iid_b2);
 
-    // 4. issue_cancel 호출 및 동치 검증
-    let cli_cancel = normalize(serde_json::to_value(db_a.issue_cancel(iid_a2, "No longer needed", "user").await.unwrap()).unwrap());
+    // 4. issue_cancel 호출 — MCP minimal {id, status, ok} ≠ CLI full struct (설계상 의도)
+    db_a.issue_cancel(iid_a2, "No longer needed", "user").await.unwrap();
     let mcp_cancel = normalize(dispatch(Arc::clone(&db_b), "issue_cancel", &json!({"id": iid_b2, "reason": "No longer needed", "agent_id": "user"})).await.unwrap());
-    assert_eq!(cli_cancel, mcp_cancel, "issue_cancel 결과 동치 실패");
-    assert_eq!(cli_cancel["status"], "cancelled");
+    assert_eq!(mcp_cancel["id"].as_i64().unwrap(), iid_b2);
+    assert_eq!(mcp_cancel["status"], "cancelled");
+    // issue_get으로 최종 상태 동치 검증
+    let cli_after_cancel = normalize(serde_json::to_value(db_a.issue_get(iid_a2, false).await.unwrap()).unwrap());
+    let mcp_after_cancel = normalize(dispatch(Arc::clone(&db_b), "issue_get", &json!({"id": iid_b2, "mode": "normal"})).await.unwrap());
+    assert_eq!(cli_after_cancel, mcp_after_cancel, "issue_cancel 후 issue_get 동치 실패");
+    assert_eq!(cli_after_cancel["status"], "cancelled");
 }
 
 #[tokio::test]

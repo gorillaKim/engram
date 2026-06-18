@@ -43,7 +43,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         start_date: args["start_date"].as_str().map(String::from),
         end_date: args["end_date"].as_str().map(String::from),
     };
-    Ok(serde_json::to_value(db.sprint_create(input).await?).unwrap())
+    let sprint = db.sprint_create(input).await?;
+    Ok(json!({ "id": sprint.id, "name": sprint.name, "status": "ok" }))
 }
 
 pub async fn list(db: Arc<Db>, _args: &Value) -> engram_core::Result<Value> {
@@ -67,12 +68,14 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     };
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    Ok(serde_json::to_value(db.sprint_update(id, input, agent_id).await?).unwrap())
+    let sprint = db.sprint_update(id, input, agent_id).await?;
+    let status_str = serde_json::to_value(&sprint.status).unwrap();
+    Ok(json!({ "id": sprint.id, "status": status_str }))
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     db.sprint_delete(id).await?;
-    Ok(json!({ "ok": true, "deleted_id": id }))
+    Ok(json!({ "status": "ok", "deleted_id": id }))
 }

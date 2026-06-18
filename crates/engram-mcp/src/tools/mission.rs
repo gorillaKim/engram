@@ -93,7 +93,7 @@ pub async fn mission_create(db: Arc<Db>, args: &Value) -> Result<Value> {
         jira_key: args["jira_key"].as_str().map(|s| s.to_string()),
     };
     let m = db.mission_create(input).await?;
-    Ok(serde_json::to_value(&m).unwrap())
+    Ok(json!({ "id": m.id, "status": "ok" }))
 }
 
 pub async fn mission_get(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -131,8 +131,8 @@ pub async fn mission_update(db: Arc<Db>, args: &Value) -> Result<Value> {
     };
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| Error::Validation("agent_id required".into()))?;
-    let m = db.mission_update(id, input, agent_id).await?;
-    Ok(serde_json::to_value(&m).unwrap())
+    db.mission_update(id, input, agent_id).await?;
+    Ok(json!({ "id": id, "status": "ok" }))
 }
 
 pub async fn mission_delete(db: Arc<Db>, args: &Value) -> Result<Value> {

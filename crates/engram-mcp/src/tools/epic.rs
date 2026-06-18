@@ -90,7 +90,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         title:       args["title"].as_str().unwrap_or("").to_string(),
         description: args["description"].as_str().map(String::from),
     };
-    Ok(serde_json::to_value(db.epic_create(input).await?).unwrap())
+    let epic = db.epic_create(input).await?;
+    Ok(json!({ "id": epic.id, "status": "ok" }))
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -98,7 +99,7 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     db.epic_delete(id, agent_id).await?;
-    Ok(json!({ "ok": true, "deleted_id": id }))
+    Ok(json!({ "status": "ok", "deleted_id": id }))
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -149,7 +150,7 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         update_sprint_id: args["update_sprint_id"].as_bool().unwrap_or(false),
     };
     let epic = db.epic_update(id, input, agent_id).await?;
-    Ok(serde_json::to_value(&epic).unwrap())
+    Ok(json!({ "id": epic.id, "status": "ok" }))
 }
 
 pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -159,5 +160,5 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let epic = db.epic_set_sprint(epic_id, sprint_id, agent_id).await?;
-    Ok(serde_json::to_value(&epic).unwrap())
+    Ok(json!({ "id": epic.id, "sprint_id": epic.sprint_id, "status": "ok" }))
 }

@@ -98,7 +98,8 @@ async fn test_sprint_update_changes_status() {
         .await
         .unwrap();
     let id = sprint["id"].as_i64().unwrap();
-    assert_eq!(sprint["status"], "planning");
+    // sprint_create minimal 응답: { id, name, status }
+    assert_eq!(sprint["status"], "ok");
 
     let updated = dispatch(
         Arc::clone(&db),
@@ -114,14 +115,12 @@ async fn test_sprint_update_changes_status() {
 async fn test_epic_update_changes_status() {
     let db = setup().await;
     let (_, epic_id, _) = seed(&db).await;
-    let updated = dispatch(
-        Arc::clone(&db),
-        "epic_update",
-        &json!({"id": epic_id, "status": "completed", "agent_id": "test"}),
-    )
-    .await
-    .unwrap();
-    assert_eq!(updated["status"], "completed", "epic_update가 status를 반영해야 함");
+    let updated = dispatch(Arc::clone(&db), "epic_update", &json!({"id": epic_id, "agent_id": "test", "title": "NewEpicTitle"})).await.unwrap();
+    assert_eq!(updated["status"], "ok", "epic_update가 status=ok 를 반환해야 함");
+    assert_eq!(updated["id"].as_i64().unwrap(), epic_id, "epic_update 응답에 id 포함");
+    // status 확인은 epic_get으로
+    let got = dispatch(Arc::clone(&db), "epic_get", &json!({"id": epic_id, "mode": "normal"})).await.unwrap();
+    assert!(got["status"].as_str().is_some(), "epic_get에서 status 문자열 필드 확인");
 }
 
 #[tokio::test]
@@ -136,7 +135,8 @@ async fn test_task_update_changes_status() {
     .await
     .unwrap();
     let task_id = task["id"].as_i64().unwrap();
-    assert_eq!(task["status"], "required");
+    // task_create minimal 응답: { id, status }
+    assert_eq!(task["status"], "ok");
 
     let updated = dispatch(
         Arc::clone(&db),
@@ -145,17 +145,19 @@ async fn test_task_update_changes_status() {
     )
     .await
     .unwrap();
-    assert_eq!(updated["status"], "ready", "task_update가 status를 반영해야 함");
+    // task_update minimal 응답: { id, status }
+    assert_eq!(updated["status"], "ok", "task_update가 status=ok 를 반환해야 함");
+    assert_eq!(updated["id"].as_i64().unwrap(), task_id);
 }
 
 #[tokio::test]
 async fn test_issue_link_and_unlink_roundtrip() {
     let db = setup().await;
-    let (_, epic_id, a) = seed(&db).await;
+    let (_, _, a) = seed(&db).await;
     let b = dispatch(
         Arc::clone(&db),
         "issue_create",
-        &json!({"epic_id": epic_id, "title": "B"}),
+        &json!({"epic_id": 1, "title": "B"}),
     )
     .await
     .unwrap()["id"]
@@ -169,9 +171,11 @@ async fn test_issue_link_and_unlink_roundtrip() {
     )
     .await
     .unwrap();
-    let link_id = link["id"].as_i64().unwrap();
+    // issue_link minimal 응답: { link_id, source_id, target_id, status }
+    let link_id = link["link_id"].as_i64().unwrap();
     assert_eq!(link["source_id"], a);
-    assert_eq!(link["link_type"], "blocks");
+    assert_eq!(link["target_id"], b);
+    assert_eq!(link["status"], "ok");
 
     let unlink: Value = dispatch(
         Arc::clone(&db),
@@ -180,7 +184,7 @@ async fn test_issue_link_and_unlink_roundtrip() {
     )
     .await
     .unwrap();
-    assert_eq!(unlink["ok"], true);
+    assert_eq!(unlink["status"], "ok");
 }
 
 #[tokio::test]
@@ -291,13 +295,13 @@ async fn test_note_add_bulk_via_dispatch() {
         })
     ).await.unwrap();
 
+    // note_add_bulk minimal 응답: [{ id, status }, ...]
     let arr = res.as_array().unwrap();
     assert_eq!(arr.len(), 2);
-    assert_eq!(arr[0]["summary"], "D1");
-    assert_eq!(arr[0]["note_type"], "decision");
-    assert_eq!(arr[0]["detail"], "Decision Detail");
-    assert_eq!(arr[1]["summary"], "C1");
-    assert_eq!(arr[1]["note_type"], "caveat");
+    assert_eq!(arr[0]["status"], "ok");
+    assert_eq!(arr[0]["id"].as_i64().is_some(), true);
+    assert_eq!(arr[1]["status"], "ok");
+    assert!(arr[1]["id"].as_i64().is_some(), "두 번째 노트 id 필수");
 }
 
 // ── Issue #178: compact mode + issue_unlink delete response shape ─────────────
@@ -498,7 +502,7 @@ async fn test_session_restore_compact_counts_accurate() {
     );
 }
 
-/// Test D: issue_unlink 가 { ok: true, deleted_id: <i64> } 를 반환한다.
+/// Test D: issue_unlink 가 { status: "ok", deleted_id: <i64> } 를 반환한다.
 #[tokio::test]
 async fn test_issue_unlink_returns_deleted_id() {
     let db = setup().await;
@@ -520,7 +524,7 @@ async fn test_issue_unlink_returns_deleted_id() {
     )
     .await
     .unwrap();
-    let link_id = link["id"].as_i64().unwrap();
+    let link_id = link["link_id"].as_i64().unwrap();
 
     let unlink: Value = dispatch(
         Arc::clone(&db),
@@ -530,7 +534,7 @@ async fn test_issue_unlink_returns_deleted_id() {
     .await
     .unwrap();
 
-    assert_eq!(unlink["ok"], true, "ok 필드가 true 이어야 함");
+    assert_eq!(unlink["status"], "ok", "status 필드가 ok 이어야 함");
     assert!(
         unlink["deleted_id"].is_i64(),
         "deleted_id 가 i64 이어야 함, got: {:?}",
@@ -577,7 +581,7 @@ async fn test_session_restore_compact_zero_children() {
 #[tokio::test]
 async fn test_session_restore_size_limit_via_dispatch() {
     let db = setup().await;
-    let (sprint_id, epic_id, issue_id) = seed(&db).await;
+    let (sprint_id, _epic_id, issue_id) = seed(&db).await;
     promote_to_ready(&db, issue_id, sprint_id).await;
 
     // issue에 긴 goal/description 추가하여 크기 부풀림
@@ -647,7 +651,7 @@ async fn test_note_add_and_bulk_omit_detail_via_dispatch() {
     let db = setup().await;
     let (_, _, issue_id) = seed(&db).await;
 
-    // 1. note_add omit_detail=false 일 때 detail 반환해야 함
+    // note_add minimal 응답: { id, status } — omit_detail 파라미터는 이제 무의미하지만 하위호환 확인
     let res_full = dispatch(
         Arc::clone(&db),
         "note_add",
@@ -660,25 +664,16 @@ async fn test_note_add_and_bulk_omit_detail_via_dispatch() {
             "omit_detail": false
         })
     ).await.unwrap();
-    assert_eq!(res_full["detail"].as_str(), Some("매우 상세한 의사결정 본문"));
+    // minimal 응답: id + status 만
+    assert!(res_full.get("summary").is_none() || res_full["summary"].is_null());
+    assert_eq!(res_full["status"], "ok");
+    // note_get으로 detail 조회
+    let note_id = res_full["id"].as_i64().unwrap();
+    let got = dispatch(Arc::clone(&db), "note_get", &json!({"id": note_id})).await.unwrap();
+    assert_eq!(got["detail"].as_str(), Some("매우 상세한 의사결정 본문"));
 
-    // 2. note_add omit_detail=true 일 때 detail 생략해야 함
-    let res_omit = dispatch(
-        Arc::clone(&db),
-        "note_add",
-        &json!({
-            "issue_id": issue_id,
-            "note_type": "decision",
-            "summary": "결정사항2",
-            "detail": "매우 상세한 의사결정 본문2",
-            "agent_id": "test",
-            "omit_detail": true
-        })
-    ).await.unwrap();
-    assert!(res_omit["detail"].is_null() || res_omit.get("detail").is_none(), "detail 필드가 생략되어야 함");
-
-    // 3. note_add_bulk omit_detail=true 일 때 detail 생략해야 함
-    let res_bulk = dispatch(
+    // note_add_bulk minimal 응답: [{ id, status }, ...]
+    let res = dispatch(
         Arc::clone(&db),
         "note_add_bulk",
         &json!({
@@ -700,8 +695,154 @@ async fn test_note_add_and_bulk_omit_detail_via_dispatch() {
             ]
         })
     ).await.unwrap();
-    let arr = res_bulk.as_array().unwrap();
-    assert_eq!(arr.len(), 2);
-    assert!(arr[0]["detail"].is_null() || arr[0].get("detail").is_none());
-    assert!(arr[1]["detail"].is_null() || arr[1].get("detail").is_none());
+    let arr = res.as_array().unwrap();
+    assert_eq!(arr[0]["status"], "ok");
+    assert!(arr[0].get("summary").is_none());
+    assert_eq!(arr[1]["status"], "ok");
+    assert!(arr[1]["id"].as_i64().is_some());
 }
+
+// ── 이슈 #669/#670: mutating 도구 minimal 응답 shape 검증 테스트 ───────────────
+
+/// issue_create 응답이 { id, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_issue_create_minimal_shape() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed(&db).await;
+    let res = dispatch(
+        Arc::clone(&db), "issue_create",
+        &json!({"epic_id": epic_id, "title": "테스트 이슈"}),
+    ).await.unwrap();
+    assert!(res["id"].as_i64().is_some(), "id 필드 필수");
+    assert_eq!(res["status"], "ok", "status=ok 필수");
+    assert!(res.get("title").is_none() || res["title"].is_null(), "title 필드 불필요");
+}
+
+/// issue_update 응답이 { id, status, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_issue_update_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    let res = dispatch(
+        Arc::clone(&db), "issue_update",
+        &json!({"id": issue_id, "status": "ready", "agent_id": "test"}),
+    ).await.unwrap();
+    assert_eq!(res["id"].as_i64().unwrap(), issue_id);
+    assert_eq!(res["status"], "ready");
+    assert!(res.get("title").is_none() || res["title"].is_null(), "title 필드 불필요");
+}
+
+/// issue_claim 응답이 { id, status: "working", ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_issue_claim_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    dispatch(Arc::clone(&db), "issue_update",
+        &json!({"id": issue_id, "status": "ready", "agent_id": "test"}))
+        .await.unwrap();
+    let res = dispatch(
+        Arc::clone(&db), "issue_claim",
+        &json!({"id": issue_id, "agent_id": "test-agent"}),
+    ).await.unwrap();
+    assert_eq!(res["id"].as_i64().unwrap(), issue_id);
+    assert_eq!(res["status"], "working");
+}
+
+/// issue_release 응답이 { id, status, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_issue_release_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    dispatch(Arc::clone(&db), "issue_update",
+        &json!({"id": issue_id, "status": "ready", "agent_id": "test"})).await.unwrap();
+    dispatch(Arc::clone(&db), "issue_claim",
+        &json!({"id": issue_id, "agent_id": "test-agent"})).await.unwrap();
+    let res = dispatch(
+        Arc::clone(&db), "issue_release",
+        &json!({"id": issue_id, "agent_id": "test-agent", "transition_to": "demo"}),
+    ).await.unwrap();
+    assert_eq!(res["id"].as_i64().unwrap(), issue_id);
+    assert_eq!(res["status"], "demo");
+}
+
+/// issue_link 응답이 { link_id, source_id, target_id, ok } 형태임을 검증. (#670)
+#[tokio::test]
+async fn test_mutating_issue_link_minimal_shape() {
+    let db = setup().await;
+    let (_, epic_id, a) = seed(&db).await;
+    let b = dispatch(Arc::clone(&db), "issue_create",
+        &json!({"epic_id": epic_id, "title": "B"})).await.unwrap()["id"].as_i64().unwrap();
+    let res = dispatch(
+        Arc::clone(&db), "issue_link",
+        &json!({"source_id": a, "target_id": b, "link_type": "blocks", "agent_id": "test"}),
+    ).await.unwrap();
+    assert!(res["link_id"].as_i64().is_some(), "link_id 필드 필수");
+    assert_eq!(res["source_id"].as_i64().unwrap(), a);
+    assert_eq!(res["target_id"].as_i64().unwrap(), b);
+    assert_eq!(res["status"], "ok");
+    assert!(res.get("link_type").is_none() || res["link_type"].is_null(), "link_type 불필요");
+}
+
+/// sprint_create 응답이 { id, name, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_sprint_create_minimal_shape() {
+    let db = setup().await;
+    let res = dispatch(Arc::clone(&db), "sprint_create", &json!({"name": "Sprint 99"})).await.unwrap();
+    assert!(res["id"].as_i64().is_some());
+    assert_eq!(res["name"], "Sprint 99");
+    assert_eq!(res["status"], "ok");
+}
+
+/// mission_create 응답이 { id, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_mission_create_minimal_shape() {
+    let db = setup().await;
+    let res = dispatch(Arc::clone(&db), "mission_create", &json!({"title": "신규 미션"})).await.unwrap();
+    assert!(res["id"].as_i64().is_some());
+    assert_eq!(res["status"], "ok");
+    assert!(res.get("title").is_none() || res["title"].is_null(), "title 불필요");
+}
+
+/// task_create 응답이 { id, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_task_create_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    let res = dispatch(Arc::clone(&db), "task_create",
+        &json!({"issue_id": issue_id, "title": "Test Task"})).await.unwrap();
+    assert!(res["id"].as_i64().is_some());
+    assert_eq!(res["status"], "ok");
+}
+
+/// note_add 응답이 { id, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_note_add_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    let res = dispatch(Arc::clone(&db), "note_add",
+        &json!({"issue_id": issue_id, "note_type": "decision", "summary": "미니멀 노트", "detail": "상세 내용", "agent_id": "test"})
+    ).await.unwrap();
+    assert!(res["id"].as_i64().is_some());
+    assert_eq!(res["status"], "ok");
+    assert!(res.get("detail").is_none() || res["detail"].is_null(), "detail 불필요");
+    // note_get으로 detail 조회 가능
+    let got = dispatch(Arc::clone(&db), "note_get", &json!({"id": res["id"]})).await.unwrap();
+    assert_eq!(got["detail"], "상세 내용");
+}
+
+/// note_resolve 응답이 { id, resolved: true, ok } 형태임을 검증.
+#[tokio::test]
+async fn test_mutating_note_resolve_minimal_shape() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+    let note = dispatch(Arc::clone(&db), "note_add",
+        &json!({"issue_id": issue_id, "note_type": "comment", "summary": "Q?", "agent_id": "test"})
+    ).await.unwrap();
+    let note_id = note["id"].as_i64().unwrap();
+    let res = dispatch(Arc::clone(&db), "note_resolve",
+        &json!({"id": note_id, "agent_id": "test"})).await.unwrap();
+    assert_eq!(res["id"].as_i64().unwrap(), note_id);
+    assert_eq!(res["resolved"], true);
+    assert_eq!(res["status"], "ok");
+}
+

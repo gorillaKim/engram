@@ -144,12 +144,8 @@ pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         scope_target_id: args["scope_target_id"].as_i64(),
         project_key:     args["project_key"].as_str().map(String::from),
     };
-    let omit_detail = args["omit_detail"].as_bool().unwrap_or(false);
-    let mut note = db.note_add(input).await?;
-    if omit_detail {
-        note.detail = None;
-    }
-    Ok(serde_json::to_value(note).unwrap())
+    let note = db.note_add(input).await?;
+    Ok(json!({ "id": note.id, "status": "ok" }))
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -212,7 +208,8 @@ pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    Ok(serde_json::to_value(db.note_resolve(id, agent_id).await?).unwrap())
+    db.note_resolve(id, agent_id).await?;
+    Ok(json!({ "id": id, "resolved": true, "status": "ok" }))
 }
 
 pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -248,12 +245,7 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
             project_key:     v["project_key"].as_str().map(String::from),
         });
     }
-    let omit_detail = args["omit_detail"].as_bool().unwrap_or(false);
-    let mut notes = db.note_add_bulk(inputs).await?;
-    if omit_detail {
-        for note in &mut notes {
-            note.detail = None;
-        }
-    }
-    Ok(serde_json::to_value(notes).unwrap())
+    let notes = db.note_add_bulk(inputs).await?;
+    let ids: Vec<Value> = notes.iter().map(|n| json!({ "id": n.id, "status": "ok" })).collect();
+    Ok(json!(ids))
 }

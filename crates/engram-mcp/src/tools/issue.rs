@@ -232,7 +232,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         goal:        args["goal"].as_str().map(String::from),
         priority,
     };
-    Ok(serde_json::to_value(db.issue_create(input).await?).unwrap())
+    let issue = db.issue_create(input).await?;
+    Ok(json!({ "id": issue.id, "status": "ok" }))
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -363,7 +364,9 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         goal,
         epic_id: args["epic_id"].as_i64(),
     };
-    Ok(serde_json::to_value(db.issue_update(id, input, agent_id).await?).unwrap())
+    let issue = db.issue_update(id, input, agent_id).await?;
+    let status_str = serde_json::to_value(&issue.status).unwrap();
+    Ok(json!({ "id": issue.id, "status": status_str }))
 }
 
 pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -376,7 +379,8 @@ pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         "duplicates" => LinkType::Duplicates,
         _            => LinkType::Blocks,
     };
-    Ok(serde_json::to_value(db.issue_link(source_id, target_id, link_type).await?).unwrap())
+    let link = db.issue_link(source_id, target_id, link_type).await?;
+    Ok(json!({ "link_id": link.id, "source_id": source_id, "target_id": target_id, "status": "ok" }))
 }
 
 pub async fn my_blocked_issues(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -390,7 +394,7 @@ pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let link_id = args["link_id"].as_i64().unwrap_or(0);
     db.issue_unlink(link_id).await?;
-    Ok(serde_json::json!({ "ok": true, "deleted_id": link_id }))
+    Ok(serde_json::json!({ "status": "ok", "deleted_id": link_id }))
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -398,7 +402,7 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     db.issue_delete(id, agent_id).await?;
-    Ok(serde_json::json!({ "ok": true, "deleted_id": id }))
+    Ok(serde_json::json!({ "status": "ok", "deleted_id": id }))
 }
 
 pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -406,7 +410,8 @@ pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required for claim (멀티 에이전트 식별)".to_string()))?;
-    Ok(serde_json::to_value(db.issue_claim(id, agent_id).await?).unwrap())
+    db.issue_claim(id, agent_id).await?;
+    Ok(json!({ "id": id, "status": "working" }))
 }
 
 pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -418,7 +423,9 @@ pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
         .ok_or_else(|| engram_core::Error::Validation("transition_to is required (ready|demo|required)".to_string()))?;
     let force = args["force"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.issue_release(id, transition_to, agent_id, force).await?).unwrap())
+    let issue = db.issue_release(id, transition_to, agent_id, force).await?;
+    let status_str = serde_json::to_value(&issue.status).unwrap();
+    Ok(json!({ "id": issue.id, "status": status_str }))
 }
 
 pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -450,8 +457,8 @@ pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let m = db.issue_finish(id, agent_id).await?;
-    Ok(serde_json::to_value(&m).unwrap())
+    db.issue_finish(id, agent_id).await?;
+    Ok(json!({ "id": id, "status": "finished" }))
 }
 
 pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -461,8 +468,8 @@ pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("reason is required".to_string()))?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let m = db.issue_cancel(id, reason, agent_id).await?;
-    Ok(serde_json::to_value(&m).unwrap())
+    db.issue_cancel(id, reason, agent_id).await?;
+    Ok(json!({ "id": id, "status": "cancelled" }))
 }
 
 pub async fn bulk_update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

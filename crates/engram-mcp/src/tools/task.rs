@@ -78,7 +78,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         after_task_id: args["after_task_id"].as_i64(),
         source:       None,
     };
-    Ok(serde_json::to_value(db.task_create(input).await?).unwrap())
+    let task = db.task_create(input).await?;
+    Ok(json!({ "id": task.id, "status": "ok" }))
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -109,7 +110,8 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         goal:        args["goal"].as_str().map(String::from),
         status,
     };
-    Ok(serde_json::to_value(db.task_update(id, input, agent_id).await?).unwrap())
+    db.task_update(id, input, agent_id).await?;
+    Ok(json!({ "id": id, "status": "ok" }))
 }
 
 pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -121,7 +123,8 @@ pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Valu
         after_task_id: args["after_task_id"].as_i64(),
         source:       Some(TaskSource::AgentDiscovered),
     };
-    Ok(serde_json::to_value(db.task_create(input).await?).unwrap())
+    let task = db.task_create(input).await?;
+    Ok(json!({ "id": task.id, "status": "ok" }))
 }
 
 pub async fn next(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -145,5 +148,5 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     db.task_delete(id).await?;
-    Ok(json!({ "ok": true, "deleted_id": id }))
+    Ok(json!({ "status": "ok", "deleted_id": id }))
 }
