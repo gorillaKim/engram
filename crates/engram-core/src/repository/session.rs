@@ -494,7 +494,10 @@ impl Db {
             for issue in &issues {
                 use crate::models::issue::IssueStatus;
                 match &issue.status {
-                    IssueStatus::Finished => done += 1,
+                    IssueStatus::Finished => {
+                        done += 1;
+                        continue;
+                    }
                     IssueStatus::Working | IssueStatus::Demo => in_prog += 1,
                     IssueStatus::Ready => todo_cnt += 1,
                     IssueStatus::Required => {

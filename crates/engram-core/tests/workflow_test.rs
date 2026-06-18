@@ -3055,6 +3055,61 @@ async fn test_compact_session_restore_omits_active_caveats_detail() {
     assert!(!serialized.contains("\"detail\""), "skip_serializing_if에 의해 detail 키 자체가 없어야 함");
 }
 
+#[tokio::test]
+async fn test_session_restore_excludes_finished_issues() {
+    let db = setup().await;
+    let (_sprint_id, epic_id, _mission_id) = seed_sprint_epic(&db).await;
+
+    // 1. Ready 상태 이슈 생성
+    let issue_ready = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "Ready Issue".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue_ready.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+
+    // 2. Finished 상태로 갈 이슈 생성 및 Finished로 전이
+    let issue_fin = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "Finished Issue".into(),
+        description: None,
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    db.issue_update(issue_fin.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue_fin.id, UpdateIssueInput {
+        status: Some(IssueStatus::Working),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_update(issue_fin.id, UpdateIssueInput {
+        status: Some(IssueStatus::Demo),
+        ..Default::default()
+    }, "agent").await.unwrap();
+    db.issue_finish(issue_fin.id, "user").await.unwrap();
+
+    // 3. session_restore 호출
+    let snap = db.session_restore(Some("test-project"), false, 120, None).await.unwrap();
+
+    // 4. 에픽 진행률 검증 (done=1, total=2)
+    assert_eq!(snap.active_epics.len(), 1, "에픽 개수 검증");
+    let epic_snap = &snap.active_epics[0];
+    assert_eq!(epic_snap.progress.done, 1, "done 카운트 검증");
+    assert_eq!(epic_snap.progress.total, 2, "total 카운트 검증");
+
+    // 5. active_issues 목록 검증 (Ready 이슈만 존재하고 Finished 이슈는 제외되어야 함)
+    let active_ids: Vec<i64> = epic_snap.active_issues.iter().map(|s| s.issue.id).collect();
+    assert!(active_ids.contains(&issue_ready.id), "Ready 이슈는 포함되어야 함");
+    assert!(!active_ids.contains(&issue_fin.id), "Finished 이슈는 제외되어야 함");
+}
+
 
 
 
