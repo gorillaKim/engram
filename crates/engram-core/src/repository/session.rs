@@ -1022,6 +1022,7 @@ impl Db {
                 updated_at: r.updated_at,
                 note_count: None,
                 task_count: None,
+                links: None,
             };
             use crate::models::issue::IssueStatus::*;
             match r.status {

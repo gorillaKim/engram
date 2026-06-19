@@ -372,6 +372,38 @@ async fn test_parity_link_unlink_roundtrip() {
 }
 
 #[tokio::test]
+async fn test_parity_link_unlink_by_nodes_roundtrip() {
+    let db_a = fresh_db().await; let (_, eid_a, a1, _) = seed_via_db(&db_a).await;
+    let db_b = fresh_db().await; let (_, eid_b, b1, _) = seed_via_dispatch(&db_b).await;
+
+    // 두 번째 이슈 추가
+    let a2 = db_a.issue_create(CreateIssueInput {
+        epic_id: eid_a, title: "I2".into(),
+        description: None, goal: None, priority: None,
+    }).await.unwrap().id;
+    let b2 = dispatch(Arc::clone(&db_b), "issue_create",
+        &json!({"epic_id": eid_b, "title": "I2"})).await.unwrap()["id"].as_i64().unwrap();
+    assert_eq!(a2, b2);
+
+    let _link_a = db_a.issue_link(a1, a2, LinkType::Blocks).await.unwrap();
+    let _link_b = dispatch(Arc::clone(&db_b), "issue_link",
+        &json!({"source_id": b1, "target_id": b2, "link_type": "blocks", "agent_id": "test"})).await.unwrap();
+
+    // nodes 기반으로 unlink
+    db_a.issue_unlink_by_nodes(a1, a2, LinkType::Blocks).await.unwrap();
+    dispatch(Arc::clone(&db_b), "issue_unlink",
+        &json!({"source_id": b1, "target_id": b2, "link_type": "blocks", "agent_id": "test"})).await.unwrap();
+
+    let cli_links = normalize(serde_json::to_value(
+        db_a.issue_links_for(a1).await.unwrap()
+    ).unwrap());
+    let mcp_links = normalize(dispatch(Arc::clone(&db_b), "issue_list",
+        &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
+    assert_eq!(cli_links, json!([]), "unlink_by_nodes 후 CLI 링크 비어야 함");
+    assert!(mcp_links["items"].is_array(), "issue_list 응답 형태 유지");
+}
+
+#[tokio::test]
 async fn test_parity_task_test_workflow() {
     let db_a = fresh_db().await; let (_, _, iid_a, tid_a) = seed_via_db(&db_a).await;
     let db_b = fresh_db().await; let (_, _, iid_b, tid_b) = seed_via_dispatch(&db_b).await;

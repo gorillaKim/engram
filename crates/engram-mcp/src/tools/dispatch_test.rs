@@ -547,6 +547,46 @@ async fn test_issue_unlink_returns_deleted_id() {
     );
 }
 
+/// Test G: issue_unlink가 nodes 기반 (source_id, target_id, link_type) 으로 { status: "ok", deleted_id: <i64> } 를 반환한다.
+#[tokio::test]
+async fn test_issue_unlink_by_nodes_returns_deleted_id() {
+    let db = setup().await;
+    let (_, epic_id, a) = seed(&db).await;
+    let b = dispatch(
+        Arc::clone(&db),
+        "issue_create",
+        &json!({"epic_id": epic_id, "title": "B"}),
+    )
+    .await
+    .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    let link = dispatch(
+        Arc::clone(&db),
+        "issue_link",
+        &json!({"source_id": a, "target_id": b, "link_type": "blocks", "agent_id": "test"}),
+    )
+    .await
+    .unwrap();
+    let link_id = link["link_id"].as_i64().unwrap();
+
+    let unlink: Value = dispatch(
+        Arc::clone(&db),
+        "issue_unlink",
+        &json!({"source_id": a, "target_id": b, "link_type": "blocks", "agent_id": "test"}),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(unlink["status"], "ok", "status 필드가 ok 이어야 함");
+    assert_eq!(
+        unlink["deleted_id"].as_i64().unwrap(),
+        link_id,
+        "deleted_id 가 삭제된 link_id 와 일치해야 함"
+    );
+}
+
 /// Test E: 태스크/노트가 없는 이슈의 compact 카운트는 0 이어야 한다.
 #[tokio::test]
 async fn test_session_restore_compact_zero_children() {

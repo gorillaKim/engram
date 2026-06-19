@@ -56,16 +56,21 @@ impl Db {
         .ok_or_else(|| Error::NotFound(format!("issue:{id}")))
     }
 
-    pub async fn issue_get_mode(&self, id: i64, mode: OutputMode) -> Result<crate::models::CoreResponse<Issue>> {
+    pub async fn issue_get_mode(&self, id: i64, mode: OutputMode, include_links: bool) -> Result<crate::models::CoreResponse<Issue>> {
         let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
         let cols = issue_select_columns(compact);
-        let issue = sqlx::query_as::<_, Issue>(&format!(
+        let mut issue = sqlx::query_as::<_, Issue>(&format!(
             "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE i.id = ?"
         ))
         .bind(id)
         .fetch_optional(&self.pool)
         .await?
         .ok_or_else(|| Error::NotFound(format!("issue:{id}")))?;
+
+        if include_links {
+            let links = self.issue_links_for(id).await?;
+            issue.links = Some(links);
+        }
 
         if matches!(mode, OutputMode::Agent) {
             Ok(crate::models::CoreResponse::Text(format_agent_issue_text(&issue)))
@@ -326,6 +331,18 @@ impl Db {
         sqlx::query("DELETE FROM issue_links WHERE id = ?")
             .bind(link_id).execute(&self.pool).await?;
         Ok(())
+    }
+
+    pub async fn issue_unlink_by_nodes(&self, source_id: i64, target_id: i64, link_type: LinkType) -> Result<i64> {
+        let lt = serde_json::to_value(&link_type).unwrap().as_str().unwrap().to_string();
+        let deleted_id: i64 = sqlx::query_scalar("DELETE FROM issue_links WHERE source_id = ? AND target_id = ? AND link_type = ? RETURNING id")
+            .bind(source_id)
+            .bind(target_id)
+            .bind(&lt)
+            .fetch_optional(&self.pool)
+            .await?
+            .ok_or_else(|| Error::NotFound(format!("link with source:{source_id}, target:{target_id}, type:{lt} not found")))?;
+        Ok(deleted_id)
     }
 
     pub async fn issue_claim(&self, id: i64, agent_id: &str) -> Result<Issue> {
@@ -764,6 +781,16 @@ fn format_agent_issue_text(issue: &Issue) -> String {
     out.push_str(issue.goal.as_deref().unwrap_or("None"));
     out.push_str("\n\n[Description]\n");
     out.push_str(issue.description.as_deref().unwrap_or("None"));
+    if let Some(ref links) = issue.links {
+        if !links.is_empty() {
+            out.push_str("\n\n[Links]\n");
+            for link in links {
+                let lt_val = serde_json::to_value(&link.link_type).unwrap();
+                let lt_str = lt_val.as_str().unwrap_or("unknown");
+                out.push_str(&format!("- Link #{} ({}): #{} -> #{}\n", link.id, lt_str, link.source_id, link.target_id));
+            }
+        }
+    }
     out.push_str("\n==========================");
     out
 }

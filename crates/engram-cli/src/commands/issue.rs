@@ -81,6 +81,7 @@ pub enum IssueCommand {
     Get {
         id: i64,
         #[arg(long)] compact: bool,
+        #[arg(long = "include-links")] include_links: bool,
     },
     Ready { id: i64 },
     /// 임의 상태 전이 / 우선순위 변경
@@ -100,7 +101,10 @@ pub enum IssueCommand {
     },
     /// 이슈 관계 제거
     Unlink {
-        #[arg(long = "link-id")] link_id: i64,
+        #[arg(long = "link-id")] link_id: Option<i64>,
+        #[arg(long = "source")] source: Option<i64>,
+        #[arg(long = "target")] target: Option<i64>,
+        #[arg(long = "type", default_value = "blocks")] r#type: String,
     },
     /// 이슈 점유 (CAS). 멀티 에이전트 안전. ADR-0009 / agent-demo-gate.md 참조.
     Claim {
@@ -189,13 +193,13 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mod
                 output::print_core_response(res, fmt)?;
             }
         }
-        IssueCommand::Get { id, compact } => {
+        IssueCommand::Get { id, compact, include_links } => {
             let actual_mode = if compact {
                 engram_core::models::OutputMode::Compact
             } else {
                 mode
             };
-            let res = db.issue_get_mode(id, actual_mode).await?;
+            let res = db.issue_get_mode(id, actual_mode, include_links).await?;
             output::print_core_response(res, fmt)?;
         }
         IssueCommand::Ready { id } => {
@@ -220,10 +224,18 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mod
             let link = db.issue_link(source, target, lt).await?;
             output::print_value(&link, fmt)?;
         }
-        IssueCommand::Unlink { link_id } => {
-            db.issue_unlink(link_id).await?;
+        IssueCommand::Unlink { link_id, source, target, r#type } => {
+            let deleted_id = if let Some(lid) = link_id {
+                db.issue_unlink(lid).await?;
+                lid
+            } else {
+                let src = source.ok_or_else(|| anyhow::anyhow!("link-id 또는 source & target이 지정되어야 합니다."))?;
+                let tgt = target.ok_or_else(|| anyhow::anyhow!("link-id 또는 source & target이 지정되어야 합니다."))?;
+                let lt = parse_link_type(&r#type)?;
+                db.issue_unlink_by_nodes(src, tgt, lt).await?
+            };
             output::print_value(
-                &serde_json::json!({ "ok": true, "deleted_id": link_id }),
+                &serde_json::json!({ "ok": true, "deleted_id": deleted_id }),
                 fmt,
             )?;
         }
@@ -364,7 +376,26 @@ mod tests {
     fn test_parse_unlink() {
         let cmd = parse(&["unlink", "--link-id", "7"]);
         match cmd {
-            IssueCommand::Unlink { link_id } => assert_eq!(link_id, 7),
+            IssueCommand::Unlink { link_id, source, target, r#type } => {
+                assert_eq!(link_id, Some(7));
+                assert_eq!(source, None);
+                assert_eq!(target, None);
+                assert_eq!(r#type, "blocks");
+            }
+            _ => panic!("Unlink 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_unlink_by_nodes() {
+        let cmd = parse(&["unlink", "--source", "10", "--target", "20", "--type", "relates_to"]);
+        match cmd {
+            IssueCommand::Unlink { link_id, source, target, r#type } => {
+                assert_eq!(link_id, None);
+                assert_eq!(source, Some(10));
+                assert_eq!(target, Some(20));
+                assert_eq!(r#type, "relates_to");
+            }
             _ => panic!("Unlink 변형이 파싱되어야 함"),
         }
     }

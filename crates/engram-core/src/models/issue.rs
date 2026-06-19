@@ -25,6 +25,9 @@ pub struct Issue {
     #[serde(default)]
     #[sqlx(default)]
     pub task_count: Option<i64>,
+    #[serde(default)]
+    #[sqlx(skip)]
+    pub links: Option<Vec<IssueLink>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]

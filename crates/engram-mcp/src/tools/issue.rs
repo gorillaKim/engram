@@ -33,6 +33,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "id": { "type": "integer" },
                     "include_tasks": { "type": "boolean" },
                     "include_notes": { "type": "boolean" },
+                    "include_links": { "type": "boolean" },
                     "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 200자로 잘라서 반환 (기본값 false)" },
                     "mode": {
                         "type": "string",
@@ -110,11 +111,14 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
-        json!({ "name": "issue_unlink", "description": "이슈 간 관계를 제거합니다.",
-            "inputSchema": { "type": "object", "required": ["link_id", "agent_id"],
+        json!({ "name": "issue_unlink", "description": "이슈 간 관계를 제거합니다. link_id 로 제거하거나, source_id/target_id/link_type 조합으로 제거할 수 있습니다.",
+            "inputSchema": { "type": "object", "required": ["agent_id"],
                 "properties": {
-                    "link_id":  { "type": "integer" },
-                    "agent_id": { "type": "string", "description": "호출 액터 식별자" }
+                    "link_id":   { "type": "integer" },
+                    "source_id": { "type": "integer" },
+                    "target_id": { "type": "integer" },
+                    "link_type": { "type": "string", "enum": ["blocks","relates_to","duplicates"] },
+                    "agent_id":  { "type": "string", "description": "호출 액터 식별자" }
                 }
             }
         }),
@@ -238,6 +242,7 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
+    let include_links = args["include_links"].as_bool().unwrap_or(false);
     let mode = if let Some(m_str) = args["mode"].as_str() {
         match m_str {
             "normal" => engram_core::models::OutputMode::Normal,
@@ -256,7 +261,7 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
             engram_core::models::OutputMode::Agent
         }
     };
-    let response = db.issue_get_mode(id, mode).await?;
+    let response = db.issue_get_mode(id, mode, include_links).await?;
     Ok(serde_json::to_value(response).unwrap())
 }
 
@@ -393,8 +398,22 @@ pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let _agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let link_id = args["link_id"].as_i64().unwrap_or(0);
-    db.issue_unlink(link_id).await?;
-    Ok(serde_json::json!({ "status": "ok", "deleted_id": link_id }))
+    if link_id > 0 {
+        db.issue_unlink(link_id).await?;
+        Ok(serde_json::json!({ "status": "ok", "deleted_id": link_id }))
+    } else {
+        let source_id = args["source_id"].as_i64()
+            .ok_or_else(|| engram_core::Error::Validation("link_id가 지정되지 않은 경우 source_id는 필수입니다.".to_string()))?;
+        let target_id = args["target_id"].as_i64()
+            .ok_or_else(|| engram_core::Error::Validation("link_id가 지정되지 않은 경우 target_id는 필수입니다.".to_string()))?;
+        let link_type = match args["link_type"].as_str().unwrap_or("blocks") {
+            "relates_to" => LinkType::RelatesTo,
+            "duplicates" => LinkType::Duplicates,
+            _            => LinkType::Blocks,
+        };
+        let deleted_id = db.issue_unlink_by_nodes(source_id, target_id, link_type).await?;
+        Ok(serde_json::json!({ "status": "ok", "deleted_id": deleted_id }))
+    }
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

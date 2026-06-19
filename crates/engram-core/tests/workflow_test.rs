@@ -3156,7 +3156,7 @@ async fn test_issue_and_epic_get_list_output_mode_agent() {
     }).await.unwrap();
 
     // 1. issue_get_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
-    let issue_resp = db.issue_get_mode(issue.id, engram_core::models::OutputMode::Agent).await.unwrap();
+    let issue_resp = db.issue_get_mode(issue.id, engram_core::models::OutputMode::Agent, false).await.unwrap();
     match issue_resp {
         engram_core::models::CoreResponse::Text(text) => {
             assert!(text.contains("=== ISSUE SPECIFICATION ==="));
@@ -3356,6 +3356,44 @@ async fn test_task_test_list_by_issue_id() {
     // task_id 와 issue_id 가 둘 다 지정되지 않은 경우 에러 반환
     let err = db.task_test_list(None, None).await;
     assert!(err.is_err());
+}
+
+#[tokio::test]
+async fn test_issue_get_with_links() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+
+    let issue_a = db.issue_create(CreateIssueInput {
+        epic_id, title: "Issue A".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let issue_b = db.issue_create(CreateIssueInput {
+        epic_id, title: "Issue B".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    // A 가 B 를 blocks 하는 관계 생성
+    let link = db.issue_link(issue_a.id, issue_b.id, engram_core::models::issue::LinkType::Blocks).await.unwrap();
+
+    // 1. include_links = false 로 조회
+    let res_no_links = db.issue_get_mode(issue_b.id, engram_core::models::OutputMode::Normal, false).await.unwrap();
+    if let engram_core::models::CoreResponse::Json(issue) = res_no_links {
+        assert!(issue.links.is_none());
+    } else {
+        panic!("JSON response expected");
+    }
+
+    // 2. include_links = true 로 조회
+    let res_with_links = db.issue_get_mode(issue_b.id, engram_core::models::OutputMode::Normal, true).await.unwrap();
+    if let engram_core::models::CoreResponse::Json(issue) = res_with_links {
+        let links = issue.links.unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].id, link.id);
+        assert_eq!(links[0].source_id, issue_a.id);
+        assert_eq!(links[0].target_id, issue_b.id);
+        assert_eq!(links[0].link_type, engram_core::models::issue::LinkType::Blocks);
+    } else {
+        panic!("JSON response expected");
+    }
 }
 
 
