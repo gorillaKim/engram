@@ -20,6 +20,7 @@ pub async fn do_mission_list(
         include_completed: include_completed.unwrap_or(false),
         project_key: None,
         sprint_id: None,
+        compact: None,
     };
     db.mission_list(filter).await
 }

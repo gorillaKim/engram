@@ -654,7 +654,7 @@ impl Db {
                 truncated_count += 1;
             }
 
-            while !snapshot.active_epics.is_empty() && serde_json::to_string(&snapshot).unwrap().len() > limit {
+            while snapshot.active_epics.len() > 1 && serde_json::to_string(&snapshot).unwrap().len() > limit {
                 let removed = snapshot.active_epics.pop().unwrap();
                 let issue_cnt = if compact {
                     removed.active_issues_compact.as_ref().map(|v| v.len()).unwrap_or(0)
@@ -662,6 +662,48 @@ impl Db {
                     removed.active_issues.len()
                 };
                 truncated_count += issue_cnt + 1;
+            }
+
+            // active_epics가 1개만 남았음에도 여전히 제한을 초과하는 극한의 상황이라면, 
+            // 1개 남은 에픽과 하위 이슈의 대용량 description 및 goal 필드를 절단하여 페이로드 크기를 축소합니다.
+            if snapshot.active_epics.len() == 1 && serde_json::to_string(&snapshot).unwrap().len() > limit {
+                let epic_snap = &mut snapshot.active_epics[0];
+                if let Some(ref desc) = epic_snap.epic.description {
+                    if desc.chars().count() > 200 {
+                        epic_snap.epic.description = truncate_opt_string(epic_snap.epic.description.take(), 200);
+                        truncated_count += 1;
+                    }
+                }
+                for issue_snap in &mut epic_snap.active_issues {
+                    if let Some(ref desc) = issue_snap.issue.description {
+                        if desc.chars().count() > 200 {
+                            issue_snap.issue.description = truncate_opt_string(issue_snap.issue.description.take(), 200);
+                            truncated_count += 1;
+                        }
+                    }
+                    if let Some(ref goal) = issue_snap.issue.goal {
+                        if goal.chars().count() > 200 {
+                            issue_snap.issue.goal = truncate_opt_string(issue_snap.issue.goal.take(), 200);
+                            truncated_count += 1;
+                        }
+                    }
+                }
+                if let Some(ref mut compacts) = epic_snap.active_issues_compact {
+                    for c_snap in compacts {
+                        if let Some(ref desc) = c_snap.issue.description {
+                            if desc.chars().count() > 200 {
+                                c_snap.issue.description = truncate_opt_string(c_snap.issue.description.take(), 200);
+                                truncated_count += 1;
+                            }
+                        }
+                        if let Some(ref goal) = c_snap.issue.goal {
+                            if goal.chars().count() > 200 {
+                                c_snap.issue.goal = truncate_opt_string(c_snap.issue.goal.take(), 200);
+                                truncated_count += 1;
+                            }
+                        }
+                    }
+                }
             }
 
             snapshot.truncated_count = Some(truncated_count);

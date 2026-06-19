@@ -75,6 +75,7 @@ pub async fn run(db: Db, args: MissionArgs, fmt: OutputFormat, agent_id: &str) -
                 include_completed,
                 project_key,
                 sprint_id,
+                compact: None,
             }).await?;
             output::print_value(&missions, fmt)?;
         }

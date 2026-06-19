@@ -1975,8 +1975,8 @@ async fn test_session_restore_size_guard() {
 
     let snap_tr = db.session_restore(Some("test-project"), false, 120, Some(300)).await.unwrap();
     assert!(snap_tr.truncated);
-    assert_eq!(snap_tr.active_epics.len(), 0);
-    assert!(snap_tr.truncated_count.unwrap() > 0);
+    assert_eq!(snap_tr.active_epics.len(), 1, "최소 1개의 핵심 에픽은 보존되어야 함");
+    assert!(snap_tr.truncated_count.unwrap() > 0, "대용량 필드들이 잘렸으므로 truncated_count > 0 이어야 함");
     assert!(snap_tr.warnings.iter().any(|w| w.contains("크기 제한")));
 }
 
@@ -3004,7 +3004,8 @@ async fn test_compact_session_restore_size_guard_truncated_false_bug() {
 
     // 버그 수정 후 검증 단언
     assert!(snap.truncated, "용량 한도 초과로 truncated 플래그가 true여야 합니다.");
-    assert_eq!(snap.truncated_count, Some(31), "누락 항목 개수가 31(에픽 1 + 이슈 30)이어야 합니다. 실제: {:?}", snap.truncated_count);
+    assert_eq!(snap.active_epics.len(), 1, "최소 1개의 핵심 에픽은 보존되어야 함");
+    assert_eq!(snap.truncated_count, Some(0), "이슈와 에픽의 description/goal이 모두 None이므로 필드 절단은 발생하지 않아 truncated_count는 0입니다.");
 }
 
 #[tokio::test]
@@ -3394,6 +3395,50 @@ async fn test_issue_get_with_links() {
     } else {
         panic!("JSON response expected");
     }
+}
+
+#[tokio::test]
+async fn test_session_restore_size_guard_preserves_at_least_one_epic() {
+    let db = setup().await;
+    
+    let m = db.mission_create(CreateMissionInput {
+        title: "Mission".into(), description: None, jira_key: None,
+    }).await.unwrap();
+    let s = db.sprint_create(engram_core::models::sprint::CreateSprintInput {
+        name: "Sprint".into(), goal: None, start_date: None, end_date: None,
+    }).await.unwrap();
+    db.sprint_update(s.id, engram_core::models::sprint::UpdateSprintInput {
+        name: None, status: Some(engram_core::models::sprint::SprintStatus::Active),
+        goal: None, start_date: None, end_date: None,
+    }, "test").await.unwrap();
+
+    let e1 = db.epic_create(CreateEpicInput {
+        project_key: "test-project".into(), mission_id: Some(m.id), sprint_id: Some(s.id),
+        title: "Epic 1".into(), description: Some("Very long description text to inflate size".repeat(10)),
+    }).await.unwrap();
+    let e2 = db.epic_create(CreateEpicInput {
+        project_key: "test-project".into(), mission_id: Some(m.id), sprint_id: Some(s.id),
+        title: "Epic 2".into(), description: Some("Another very long description text to inflate size".repeat(10)),
+    }).await.unwrap();
+
+    let issue1 = db.issue_create(CreateIssueInput {
+        epic_id: e1.id, title: "Issue 1".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue1.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+
+    let issue2 = db.issue_create(CreateIssueInput {
+        epic_id: e2.id, title: "Issue 2".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+    db.issue_update(issue2.id, UpdateIssueInput {
+        status: Some(IssueStatus::Ready), ..Default::default()
+    }, "agent").await.unwrap();
+
+    let snap = db.session_restore(Some("test-project"), false, 120, Some(100)).await.unwrap();
+
+    assert!(snap.truncated, "size_limit이 100이므로 당연히 truncated되어야 함");
+    assert_eq!(snap.active_epics.len(), 1, "모두 잘려나가더라도 최소 1개의 epic은 보존되어야 함");
 }
 
 

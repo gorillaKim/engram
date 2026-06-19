@@ -55,7 +55,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
 pub fn get_mode(args: &Value) -> engram_core::models::OutputMode {
     if let Some(m_str) = args["mode"].as_str() {
         match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
+            "normal" | "full" => engram_core::models::OutputMode::Normal,
             "compact" => engram_core::models::OutputMode::Compact,
             "agent" => engram_core::models::OutputMode::Agent,
             _ => engram_core::models::OutputMode::Agent,

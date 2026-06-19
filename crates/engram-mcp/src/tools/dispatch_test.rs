@@ -905,3 +905,60 @@ async fn test_mutating_note_resolve_minimal_shape() {
     assert_eq!(res["status"], "ok");
 }
 
+#[tokio::test]
+async fn test_mission_list_epic_list_projection_and_detail() {
+    let db = setup().await;
+    let (sprint_id, _epic_id, _issue_id) = seed(&db).await;
+
+    let m = dispatch(Arc::clone(&db), "mission_create", &json!({
+        "title": "Test Mission Large",
+        "description": "Very long description text to test projection ".repeat(10)
+    })).await.unwrap();
+    let m_id = m["id"].as_i64().unwrap();
+
+    let e = dispatch(Arc::clone(&db), "epic_create", &json!({
+        "project_key": "p",
+        "title": "Test Epic Large",
+        "mission_id": m_id,
+        "sprint_id": sprint_id,
+        "description": "Epic description very long text repeat ".repeat(10)
+    })).await.unwrap();
+
+    let list_m_compact = dispatch(Arc::clone(&db), "mission_list", &json!({
+        "mode": "compact"
+    })).await.unwrap();
+    let items_m = list_m_compact.as_array().unwrap();
+    let target_m = items_m.iter().find(|item| item["id"].as_i64().unwrap() == m_id).unwrap();
+    assert!(target_m.get("description").is_none() || target_m["description"].is_null(), "compact 모드에서 description은 제외되어야 함");
+
+    let list_m_detail = dispatch(Arc::clone(&db), "mission_list", &json!({
+        "mode": "compact",
+        "detail": true
+    })).await.unwrap();
+    let items_m_detail = list_m_detail.as_array().unwrap();
+    let target_m_detail = items_m_detail.iter().find(|item| item["id"].as_i64().unwrap() == m_id).unwrap();
+    assert!(target_m_detail["description"].as_str().unwrap().contains("projection"), "detail=true 이면 description이 반환되어야 함");
+
+    let list_m_full = dispatch(Arc::clone(&db), "mission_list", &json!({
+        "mode": "full"
+    })).await.unwrap();
+    let items_m_full = list_m_full.as_array().unwrap();
+    let target_m_full = items_m_full.iter().find(|item| item["id"].as_i64().unwrap() == m_id).unwrap();
+    assert!(target_m_full["description"].as_str().unwrap().contains("projection"), "mode='full' 이면 description이 반환되어야 함");
+
+    let list_e_compact = dispatch(Arc::clone(&db), "epic_list", &json!({
+        "mode": "compact"
+    })).await.unwrap();
+    let items_e = list_e_compact.as_array().unwrap();
+    let target_e = items_e.iter().find(|item| item["id"].as_i64().unwrap() == e["id"].as_i64().unwrap()).unwrap();
+    assert!(target_e["description"].as_str().unwrap().contains("..."), "compact 모드에서 description은 200자 절단되어야 함");
+
+    let list_e_detail = dispatch(Arc::clone(&db), "epic_list", &json!({
+        "mode": "compact",
+        "detail": true
+    })).await.unwrap();
+    let items_e_detail = list_e_detail.as_array().unwrap();
+    let target_e_detail = items_e_detail.iter().find(|item| item["id"].as_i64().unwrap() == e["id"].as_i64().unwrap()).unwrap();
+    assert!(!target_e_detail["description"].as_str().unwrap().contains("..."), "detail=true 이면 절단되지 않아야 함");
+}
+

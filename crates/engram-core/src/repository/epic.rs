@@ -46,7 +46,7 @@ impl Db {
         project_key: Option<&str>,
         include_completed: bool,
     ) -> Result<Vec<Epic>> {
-        self.epic_list_filtered(project_key, include_completed, None, false).await
+        self.epic_list_filtered(project_key, include_completed, None, false, false).await
     }
 
     pub async fn epic_list_mode(
@@ -55,19 +55,8 @@ impl Db {
         include_completed: bool,
         mode: OutputMode,
     ) -> Result<CoreResponse<Vec<Epic>>> {
-        let mut epics = self.epic_list(project_key, include_completed).await?;
         let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
-        if compact {
-            for epic in &mut epics {
-                if let Some(ref desc) = epic.description {
-                    if desc.chars().count() > 200 {
-                        let mut truncated: String = desc.chars().take(200).collect();
-                        truncated.push_str("...");
-                        epic.description = Some(truncated);
-                    }
-                }
-            }
-        }
+        let epics = self.epic_list_filtered(project_key, include_completed, None, false, compact).await?;
 
         if matches!(mode, OutputMode::Agent) {
             let mut out = String::new();
@@ -98,8 +87,17 @@ impl Db {
         include_completed: bool,
         sprint_id: Option<i64>,
         backlog_only: bool,
+        compact: bool,
     ) -> Result<Vec<Epic>> {
-        let mut sql = format!("SELECT {EPIC_COLS} FROM epics WHERE 1=1");
+        let desc_col = if compact {
+            "CASE WHEN description IS NOT NULL AND LENGTH(description) > 200 THEN SUBSTR(description, 1, 200) || '...' ELSE description END as description"
+        } else {
+            "description"
+        };
+        let mut sql = format!(
+            "SELECT id, project_key, mission_id, sprint_id, title, {}, status, created_at, updated_at FROM epics WHERE 1=1",
+            desc_col
+        );
         if project_key.is_some() { sql.push_str(" AND project_key = ?"); }
         if !include_completed { sql.push_str(" AND status != 'completed'"); }
         if backlog_only {

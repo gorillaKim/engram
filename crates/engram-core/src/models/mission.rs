@@ -47,6 +47,7 @@ pub struct MissionFilter {
     pub include_completed: bool,
     pub project_key: Option<String>,
     pub sprint_id: Option<i64>,
+    pub compact: Option<bool>,
 }
 
 /// epic 하나와 그에 속한 이슈 목록.

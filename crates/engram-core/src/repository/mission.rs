@@ -39,9 +39,16 @@ impl Db {
     }
 
     pub async fn mission_list(&self, filter: MissionFilter) -> Result<Vec<Mission>> {
-        let mut sql = "SELECT id, jira_key, title, description, status, created_at, updated_at \
-                       FROM missions m WHERE 1=1"
-            .to_string();
+        let desc_col = if filter.compact.unwrap_or(false) {
+            "CASE WHEN description IS NOT NULL AND LENGTH(description) > 200 THEN SUBSTR(description, 1, 200) || '...' ELSE description END"
+        } else {
+            "description"
+        };
+        let mut sql = format!(
+            "SELECT id, jira_key, title, {} as description, status, created_at, updated_at \
+             FROM missions m WHERE 1=1",
+            desc_col
+        );
 
         if filter.status.is_some() {
             sql.push_str(" AND status = ?");

@@ -37,6 +37,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 "properties": {
                     "status":             { "type": "string", "enum": MissionStatus::ALL },
                     "include_completed":  { "type": "boolean", "description": "true면 completed/cancelled 포함" },
+                    "detail":             { "type": "boolean", "description": "true면 description 본문 전체 반환" },
                     "project_key":        { "type": "string", "description": "특정 프로젝트 미션 필터" },
                     "sprint_id":          { "type": "integer", "description": "특정 스프린트 미션 필터" }
                 }
@@ -130,6 +131,11 @@ pub async fn mission_get(db: Arc<Db>, args: &Value) -> Result<Value> {
 }
 
 pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
+    let mut mode = super::get_mode(args);
+    if args["detail"].as_bool().unwrap_or(false) {
+        mode = engram_core::models::OutputMode::Normal;
+    }
+    let compact = matches!(mode, engram_core::models::OutputMode::Compact) || matches!(mode, engram_core::models::OutputMode::Agent);
     let filter = MissionFilter {
         status: args["status"]
             .as_str()
@@ -137,9 +143,9 @@ pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
         include_completed: args["include_completed"].as_bool().unwrap_or(false),
         project_key: args["project_key"].as_str().map(String::from),
         sprint_id: args["sprint_id"].as_i64(),
+        compact: Some(compact),
     };
     let missions = db.mission_list(filter).await?;
-    let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
         let headers = vec!["ID", "Jira Key", "Title", "Status"];
         let mut rows = Vec::new();

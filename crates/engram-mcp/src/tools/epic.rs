@@ -36,6 +36,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "sprint_id":         { "type": "integer", "description": "특정 스프린트의 에픽만" },
                     "backlog_only":      { "type": "boolean", "description": "sprint_id IS NULL 만. 기본 false" },
                     "include_completed": { "type": "boolean", "description": "기본 false. true 시 completed 에픽도 포함" },
+                    "detail":            { "type": "boolean", "description": "기본 false. true 시 description 본문 전체 반환" },
                     "mode": {
                         "type": "string",
                         "enum": ["normal", "compact", "agent"],
@@ -131,7 +132,10 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let include_completed = args["include_completed"].as_bool().unwrap_or(false);
-    let mode = super::get_mode(args);
+    let mut mode = super::get_mode(args);
+    if args["detail"].as_bool().unwrap_or(false) {
+        mode = engram_core::models::OutputMode::Normal;
+    }
     let response = db.epic_list_mode(project_key, include_completed, mode).await?;
     match response {
         engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
