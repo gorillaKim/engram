@@ -103,3 +103,8 @@ pub fn show_main_window(app: tauri::AppHandle) {
         let _ = popover.hide();
     }
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn mcp_get_tool_definitions() -> Vec<serde_json::Value> {
+    engram_mcp::tools::all_tool_definitions()
+}

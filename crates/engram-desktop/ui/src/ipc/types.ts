@@ -345,3 +345,18 @@ export interface HistoryEntry {
   changed_by: string;
   created_at: string;
 }
+
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  inputSchema?: {
+    type?: string;
+    properties?: Record<string, {
+      type?: string;
+      description?: string;
+      enum?: string[];
+      default?: any;
+    }>;
+    required?: string[];
+  };
+}

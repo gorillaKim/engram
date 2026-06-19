@@ -6,7 +6,7 @@ import type {
   CreateEpicInput, CreateIssueInput, CreateTaskInput,
   IssueLink, LinkType, EpicStatus, HistoryEntry, CreateSprintInput,
   Mission, MissionProgress, MissionTree,
-  CreateMissionInput, UpdateMissionInput,
+  CreateMissionInput, UpdateMissionInput, McpToolDefinition,
 } from './types';
 
 export const sessionRestore = (project_key?: string) =>
@@ -241,3 +241,6 @@ export const getAppVersion = () =>
 
 export const relaunchApp = () =>
   invoke<void>('relaunch_app');
+
+export const mcpGetToolDefinitions = () =>
+  invoke<McpToolDefinition[]>('mcp_get_tool_definitions');

@@ -152,6 +152,7 @@ fn main() {
             commands::mcp_stop,
             commands::mcp_restart,
             commands::mcp_recent_calls,
+            commands::mcp_get_tool_definitions,
             commands::mcp_set_autostart,
             commands::get_activity_settings,
             commands::set_activity_settings,
