@@ -37,14 +37,26 @@ impl Db {
         Ok(result)
     }
 
-    pub async fn task_test_list(&self, task_id: i64) -> Result<Vec<TaskTest>> {
-        sqlx::query_as::<_, TaskTest>(
-            "SELECT id, task_id, label, checked, created_at, checked_at FROM task_tests WHERE task_id = ? ORDER BY id ASC",
-        )
-        .bind(task_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Into::into)
+    pub async fn task_test_list(&self, task_id: Option<i64>, issue_id: Option<i64>) -> Result<Vec<TaskTest>> {
+        if let Some(tid) = task_id {
+            sqlx::query_as::<_, TaskTest>(
+                "SELECT id, task_id, label, checked, created_at, checked_at FROM task_tests WHERE task_id = ? ORDER BY id ASC",
+            )
+            .bind(tid)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Into::into)
+        } else if let Some(iid) = issue_id {
+            sqlx::query_as::<_, TaskTest>(
+                "SELECT tt.id, tt.task_id, tt.label, tt.checked, tt.created_at, tt.checked_at FROM task_tests tt JOIN tasks t ON tt.task_id = t.id WHERE t.issue_id = ? ORDER BY t.ord ASC, tt.id ASC",
+            )
+            .bind(iid)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Into::into)
+        } else {
+            Err(Error::Validation("task_id 또는 issue_id 중 최소 하나는 지정해야 합니다.".to_string()))
+        }
     }
 
     pub async fn task_test_check(&self, id: i64, changed_by: &str) -> Result<TaskTest> {

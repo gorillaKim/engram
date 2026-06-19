@@ -84,6 +84,8 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let issue_id = args["issue_id"].as_i64().unwrap_or(0);
+    let status: Option<TaskStatus> = args["status"].as_str()
+        .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
     let mode = if let Some(m_str) = args["mode"].as_str() {
         match m_str {
             "normal" => engram_core::models::OutputMode::Normal,
@@ -94,7 +96,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     } else {
         engram_core::models::OutputMode::Agent
     };
-    let response = db.task_list_mode(issue_id, mode).await?;
+    let response = db.task_list_mode(issue_id, status, mode).await?;
     Ok(serde_json::to_value(response).unwrap())
 }
 

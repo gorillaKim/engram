@@ -23,9 +23,12 @@ pub fn tool_definitions() -> Vec<Value> {
             }
         }),
         json!({ "name": "task_test_list",
-            "description": "태스크의 테스트 체크리스트 전체를 조회합니다. checked/unchecked 상태를 포함합니다.",
-            "inputSchema": { "type": "object", "required": ["task_id"],
-                "properties": { "task_id": { "type": "integer" } }
+            "description": "태스크의 테스트 체크리스트 전체를 조회합니다. checked/unchecked 상태를 포함합니다. task_id 또는 issue_id 중 최소 하나는 지정해야 합니다.",
+            "inputSchema": { "type": "object",
+                "properties": {
+                    "task_id":  { "type": "integer", "description": "특정 태스크의 테스트 목록 조회" },
+                    "issue_id": { "type": "integer", "description": "이슈 산하 모든 태스크의 테스트 목록 일괄 조회" }
+                }
             }
         }),
         json!({ "name": "task_test_check",
@@ -81,8 +84,12 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let task_id = args["task_id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_test_list(task_id).await?).unwrap())
+    let task_id = args["task_id"].as_i64();
+    let issue_id = args["issue_id"].as_i64();
+    if task_id.is_none() && issue_id.is_none() {
+        return Err(engram_core::Error::Validation("task_id 또는 issue_id 중 최소 하나는 필수입니다.".to_string()));
+    }
+    Ok(serde_json::to_value(db.task_test_list(task_id, issue_id).await?).unwrap())
 }
 
 pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {

@@ -3200,7 +3200,7 @@ async fn test_other_get_list_output_mode_agent() {
     }).await.unwrap();
 
     // 1. task_list_mode 에 OutputMode::Agent를 전달하면 Text(String) 타입으로 반환되는가?
-    let task_list_resp = db.task_list_mode(issue.id, engram_core::models::OutputMode::Agent).await.unwrap();
+    let task_list_resp = db.task_list_mode(issue.id, None, engram_core::models::OutputMode::Agent).await.unwrap();
     match task_list_resp {
         engram_core::models::CoreResponse::Text(text) => {
             assert!(text.contains("=== TASK LIST ==="));
@@ -3289,6 +3289,73 @@ async fn test_other_get_list_output_mode_agent() {
         },
         _ => panic!("Expected text response for stalled_issues agent mode"),
     }
+}
+
+#[tokio::test]
+async fn test_task_list_status_filtering() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, title: "I".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let t1 = db.task_create(CreateTaskInput {
+        issue_id: issue.id, title: "T1".into(), description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+    let t2 = db.task_create(CreateTaskInput {
+        issue_id: issue.id, title: "T2".into(), description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+
+    // t1은 finished로 변경
+    db.task_update(t1.id, UpdateTaskInput {
+        status: Some(TaskStatus::Finished), ..Default::default()
+    }, "agent").await.unwrap();
+
+    // 1. status=None 이면 2개 태스크 모두 반환
+    let all_tasks = db.task_list(issue.id, None).await.unwrap();
+    assert_eq!(all_tasks.len(), 2);
+
+    // 2. status=Some(TaskStatus::Required) 이면 T2(Required)만 반환
+    let required_tasks = db.task_list(issue.id, Some(TaskStatus::Required)).await.unwrap();
+    assert_eq!(required_tasks.len(), 1);
+    assert_eq!(required_tasks[0].id, t2.id);
+
+    // 3. status=Some(TaskStatus::Finished) 이면 T1(Finished)만 반환
+    let finished_tasks = db.task_list(issue.id, Some(TaskStatus::Finished)).await.unwrap();
+    assert_eq!(finished_tasks.len(), 1);
+    assert_eq!(finished_tasks[0].id, t1.id);
+}
+
+#[tokio::test]
+async fn test_task_test_list_by_issue_id() {
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id, title: "Issue with tests".into(), description: None, goal: None, priority: None,
+    }).await.unwrap();
+
+    let t1 = db.task_create(CreateTaskInput {
+        issue_id: issue.id, title: "T1".into(), description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+    let t2 = db.task_create(CreateTaskInput {
+        issue_id: issue.id, title: "T2".into(), description: None, goal: None, after_task_id: None, source: None,
+    }).await.unwrap();
+
+    // t1에 테스트 2개, t2에 테스트 1개 추가
+    db.task_test_add(t1.id, "Test 1 for T1".into()).await.unwrap();
+    db.task_test_add(t1.id, "Test 2 for T1".into()).await.unwrap();
+    db.task_test_add(t2.id, "Test 1 for T2".into()).await.unwrap();
+
+    // issue_id 로 조회
+    let tests = db.task_test_list(None, Some(issue.id)).await.unwrap();
+    assert_eq!(tests.len(), 3);
+    assert_eq!(tests[0].label, "Test 1 for T1");
+    assert_eq!(tests[1].label, "Test 2 for T1");
+    assert_eq!(tests[2].label, "Test 1 for T2");
+
+    // task_id 와 issue_id 가 둘 다 지정되지 않은 경우 에러 반환
+    let err = db.task_test_list(None, None).await;
+    assert!(err.is_err());
 }
 
 

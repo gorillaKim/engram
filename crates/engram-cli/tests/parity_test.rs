@@ -177,6 +177,10 @@ async fn test_parity_task_list_and_next() {
     let mcp = normalize(dispatch(Arc::clone(&db_b), "task_list", &json!({"issue_id": iid, "mode": "normal"})).await.unwrap());
     assert_eq!(cli, mcp, "task_list 동치 실패");
 
+    let cli_f = normalize(serde_json::to_value(db_a.task_list(iid, Some(engram_core::models::task::TaskStatus::Required)).await.unwrap()).unwrap());
+    let mcp_f = normalize(dispatch(Arc::clone(&db_b), "task_list", &json!({"issue_id": iid, "status": "required", "mode": "normal"})).await.unwrap());
+    assert_eq!(cli_f, mcp_f, "task_list status 필터 동치 실패");
+
     // task_next 는 ready 큐 기반 — 둘 다 ready 없으니 동시에 null/None 이어야 함
     let cli = normalize(serde_json::to_value(db_a.task_next(Some("p"), None).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "task_next", &json!({"project_key": "p", "mode": "normal"})).await.unwrap());
@@ -369,12 +373,12 @@ async fn test_parity_link_unlink_roundtrip() {
 
 #[tokio::test]
 async fn test_parity_task_test_workflow() {
-    let db_a = fresh_db().await; let (_, _, _, tid_a) = seed_via_db(&db_a).await;
-    let db_b = fresh_db().await; let (_, _, _, tid_b) = seed_via_dispatch(&db_b).await;
+    let db_a = fresh_db().await; let (_, _, iid_a, tid_a) = seed_via_db(&db_a).await;
+    let db_b = fresh_db().await; let (_, _, iid_b, tid_b) = seed_via_dispatch(&db_b).await;
 
     // add 3개 + check 2개 + uncheck 1개 + remove 1개
     db_a.task_test_add_bulk(tid_a, vec!["A".into(), "B".into(), "C".into()]).await.unwrap();
-    let list_a = db_a.task_test_list(tid_a).await.unwrap();
+    let list_a = db_a.task_test_list(Some(tid_a), None).await.unwrap();
     let ids_a: Vec<i64> = list_a.iter().map(|t| t.id).collect();
     db_a.task_test_check_bulk(vec![ids_a[0], ids_a[1]]).await.unwrap();
     db_a.task_test_uncheck(ids_a[1], "test").await.unwrap();
@@ -393,10 +397,16 @@ async fn test_parity_task_test_workflow() {
     dispatch(Arc::clone(&db_b), "task_test_remove",
         &json!({"id": ids_b[2]})).await.unwrap();
 
-    let cli = normalize(serde_json::to_value(db_a.task_test_list(tid_a).await.unwrap()).unwrap());
+    let cli = normalize(serde_json::to_value(db_a.task_test_list(Some(tid_a), None).await.unwrap()).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "task_test_list",
         &json!({"task_id": tid_b})).await.unwrap());
     assert_eq!(cli, mcp, "task_test 워크플로 동치 실패");
+
+    // issue_id 기반 task_test_list 패리티 동치 테스트
+    let cli_issue = normalize(serde_json::to_value(db_a.task_test_list(None, Some(iid_a)).await.unwrap()).unwrap());
+    let mcp_issue = normalize(dispatch(Arc::clone(&db_b), "task_test_list",
+        &json!({"issue_id": iid_b})).await.unwrap());
+    assert_eq!(cli_issue, mcp_issue, "task_test issue_id 기반 동치 실패");
 }
 
 #[tokio::test]

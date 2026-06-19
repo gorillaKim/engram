@@ -23,7 +23,7 @@ pub struct TaskArgs {
 #[derive(Subcommand)]
 pub enum TaskCommand {
     Create   { #[arg(long)] issue: i64, #[arg(long)] title: String, #[arg(long)] goal: Option<String> },
-    List     { #[arg(long)] issue: i64 },
+    List     { #[arg(long)] issue: i64, #[arg(long)] status: Option<String> },
     Finish   { id: i64 },
     Next     { #[arg(long)] project: Option<String> },
     /// 태스크 상태/제목 수정
@@ -57,8 +57,9 @@ pub async fn run(db: Db, args: TaskArgs, fmt: OutputFormat, agent_id: &str, mode
             }).await?;
             output::print_value(&task, fmt)?;
         }
-        TaskCommand::List { issue } => {
-            let res = db.task_list_mode(issue, mode).await?;
+        TaskCommand::List { issue, status } => {
+            let parsed_status = status.as_deref().map(parse_task_status).transpose()?;
+            let res = db.task_list_mode(issue, parsed_status, mode).await?;
             output::print_core_response(res, fmt)?;
         }
         TaskCommand::Finish { id } => {

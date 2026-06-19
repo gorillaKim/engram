@@ -34,18 +34,30 @@ impl Db {
         .ok_or_else(|| Error::NotFound(format!("task:{id}")))
     }
 
-    pub async fn task_list(&self, issue_id: i64, _status: Option<TaskStatus>) -> Result<Vec<Task>> {
-        sqlx::query_as::<_, Task>(
-            "SELECT id, issue_id, title, description, goal, status, ord, source, created_at, updated_at FROM tasks WHERE issue_id = ? ORDER BY ord ASC",
-        )
-        .bind(issue_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(Into::into)
+    pub async fn task_list(&self, issue_id: i64, status: Option<TaskStatus>) -> Result<Vec<Task>> {
+        if let Some(st) = status {
+            let sv = serde_json::to_value(&st).unwrap().as_str().unwrap().to_string();
+            sqlx::query_as::<_, Task>(
+                "SELECT id, issue_id, title, description, goal, status, ord, source, created_at, updated_at FROM tasks WHERE issue_id = ? AND status = ? ORDER BY ord ASC",
+            )
+            .bind(issue_id)
+            .bind(sv)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Into::into)
+        } else {
+            sqlx::query_as::<_, Task>(
+                "SELECT id, issue_id, title, description, goal, status, ord, source, created_at, updated_at FROM tasks WHERE issue_id = ? ORDER BY ord ASC",
+            )
+            .bind(issue_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Into::into)
+        }
     }
 
-    pub async fn task_list_mode(&self, issue_id: i64, mode: OutputMode) -> Result<CoreResponse<Vec<Task>>> {
-        let mut tasks = self.task_list(issue_id, None).await?;
+    pub async fn task_list_mode(&self, issue_id: i64, status: Option<TaskStatus>, mode: OutputMode) -> Result<CoreResponse<Vec<Task>>> {
+        let mut tasks = self.task_list(issue_id, status).await?;
         let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
         if compact {
             for task in &mut tasks {
