@@ -69,7 +69,13 @@ pub fn tool_definitions() -> Vec<Value> {
 pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let task_id = args["task_id"].as_i64().unwrap_or(0);
     let label   = args["label"].as_str().unwrap_or("").to_string();
-    Ok(serde_json::to_value(db.task_test_add(task_id, label).await?).unwrap())
+    let t = db.task_test_add(task_id, label).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task test #{} created.", t.id)))
+    } else {
+        Ok(serde_json::to_value(t).unwrap())
+    }
 }
 
 pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -80,7 +86,13 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .iter()
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
-    Ok(serde_json::to_value(db.task_test_add_bulk(task_id, labels).await?).unwrap())
+    let res = db.task_test_add_bulk(task_id, labels).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task tests created (Count: {}).", res.len())))
+    } else {
+        Ok(serde_json::to_value(res).unwrap())
+    }
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -89,14 +101,37 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     if task_id.is_none() && issue_id.is_none() {
         return Err(engram_core::Error::Validation("task_id 또는 issue_id 중 최소 하나는 필수입니다.".to_string()));
     }
-    Ok(serde_json::to_value(db.task_test_list(task_id, issue_id).await?).unwrap())
+    let list = db.task_test_list(task_id, issue_id).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["ID", "Task ID", "Label", "Status"];
+        let mut rows = Vec::new();
+        for t in list {
+            let status = if t.checked_at.is_some() { "[x]" } else { "[ ]" };
+            rows.push(vec![
+                t.id.to_string(),
+                t.task_id.to_string(),
+                t.label,
+                status.to_string(),
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else {
+        Ok(serde_json::to_value(list).unwrap())
+    }
 }
 
 pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_test_check(id, agent_id).await?).unwrap())
+    db.task_test_check(id, agent_id).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task test #{} checked.", id)))
+    } else {
+        Ok(json!({ "id": id, "status": "ok" }))
+    }
 }
 
 pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -106,18 +141,35 @@ pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
         .iter()
         .filter_map(|v| v.as_i64())
         .collect();
-    Ok(serde_json::to_value(db.task_test_check_bulk(ids).await?).unwrap())
+    db.task_test_check_bulk(ids.clone()).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task tests checked (Count: {}).", ids.len())))
+    } else {
+        Ok(json!({ "status": "ok" }))
+    }
 }
 
 pub async fn uncheck(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let id = args["id"].as_i64().unwrap_or(0);
-    Ok(serde_json::to_value(db.task_test_uncheck(id, agent_id).await?).unwrap())
+    db.task_test_uncheck(id, agent_id).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task test #{} unchecked.", id)))
+    } else {
+        Ok(json!({ "id": id, "status": "ok" }))
+    }
 }
 
 pub async fn remove(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     db.task_test_remove(id).await?;
-    Ok(json!({ "ok": true }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Task test #{} deleted.", id)))
+    } else {
+        Ok(json!({ "ok": true }))
+    }
 }

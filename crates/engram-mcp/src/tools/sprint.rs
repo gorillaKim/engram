@@ -44,15 +44,69 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         end_date: args["end_date"].as_str().map(String::from),
     };
     let sprint = db.sprint_create(input).await?;
-    Ok(json!({ "id": sprint.id, "name": sprint.name, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Sprint #{} created.",
+            sprint.id
+        )))
+    } else {
+        Ok(json!({ "id": sprint.id, "name": sprint.name, "status": "ok" }))
+    }
 }
 
-pub async fn list(db: Arc<Db>, _args: &Value) -> engram_core::Result<Value> {
-    Ok(serde_json::to_value(db.sprint_list(None).await?).unwrap())
+pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let list = db.sprint_list(None).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["ID", "Name", "Status", "Goal"];
+        let mut rows = Vec::new();
+        for s in list {
+            let status_str = serde_json::to_value(&s.status)
+                .unwrap()
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            rows.push(vec![
+                s.id.to_string(),
+                s.name,
+                status_str,
+                s.goal.unwrap_or_else(|| "-".to_string()),
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else {
+        Ok(serde_json::to_value(list).unwrap())
+    }
 }
 
-pub async fn current(db: Arc<Db>, _args: &Value) -> engram_core::Result<Value> {
-    Ok(serde_json::to_value(db.sprint_current().await?).unwrap())
+pub async fn current(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let cur = db.sprint_current().await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        match cur {
+            Some(s) => {
+                let status_str = serde_json::to_value(&s.status)
+                    .unwrap()
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                let fields = vec![
+                    ("ID", s.id.to_string()),
+                    ("Name", s.name),
+                    ("Status", status_str),
+                    ("Goal", s.goal.unwrap_or_else(|| "-".to_string())),
+                ];
+                Ok(Value::String(super::format::make_details(
+                    "Current Active Sprint",
+                    &fields,
+                )))
+            }
+            None => Ok(Value::String("No active sprint found.".to_string())),
+        }
+    } else {
+        Ok(serde_json::to_value(cur).unwrap())
+    }
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -69,13 +123,30 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let sprint = db.sprint_update(id, input, agent_id).await?;
-    let status_str = serde_json::to_value(&sprint.status).unwrap();
-    Ok(json!({ "id": sprint.id, "status": status_str }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Sprint #{} updated.",
+            sprint.id
+        )))
+    } else {
+        let status_str = serde_json::to_value(&sprint.status).unwrap();
+        Ok(json!({ "id": sprint.id, "status": status_str }))
+    }
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     db.sprint_delete(id).await?;
-    Ok(json!({ "status": "ok", "deleted_id": id }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Sprint #{} deleted.",
+            id
+        )))
+    } else {
+        Ok(json!({ "status": "ok", "deleted_id": id }))
+    }
 }
+

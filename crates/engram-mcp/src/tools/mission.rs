@@ -93,7 +93,15 @@ pub async fn mission_create(db: Arc<Db>, args: &Value) -> Result<Value> {
         jira_key: args["jira_key"].as_str().map(|s| s.to_string()),
     };
     let m = db.mission_create(input).await?;
-    Ok(json!({ "id": m.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Mission #{} created.",
+            m.id
+        )))
+    } else {
+        Ok(json!({ "id": m.id, "status": "ok" }))
+    }
 }
 
 pub async fn mission_get(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -101,7 +109,24 @@ pub async fn mission_get(db: Arc<Db>, args: &Value) -> Result<Value> {
         .as_i64()
         .ok_or_else(|| Error::Validation("id required".into()))?;
     let m = db.mission_get(id).await?;
-    Ok(serde_json::to_value(&m).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let status_str = serde_json::to_value(&m.status)
+            .unwrap()
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        let fields = vec![
+            ("ID", m.id.to_string()),
+            ("Jira Key", m.jira_key.clone().unwrap_or_else(|| "-".to_string())),
+            ("Title", m.title.clone()),
+            ("Status", status_str),
+            ("Description", m.description.clone().unwrap_or_else(|| "-".to_string())),
+        ];
+        Ok(Value::String(super::format::make_details("Mission Details", &fields)))
+    } else {
+        Ok(serde_json::to_value(&m).unwrap())
+    }
 }
 
 pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -114,7 +139,37 @@ pub async fn mission_list(db: Arc<Db>, args: &Value) -> Result<Value> {
         sprint_id: args["sprint_id"].as_i64(),
     };
     let missions = db.mission_list(filter).await?;
-    Ok(serde_json::to_value(&missions).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["ID", "Jira Key", "Title", "Status"];
+        let mut rows = Vec::new();
+        for m in missions {
+            let status_str = serde_json::to_value(&m.status)
+                .unwrap()
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            rows.push(vec![
+                m.id.to_string(),
+                m.jira_key.unwrap_or_else(|| "-".to_string()),
+                m.title,
+                status_str,
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else if matches!(mode, engram_core::models::OutputMode::Compact) {
+        let mut val = serde_json::to_value(&missions).unwrap();
+        if let Some(arr) = val.as_array_mut() {
+            for m_val in arr {
+                if let Some(obj) = m_val.as_object_mut() {
+                    obj.remove("description");
+                }
+            }
+        }
+        Ok(val)
+    } else {
+        Ok(serde_json::to_value(&missions).unwrap())
+    }
 }
 
 pub async fn mission_update(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -132,7 +187,15 @@ pub async fn mission_update(db: Arc<Db>, args: &Value) -> Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| Error::Validation("agent_id required".into()))?;
     db.mission_update(id, input, agent_id).await?;
-    Ok(json!({ "id": id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Mission #{} updated.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": id, "status": "ok" }))
+    }
 }
 
 pub async fn mission_delete(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -140,7 +203,15 @@ pub async fn mission_delete(db: Arc<Db>, args: &Value) -> Result<Value> {
         .as_i64()
         .ok_or_else(|| Error::Validation("id required".into()))?;
     db.mission_delete(id).await?;
-    Ok(json!({ "deleted": true, "id": id }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Mission #{} deleted.",
+            id
+        )))
+    } else {
+        Ok(json!({ "deleted": true, "id": id }))
+    }
 }
 
 pub async fn mission_get_tree(db: Arc<Db>, args: &Value) -> Result<Value> {
@@ -153,5 +224,76 @@ pub async fn mission_get_tree(db: Arc<Db>, args: &Value) -> Result<Value> {
     };
 
     let tree = db.mission_get_tree(id).await?;
-    Ok(serde_json::to_value(&tree).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let mut out = format!("### Mission Tree: {} (ID: {})\n", tree.mission.title, tree.mission.id);
+        let status_str = serde_json::to_value(&tree.mission.status)
+            .unwrap()
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        out.push_str(&format!("- **Status**: {}\n", status_str));
+        if let Some(ref desc) = tree.mission.description {
+            out.push_str(&format!("- **Description**: {}\n", desc));
+        }
+        out.push_str("\n#### Sub-Epics & Issues:\n");
+        if tree.epics.is_empty() {
+            out.push_str("No epics assigned.\n");
+        }
+        for epic_with_issues in tree.epics {
+            let epic = &epic_with_issues.epic;
+            let epic_status = serde_json::to_value(&epic.status)
+                .unwrap()
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+            let sprint_str = epic
+                .sprint_id
+                .map(|sid| format!("Sprint #{}", sid))
+                .unwrap_or_else(|| "Backlog".to_string());
+            out.push_str(&format!(
+                "- **Epic**: {} (ID: {}, Status: {}, Assignment: {})\n",
+                epic.title, epic.id, epic_status, sprint_str
+            ));
+            for issue in epic_with_issues.issues {
+                let issue_status = serde_json::to_value(&issue.status)
+                    .unwrap()
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string();
+                out.push_str(&format!(
+                    "  - **Issue #{}**: {} (Status: {})\n",
+                    issue.id, issue.title, issue_status
+                ));
+            }
+        }
+        Ok(Value::String(out))
+    } else if matches!(mode, engram_core::models::OutputMode::Compact) {
+        let mut val = serde_json::to_value(&tree).unwrap();
+        if let Some(obj) = val.as_object_mut() {
+            if let Some(mission) = obj.get_mut("mission").and_then(|m| m.as_object_mut()) {
+                mission.remove("description");
+            }
+            if let Some(epics) = obj.get_mut("epics").and_then(|e| e.as_array_mut()) {
+                for ep_with_i in epics {
+                    if let Some(ep_obj) = ep_with_i.as_object_mut() {
+                        if let Some(epic) = ep_obj.get_mut("epic").and_then(|ep| ep.as_object_mut()) {
+                            epic.remove("description");
+                        }
+                        if let Some(issues) = ep_obj.get_mut("issues").and_then(|i| i.as_array_mut()) {
+                            for issue in issues {
+                                if let Some(issue_obj) = issue.as_object_mut() {
+                                    issue_obj.remove("description");
+                                    issue_obj.remove("goal");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(val)
+    } else {
+        Ok(serde_json::to_value(&tree).unwrap())
+    }
 }

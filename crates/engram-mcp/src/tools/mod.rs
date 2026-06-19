@@ -1,4 +1,5 @@
 pub mod epic;
+pub mod format;
 pub mod history;
 pub mod issue;
 pub mod mission;
@@ -12,11 +13,11 @@ pub mod task_test;
 mod dispatch_test;
 
 use engram_core::Db;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::sync::Arc;
 
 pub fn all_tool_definitions() -> Vec<Value> {
-    [
+    let mut tools = [
         sprint::tool_definitions(),
         epic::tool_definitions(),
         mission::tool_definitions(),
@@ -27,8 +28,45 @@ pub fn all_tool_definitions() -> Vec<Value> {
         session::tool_definitions(),
         history::tool_definitions(),
     ]
-    .concat()
+    .concat();
+
+    for tool in &mut tools {
+        if let Some(schema) = tool.get_mut("inputSchema") {
+            if let Some(properties) = schema.get_mut("properties") {
+                if let Some(props_obj) = properties.as_object_mut() {
+                    if !props_obj.contains_key("mode") {
+                        props_obj.insert(
+                            "mode".to_string(),
+                            json!({
+                                "type": "string",
+                                "enum": ["agent", "normal", "compact"],
+                                "default": "agent",
+                                "description": "Output format mode. 'agent' (LLM-optimized Markdown/text), 'normal' (full JSON), 'compact' (compact JSON)."
+                            })
+                        );
+                    }
+                }
+            }
+        }
+    }
+    tools
 }
+
+pub fn get_mode(args: &Value) -> engram_core::models::OutputMode {
+    if let Some(m_str) = args["mode"].as_str() {
+        match m_str {
+            "normal" => engram_core::models::OutputMode::Normal,
+            "compact" => engram_core::models::OutputMode::Compact,
+            "agent" => engram_core::models::OutputMode::Agent,
+            _ => engram_core::models::OutputMode::Agent,
+        }
+    } else if args["compact"].as_bool().unwrap_or(false) {
+        engram_core::models::OutputMode::Compact
+    } else {
+        engram_core::models::OutputMode::Agent
+    }
+}
+
 
 pub async fn dispatch(
     db: Arc<Db>,

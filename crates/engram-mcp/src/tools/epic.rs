@@ -91,7 +91,15 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         description: args["description"].as_str().map(String::from),
     };
     let epic = db.epic_create(input).await?;
-    Ok(json!({ "id": epic.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Epic #{} created.",
+            epic.id
+        )))
+    } else {
+        Ok(json!({ "id": epic.id, "status": "ok" }))
+    }
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -99,40 +107,36 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     db.epic_delete(id, agent_id).await?;
-    Ok(json!({ "status": "ok", "deleted_id": id }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Epic #{} deleted.",
+            id
+        )))
+    } else {
+        Ok(json!({ "status": "ok", "deleted_id": id }))
+    }
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        engram_core::models::OutputMode::Agent
-    };
+    let mode = super::get_mode(args);
     let response = db.epic_get_mode(id, mode).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let include_completed = args["include_completed"].as_bool().unwrap_or(false);
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        engram_core::models::OutputMode::Agent
-    };
+    let mode = super::get_mode(args);
     let response = db.epic_list_mode(project_key, include_completed, mode).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -150,7 +154,15 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         update_sprint_id: args["update_sprint_id"].as_bool().unwrap_or(false),
     };
     let epic = db.epic_update(id, input, agent_id).await?;
-    Ok(json!({ "id": epic.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Epic #{} updated.",
+            epic.id
+        )))
+    } else {
+        Ok(json!({ "id": epic.id, "status": "ok" }))
+    }
 }
 
 pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -160,5 +172,13 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let epic = db.epic_set_sprint(epic_id, sprint_id, agent_id).await?;
-    Ok(json!({ "id": epic.id, "sprint_id": epic.sprint_id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Epic #{} sprint set.",
+            epic.id
+        )))
+    } else {
+        Ok(json!({ "id": epic.id, "sprint_id": epic.sprint_id, "status": "ok" }))
+    }
 }

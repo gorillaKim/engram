@@ -79,25 +79,27 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         source:       None,
     };
     let task = db.task_create(input).await?;
-    Ok(json!({ "id": task.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Task #{} created.",
+            task.id
+        )))
+    } else {
+        Ok(json!({ "id": task.id, "status": "ok" }))
+    }
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let issue_id = args["issue_id"].as_i64().unwrap_or(0);
     let status: Option<TaskStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        engram_core::models::OutputMode::Agent
-    };
+    let mode = super::get_mode(args);
     let response = db.task_list_mode(issue_id, status, mode).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -113,7 +115,15 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         status,
     };
     db.task_update(id, input, agent_id).await?;
-    Ok(json!({ "id": id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Task #{} updated.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": id, "status": "ok" }))
+    }
 }
 
 pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -126,29 +136,39 @@ pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Valu
         source:       Some(TaskSource::AgentDiscovered),
     };
     let task = db.task_create(input).await?;
-    Ok(json!({ "id": task.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Task #{} inserted.",
+            task.id
+        )))
+    } else {
+        Ok(json!({ "id": task.id, "status": "ok" }))
+    }
 }
 
 pub async fn next(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let issue_id    = args["issue_id"].as_i64();
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        engram_core::models::OutputMode::Agent
-    };
+    let mode = super::get_mode(args);
     let response = db.task_next_mode(project_key, issue_id, mode).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     db.task_delete(id).await?;
-    Ok(json!({ "status": "ok", "deleted_id": id }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Task #{} deleted.",
+            id
+        )))
+    } else {
+        Ok(json!({ "status": "ok", "deleted_id": id }))
+    }
 }

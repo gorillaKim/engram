@@ -237,32 +237,26 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         priority,
     };
     let issue = db.issue_create(input).await?;
-    Ok(json!({ "id": issue.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Issue #{} created.",
+            issue.id
+        )))
+    } else {
+        Ok(json!({ "id": issue.id, "status": "ok" }))
+    }
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().unwrap_or(0);
     let include_links = args["include_links"].as_bool().unwrap_or(false);
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        if let Some(compact) = args["compact"].as_bool() {
-            if compact {
-                engram_core::models::OutputMode::Compact
-            } else {
-                engram_core::models::OutputMode::Normal
-            }
-        } else {
-            engram_core::models::OutputMode::Agent
-        }
-    };
+    let mode = super::get_mode(args);
     let response = db.issue_get_mode(id, mode, include_links).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -283,24 +277,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         statuses = Some(list);
     }
 
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        if let Some(compact) = args["compact"].as_bool() {
-            if compact {
-                engram_core::models::OutputMode::Compact
-            } else {
-                engram_core::models::OutputMode::Normal
-            }
-        } else {
-            engram_core::models::OutputMode::Agent
-        }
-    };
+    let mode = super::get_mode(args);
 
     let filter = IssueFilter {
         epic_id:      args["epic_id"].as_i64(),
@@ -311,13 +288,16 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         status,
         statuses,
         priority:     None,
-        compact:      args["compact"].as_bool(),
+        compact:      Some(matches!(mode, engram_core::models::OutputMode::Compact) || matches!(mode, engram_core::models::OutputMode::Agent)),
         limit:        args["limit"].as_i64(),
         offset:       args["offset"].as_i64(),
     };
     let response = db.issue_list_mode(filter, mode).await?;
 
-    let mut val = serde_json::to_value(&response).unwrap();
+    let mut val = match response {
+        engram_core::models::CoreResponse::Text(s) => return Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => serde_json::to_value(&j).unwrap(),
+    };
     if let Some(arr) = args["projection"].as_array() {
         let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
         val = engram_core::apply_projection(val, &fields);
@@ -332,18 +312,12 @@ pub async fn stalled(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok())
         .unwrap_or(IssueStatus::Working);
     let project_key = args["project_key"].as_str();
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        engram_core::models::OutputMode::Agent
-    };
+    let mode = super::get_mode(args);
     let response = db.stalled_issues_mode(project_key, status, threshold, mode).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -370,8 +344,16 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         epic_id: args["epic_id"].as_i64(),
     };
     let issue = db.issue_update(id, input, agent_id).await?;
-    let status_str = serde_json::to_value(&issue.status).unwrap();
-    Ok(json!({ "id": issue.id, "status": status_str }))
+    let mode = super::get_mode(args);
+    let status_str = serde_json::to_value(&issue.status).unwrap().as_str().unwrap_or("").to_string();
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Issue #{} updated.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": issue.id, "status": status_str }))
+    }
 }
 
 pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -385,22 +367,58 @@ pub async fn link(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         _            => LinkType::Blocks,
     };
     let link = db.issue_link(source_id, target_id, link_type).await?;
-    Ok(json!({ "link_id": link.id, "source_id": source_id, "target_id": target_id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Link #{} created.",
+            link.id
+        )))
+    } else {
+        Ok(json!({ "link_id": link.id, "source_id": source_id, "target_id": target_id, "status": "ok" }))
+    }
 }
 
 pub async fn my_blocked_issues(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str().unwrap_or("");
     let graph = db.blocked_issues_graph(project_key).await?;
-    Ok(serde_json::to_value(&graph).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let mut out = format!("### Blocking Graph (Project: {})\n", project_key);
+        out.push_str(&format!("- **Has Cycle**: {}\n", graph.has_cycle));
+        out.push_str("- **Leaf Blockers (Actionable issues to unblock others)**:\n");
+        if graph.leaf_blockers.is_empty() {
+            out.push_str("  None\n");
+        } else {
+            for leaf in &graph.leaf_blockers {
+                let status = graph.node_statuses.get(leaf).cloned().unwrap_or_else(|| "unknown".to_string());
+                out.push_str(&format!("  - Issue #{}: (Status: {})\n", leaf, status));
+            }
+        }
+        out.push_str("- **Blocking Chains (Path: A blocks B blocks C)**:\n");
+        if graph.chains.is_empty() {
+            out.push_str("  None\n");
+        } else {
+            for chain in &graph.chains {
+                let chain_str: Vec<String> = chain.iter().map(|id| {
+                    let status = graph.node_statuses.get(id).cloned().unwrap_or_else(|| "unknown".to_string());
+                    format!("Issue #{} ({})", id, status)
+                }).collect();
+                out.push_str(&format!("  - {}\n", chain_str.join(" → ")));
+            }
+        }
+        Ok(Value::String(out))
+    } else {
+        Ok(serde_json::to_value(&graph).unwrap())
+    }
 }
 
 pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let _agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let link_id = args["link_id"].as_i64().unwrap_or(0);
-    if link_id > 0 {
+    let deleted_id = if link_id > 0 {
         db.issue_unlink(link_id).await?;
-        Ok(serde_json::json!({ "status": "ok", "deleted_id": link_id }))
+        link_id
     } else {
         let source_id = args["source_id"].as_i64()
             .ok_or_else(|| engram_core::Error::Validation("link_id가 지정되지 않은 경우 source_id는 필수입니다.".to_string()))?;
@@ -411,7 +429,12 @@ pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
             "duplicates" => LinkType::Duplicates,
             _            => LinkType::Blocks,
         };
-        let deleted_id = db.issue_unlink_by_nodes(source_id, target_id, link_type).await?;
+        db.issue_unlink_by_nodes(source_id, target_id, link_type).await?
+    };
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Link #{} deleted.", deleted_id)))
+    } else {
         Ok(serde_json::json!({ "status": "ok", "deleted_id": deleted_id }))
     }
 }
@@ -421,7 +444,12 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     db.issue_delete(id, agent_id).await?;
-    Ok(serde_json::json!({ "status": "ok", "deleted_id": id }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Issue #{} deleted.", id)))
+    } else {
+        Ok(serde_json::json!({ "status": "ok", "deleted_id": id }))
+    }
 }
 
 pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -430,7 +458,15 @@ pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required for claim (멀티 에이전트 식별)".to_string()))?;
     db.issue_claim(id, agent_id).await?;
-    Ok(json!({ "id": id, "status": "working" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Issue #{} claimed.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": id, "status": "working" }))
+    }
 }
 
 pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -443,8 +479,16 @@ pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         .ok_or_else(|| engram_core::Error::Validation("transition_to is required (ready|demo|required)".to_string()))?;
     let force = args["force"].as_bool().unwrap_or(false);
     let issue = db.issue_release(id, transition_to, agent_id, force).await?;
-    let status_str = serde_json::to_value(&issue.status).unwrap();
-    Ok(json!({ "id": issue.id, "status": status_str }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Issue #{} released.",
+            id
+        )))
+    } else {
+        let status_str = serde_json::to_value(&issue.status).unwrap().as_str().unwrap_or("").to_string();
+        Ok(json!({ "id": issue.id, "status": status_str }))
+    }
 }
 
 pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -468,7 +512,35 @@ pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Re
         None
     };
     let snapshot = db.planning_review_queue(project_key, sprint_id, statuses).await?;
-    Ok(serde_json::to_value(&snapshot).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let sprint_name = snapshot.sprint_name.unwrap_or_else(|| "Current Active".to_string());
+        let mut out = format!("### Planning Review Queue (Sprint: {})\n", sprint_name);
+        if snapshot.issues.is_empty() {
+            out.push_str("No issues in queue.\n");
+        } else {
+            for item in snapshot.issues {
+                let status_val = serde_json::to_value(&item.status).unwrap();
+                let status_str = status_val.as_str().unwrap_or("unknown");
+                let priority_val = serde_json::to_value(&item.priority).unwrap();
+                let priority_str = priority_val.as_str().unwrap_or("unknown");
+                out.push_str(&format!(
+                    "- **Issue #{}**: {} (Status: {}, Priority: {})\n",
+                    item.id, item.title, status_str, priority_str
+                ));
+                if let Some(ref excerpt) = item.description_excerpt {
+                    out.push_str(&format!("  - Excerpt: {}\n", excerpt));
+                }
+                if !item.blockers.is_empty() {
+                    let blockers_str: Vec<String> = item.blockers.iter().map(|id| format!("#{}", id)).collect();
+                    out.push_str(&format!("  - Blockers: {}\n", blockers_str.join(", ")));
+                }
+            }
+        }
+        Ok(Value::String(out))
+    } else {
+        Ok(serde_json::to_value(&snapshot).unwrap())
+    }
 }
 
 pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -477,7 +549,12 @@ pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     db.issue_finish(id, agent_id).await?;
-    Ok(json!({ "id": id, "status": "finished" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Issue #{} finished.", id)))
+    } else {
+        Ok(json!({ "id": id, "status": "finished" }))
+    }
 }
 
 pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -488,7 +565,12 @@ pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     db.issue_cancel(id, reason, agent_id).await?;
-    Ok(json!({ "id": id, "status": "cancelled" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!("Issue #{} cancelled.", id)))
+    } else {
+        Ok(json!({ "id": id, "status": "cancelled" }))
+    }
 }
 
 pub async fn bulk_update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -508,5 +590,17 @@ pub async fn bulk_update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
 
     let input = BulkUpdateInput { status, priority };
-    Ok(serde_json::to_value(db.issue_bulk_update(ids, input, agent_id).await?).unwrap())
+    let res = db.issue_bulk_update(ids, input, agent_id).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let success_ids: Vec<String> = res.succeeded.iter().map(|i| i.id.to_string()).collect();
+        let fail_msgs: Vec<String> = res.failed.iter().map(|f| format!("Issue #{}: {}", f.id, f.error)).collect();
+        let mut msg = format!("Bulk update completed. Succeeded IDs: [{}].", success_ids.join(", "));
+        if !fail_msgs.is_empty() {
+            msg.push_str(&format!(" Failures: [{}].", fail_msgs.join("; ")));
+        }
+        Ok(super::format::success(&msg))
+    } else {
+        Ok(serde_json::to_value(res).unwrap())
+    }
 }

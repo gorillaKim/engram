@@ -76,59 +76,41 @@ pub async fn restore(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let stall_minutes = args["stall_minutes"].as_i64().unwrap_or(120);
     let size_limit = args["size_limit"].as_u64().map(|n| n as usize);
-
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        if let Some(compact) = args["compact"].as_bool() {
-            if compact {
-                engram_core::models::OutputMode::Compact
-            } else {
-                engram_core::models::OutputMode::Normal
-            }
-        } else {
-            engram_core::models::OutputMode::Agent
-        }
-    };
+    let mode = super::get_mode(args);
 
     let response = db.session_restore_mode(project_key, mode, stall_minutes, size_limit).await?;
-    Ok(serde_json::to_value(response).unwrap())
+    match response {
+        engram_core::repository::session::SessionResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::repository::session::SessionResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }
 
 pub async fn end(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
     let result = db.session_end(project_key).await?;
-    Ok(serde_json::to_value(result).unwrap())
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        if result.warnings.is_empty() {
+            Ok(super::format::success("Session end checks passed. No warnings."))
+        } else {
+            let mut out = format!("### Session End Warnings\n");
+            for w in result.warnings {
+                out.push_str(&format!("- **Warning**: {}\n", w));
+            }
+            Ok(Value::String(out))
+        }
+    } else {
+        Ok(serde_json::to_value(result).unwrap())
+    }
 }
 
 pub async fn board_status(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        if let Some(compact) = args["compact"].as_bool() {
-            if compact {
-                engram_core::models::OutputMode::Compact
-            } else {
-                engram_core::models::OutputMode::Normal
-            }
-        } else {
-            engram_core::models::OutputMode::Agent
-        }
-    };
-
+    let mode = super::get_mode(args);
     let include_chains = args["include_chains"].as_bool().unwrap_or(true);
     let board = db.board_status_mode(project_key, mode, include_chains).await?;
-    Ok(serde_json::to_value(board).unwrap())
+    match board {
+        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+    }
 }

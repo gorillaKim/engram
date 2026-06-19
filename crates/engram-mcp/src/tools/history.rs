@@ -40,18 +40,71 @@ pub async fn for_entity(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
         .ok_or_else(|| engram_core::Error::Validation("entity_type 필수 (sprint|epic|issue|task|note)".to_string()))?;
     let entity_id = args["entity_id"].as_i64()
         .ok_or_else(|| engram_core::Error::Validation("entity_id is required".to_string()))?;
-    Ok(serde_json::to_value(db.history_list(entity_type, entity_id).await?).unwrap())
+    let list = db.history_list(entity_type, entity_id).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["Changed By", "Field", "Old Value", "New Value"];
+        let mut rows = Vec::new();
+        for h in list {
+            rows.push(vec![
+                h.changed_by,
+                h.field,
+                h.old_value.unwrap_or_else(|| "-".to_string()),
+                h.new_value.unwrap_or_else(|| "-".to_string()),
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else {
+        Ok(serde_json::to_value(list).unwrap())
+    }
 }
 
 pub async fn by_agent(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let limit = args["limit"].as_i64().unwrap_or(50).clamp(1, 500);
-    Ok(serde_json::to_value(db.history_by_agent(agent_id, limit).await?).unwrap())
+    let list = db.history_by_agent(agent_id, limit).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["Entity Type", "Entity ID", "Field", "Old Value", "New Value"];
+        let mut rows = Vec::new();
+        for h in list {
+            let entity_type_str = serde_json::to_value(&h.entity_type).unwrap().as_str().unwrap_or("").to_string();
+            rows.push(vec![
+                entity_type_str,
+                h.entity_id.to_string(),
+                h.field,
+                h.old_value.unwrap_or_else(|| "-".to_string()),
+                h.new_value.unwrap_or_else(|| "-".to_string()),
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else {
+        Ok(serde_json::to_value(list).unwrap())
+    }
 }
 
 pub async fn recent(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let limit = args["limit"].as_i64().unwrap_or(20).clamp(1, 500);
     let since_minutes = args["since_minutes"].as_i64();
-    Ok(serde_json::to_value(db.history_recent(limit, since_minutes).await?).unwrap())
+    let list = db.history_recent(limit, since_minutes).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let headers = vec!["Changed By", "Entity Type", "Entity ID", "Field", "Old Value", "New Value"];
+        let mut rows = Vec::new();
+        for h in list {
+            let entity_type_str = serde_json::to_value(&h.entity_type).unwrap().as_str().unwrap_or("").to_string();
+            rows.push(vec![
+                h.changed_by,
+                entity_type_str,
+                h.entity_id.to_string(),
+                h.field,
+                h.old_value.unwrap_or_else(|| "-".to_string()),
+                h.new_value.unwrap_or_else(|| "-".to_string()),
+            ]);
+        }
+        Ok(Value::String(super::format::make_table(&headers, &rows)))
+    } else {
+        Ok(serde_json::to_value(list).unwrap())
+    }
 }

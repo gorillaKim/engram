@@ -5,10 +5,29 @@
 
 #![cfg(test)]
 
-use super::{all_tool_definitions, dispatch};
+use super::all_tool_definitions;
+use super::dispatch as mcp_dispatch;
 use engram_core::Db;
 use serde_json::{json, Value};
 use std::sync::Arc;
+
+async fn dispatch(
+    db: Arc<Db>,
+    name: &str,
+    args: &Value,
+) -> Result<Value, engram_core::Error> {
+    let mut args = args.clone();
+    if let Some(obj) = args.as_object_mut() {
+        if !obj.contains_key("mode") {
+            if obj.get("compact").and_then(|v| v.as_bool()).unwrap_or(false) {
+                obj.insert("mode".to_string(), json!("compact"));
+            } else {
+                obj.insert("mode".to_string(), json!("normal"));
+            }
+        }
+    }
+    mcp_dispatch(db, name, &args).await
+}
 
 async fn setup() -> Arc<Db> {
     Arc::new(Db::open_in_memory().await.unwrap())

@@ -145,7 +145,15 @@ pub async fn add(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         project_key:     args["project_key"].as_str().map(String::from),
     };
     let note = db.note_add(input).await?;
-    Ok(json!({ "id": note.id, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Note #{} created.",
+            note.id
+        )))
+    } else {
+        Ok(json!({ "id": note.id, "status": "ok" }))
+    }
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -158,24 +166,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let sprint_id = args["sprint_id"].as_i64();
     let limit = args["limit"].as_i64();
     let offset = args["offset"].as_i64();
-    let mode = if let Some(m_str) = args["mode"].as_str() {
-        match m_str {
-            "normal" => engram_core::models::OutputMode::Normal,
-            "compact" => engram_core::models::OutputMode::Compact,
-            "agent" => engram_core::models::OutputMode::Agent,
-            _ => engram_core::models::OutputMode::Agent,
-        }
-    } else {
-        if let Some(compact) = args["compact"].as_bool() {
-            if compact {
-                engram_core::models::OutputMode::Compact
-            } else {
-                engram_core::models::OutputMode::Normal
-            }
-        } else {
-            engram_core::models::OutputMode::Agent
-        }
-    };
+    let mode = super::get_mode(args);
 
     let response = db.note_list_mode(
         issue_id,
@@ -190,7 +181,10 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         mode,
     ).await?;
 
-    let mut val = serde_json::to_value(&response).unwrap();
+    let mut val = match response {
+        engram_core::models::CoreResponse::Text(s) => return Ok(Value::String(s)),
+        engram_core::models::CoreResponse::Json(j) => serde_json::to_value(&j).unwrap(),
+    };
     if let Some(arr) = args["projection"].as_array() {
         let fields: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(String::from)).collect();
         val = engram_core::apply_projection(val, &fields);
@@ -201,7 +195,26 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
     let compact = args["compact"].as_bool().unwrap_or(false);
-    Ok(serde_json::to_value(db.note_get(id, compact).await?).unwrap())
+    let note = db.note_get(id, compact).await?;
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        let note_type_val = serde_json::to_value(&note.note_type).unwrap();
+        let note_type_str = note_type_val.as_str().unwrap_or("context");
+        let resolved_str = if note.resolved { "Yes" } else { "No" };
+        let mut fields = vec![
+            ("ID", note.id.to_string()),
+            ("Issue ID", note.issue_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string())),
+            ("Type", note_type_str.to_string()),
+            ("Summary", note.summary.clone()),
+            ("Resolved", resolved_str.to_string()),
+        ];
+        if let Some(ref detail) = note.detail {
+            fields.push(("Detail", detail.clone()));
+        }
+        Ok(Value::String(super::format::make_details("Note Specification", &fields)))
+    } else {
+        Ok(serde_json::to_value(note).unwrap())
+    }
 }
 
 pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -209,7 +222,15 @@ pub async fn resolve(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     db.note_resolve(id, agent_id).await?;
-    Ok(json!({ "id": id, "resolved": true, "status": "ok" }))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Note #{} resolved.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": id, "resolved": true, "status": "ok" }))
+    }
 }
 
 pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
@@ -246,6 +267,14 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         });
     }
     let notes = db.note_add_bulk(inputs).await?;
-    let ids: Vec<Value> = notes.iter().map(|n| json!({ "id": n.id, "status": "ok" })).collect();
-    Ok(json!(ids))
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Notes created (Count: {}).",
+            notes.len()
+        )))
+    } else {
+        let ids: Vec<Value> = notes.iter().map(|n| json!({ "id": n.id, "status": "ok" })).collect();
+        Ok(json!(ids))
+    }
 }

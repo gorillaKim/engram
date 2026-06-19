@@ -28,9 +28,23 @@ use engram_core::{
         task::CreateTaskInput,
     },
 };
-use engram_mcp::tools::dispatch;
+use engram_mcp::tools::dispatch as mcp_dispatch;
 use serde_json::{json, Value};
 use std::sync::Arc;
+
+async fn dispatch(db: Arc<Db>, name: &str, args: &Value) -> Result<Value, engram_core::Error> {
+    let mut args = args.clone();
+    if let Value::Object(ref mut map) = args {
+        if !map.contains_key("mode") {
+            if map.get("compact").and_then(|v| v.as_bool()).unwrap_or(false) {
+                map.insert("mode".to_string(), Value::String("compact".to_string()));
+            } else {
+                map.insert("mode".to_string(), Value::String("normal".to_string()));
+            }
+        }
+    }
+    mcp_dispatch(db, name, &args).await
+}
 
 async fn fresh_db() -> Arc<Db> {
     Arc::new(Db::open_in_memory().await.expect("in-memory db"))
