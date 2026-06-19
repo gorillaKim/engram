@@ -37,7 +37,7 @@ Claude Desktop 앱에 Engram을 연동하려면, Claude 설정 파일(`claude_de
 > 만약 `engram-mcp`가 전역 path에 등록되어 있지 않다면, 빌드된 절대 경로를 적어주거나 `cargo run`을 통하도록 지정할 수 있습니다.
 > ```json
 > "command": "cargo",
-> "args": ["run", "--release", "--manifest-path", "/Users/사용자/gorillaProject/engram/crates/engram-mcp/Cargo.toml"]
+> "args": ["run", "--release", "--manifest-path", "/path/to/engram/crates/engram-mcp/Cargo.toml"]
 > ```
 
 설정을 완료한 뒤 Claude Desktop을 재시작하면, 채팅 창 우측 하단에 플러그 플러그인 아이콘이 활성화되며 `issue_create`, `task_update` 등의 Engram 전용 도구들을 에이전트가 인지하고 사용할 수 있게 됩니다.
