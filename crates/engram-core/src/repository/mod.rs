@@ -75,3 +75,5 @@ pub fn apply_pagination(limit: Option<i64>, offset: Option<i64>) -> (i64, i64) {
     let off = offset.unwrap_or(0);
     (lim, off)
 }
+// force compile to include 0012 migration DDL
+

@@ -14,7 +14,7 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
-        json!({ "name": "task_list", "description": "이슈의 태스크 목록을 순서대로 조회합니다.",
+        json!({ "name": "task_list", "description": "이슈의 태스크 목록을 순서대로 조회합니다. 만약 최근의 필터 반영 사항이나 코드 수정분이 적용되지 않은 것처럼 보인다면, IDE의 MCP 서버 새로고침(Reload)을 누르거나 engram serve 프로세스를 재시작(Reboot)하십시오.",
             "inputSchema": { "type": "object", "required": ["issue_id"],
                 "properties": {
                     "issue_id": { "type": "integer" },

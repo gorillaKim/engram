@@ -31,7 +31,7 @@ mod tests {
         models::{
             sprint::{CreateSprintInput, UpdateSprintInput, SprintStatus},
             epic::CreateEpicInput,
-            issue::{CreateIssueInput, IssueFilter, IssueStatus},
+            issue::{CreateIssueInput, IssueFilter, IssueStatus, IssuePriority, UpdateIssueInput},
             task::{CreateTaskInput, TaskStatus},
             note::{CreateNoteInput, NoteType},
         },
@@ -214,5 +214,57 @@ mod tests {
         do_issue_update(&db, issue_id, None, Some("initial desc".to_string()), None, None).await.unwrap();
         let cleared = do_issue_update(&db, issue_id, None, Some("".to_string()), None, None).await.unwrap();
         assert!(cleared.description.as_deref().unwrap_or("").is_empty());
+    }
+
+    #[test]
+    fn test_tauri_issue_filter_deserialization_parity() {
+        let json_data = r#"{
+            "epic_id": 123,
+            "mission_id": 456,
+            "sprint_id": 789,
+            "backlog_only": true,
+            "project_key": "proj",
+            "status": "ready",
+            "statuses": ["working", "demo"],
+            "priority": "high",
+            "compact": true,
+            "limit": 10,
+            "offset": 0,
+            "updated_after": "2026-06-23T00:00:00Z"
+        }"#;
+
+        let filter: IssueFilter = serde_json::from_str(json_data).unwrap();
+        assert_eq!(filter.epic_id, Some(123));
+        assert_eq!(filter.mission_id, Some(456));
+        assert_eq!(filter.sprint_id, Some(789));
+        assert!(filter.backlog_only);
+        assert_eq!(filter.project_key.as_deref(), Some("proj"));
+        assert_eq!(filter.status, Some(IssueStatus::Ready));
+        assert_eq!(filter.statuses, Some(vec![IssueStatus::Working, IssueStatus::Demo]));
+        assert_eq!(filter.priority, Some(IssuePriority::High));
+        assert_eq!(filter.compact, Some(true));
+        assert_eq!(filter.limit, Some(10));
+        assert_eq!(filter.offset, Some(0));
+        assert_eq!(filter.updated_after.as_deref(), Some("2026-06-23T00:00:00Z"));
+    }
+
+    #[test]
+    fn test_tauri_update_issue_input_deserialization_parity() {
+        let json_data = r#"{
+            "title": "New Title",
+            "description": "New Description",
+            "goal": "New Goal",
+            "status": "working",
+            "priority": "critical",
+            "epic_id": 999
+        }"#;
+
+        let input: UpdateIssueInput = serde_json::from_str(json_data).unwrap();
+        assert_eq!(input.title.as_deref(), Some("New Title"));
+        assert_eq!(input.description.as_deref(), Some("New Description"));
+        assert_eq!(input.goal.as_deref(), Some("New Goal"));
+        assert_eq!(input.status, Some(IssueStatus::Working));
+        assert_eq!(input.priority, Some(IssuePriority::Critical));
+        assert_eq!(input.epic_id, Some(999));
     }
 }

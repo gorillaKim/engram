@@ -30,6 +30,9 @@ export function CommentSection({ issueId }: Props) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notes', issueId] });
+      qc.invalidateQueries({ queryKey: ['issue', issueId] });
+      qc.invalidateQueries({ queryKey: ['boardStatus'] });
+      qc.invalidateQueries({ queryKey: ['history', 'issue', issueId] });
       setText('');
     },
     onError: (err) => toast.error(`코멘트 추가 실패: ${err}`),

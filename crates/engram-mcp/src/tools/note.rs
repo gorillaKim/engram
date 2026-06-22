@@ -43,6 +43,10 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "issue_id": { "type": "integer" },
                     "task_id":  { "type": "integer" },
                     "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
+                    "note_types": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] }
+                    },
                     "include_resolved": { "type": "boolean" },
                     "include_detail": { "type": "boolean", "description": "detail 필드를 포함하여 조회할지 여부 (기본값 false)" },
                     "project_key": { "type": "string", "description": "특정 프로젝트의 노트만 필터" },
@@ -51,6 +55,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "offset":           { "type": "integer" },
                     "compact":          { "type": "boolean" },
                     "projection":       { "type": "array", "items": { "type": "string" } },
+                    "updated_after": { "type": "string", "description": "이 시각 이후에 업데이트/생성된 노트만 필터 (YYYY-MM-DD HH:MM:SS)" },
                     "mode": {
                         "type": "string",
                         "enum": ["normal", "compact", "agent"],
@@ -59,10 +64,15 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                 }
             }
         }),
-        json!({ "name": "note_get", "description": "노트 상세를 조회합니다.",
+        json!({ "name": "note_get", "description": "노트 상세를 일괄 또는 단건 조회합니다. id 에 단일 정수 또는 정수 배열을 넘길 수 있습니다.",
             "inputSchema": { "type": "object", "required": ["id"],
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": {
+                        "oneOf": [
+                            { "type": "integer" },
+                            { "type": "array", "items": { "type": "integer" } }
+                        ]
+                    },
                     "compact": { "type": "boolean", "description": "true인 경우 detail 필드를 NULL로 반환하여 대역폭 절약" }
                 }
             }
@@ -160,6 +170,18 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let issue_id = args["issue_id"].as_i64();
     let task_id  = args["task_id"].as_i64();
     let note_type = args["note_type"].as_str().and_then(parse_note_type);
+    let mut note_types = None;
+    if let Some(arr) = args["note_types"].as_array() {
+        let mut list = Vec::new();
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                if let Some(nt) = parse_note_type(s) {
+                    list.push(nt);
+                }
+            }
+        }
+        note_types = Some(list);
+    }
     let include_resolved = args["include_resolved"].as_bool().unwrap_or(false);
     let include_detail = args["include_detail"].as_bool().unwrap_or(false);
     let project_key = args["project_key"].as_str();
@@ -167,11 +189,13 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let limit = args["limit"].as_i64();
     let offset = args["offset"].as_i64();
     let mode = super::get_mode(args);
+    let updated_after = args["updated_after"].as_str().map(String::from);
 
     let response = db.note_list_mode(
         issue_id,
         task_id,
         note_type,
+        note_types,
         include_resolved,
         include_detail,
         project_key,
@@ -179,6 +203,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         limit,
         offset,
         mode,
+        updated_after,
     ).await?;
 
     let mut val = match response {
@@ -193,27 +218,37 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
     let compact = args["compact"].as_bool().unwrap_or(false);
-    let note = db.note_get(id, compact).await?;
     let mode = super::get_mode(args);
-    if matches!(mode, engram_core::models::OutputMode::Agent) {
-        let note_type_val = serde_json::to_value(&note.note_type).unwrap();
-        let note_type_str = note_type_val.as_str().unwrap_or("context");
-        let resolved_str = if note.resolved { "Yes" } else { "No" };
-        let mut fields = vec![
-            ("ID", note.id.to_string()),
-            ("Issue ID", note.issue_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string())),
-            ("Type", note_type_str.to_string()),
-            ("Summary", note.summary.clone()),
-            ("Resolved", resolved_str.to_string()),
-        ];
-        if let Some(ref detail) = note.detail {
-            fields.push(("Detail", detail.clone()));
+
+    if let Some(arr) = args["id"].as_array() {
+        let ids: Vec<i64> = arr.iter().filter_map(|v| v.as_i64()).collect();
+        let response = db.note_get_batch(&ids, compact, mode).await?;
+        match response {
+            engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+            engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
         }
-        Ok(Value::String(super::format::make_details("Note Specification", &fields)))
     } else {
-        Ok(serde_json::to_value(note).unwrap())
+        let id = args["id"].as_i64().ok_or_else(|| engram_core::Error::Validation("id required".into()))?;
+        let note = db.note_get(id, compact).await?;
+        if matches!(mode, engram_core::models::OutputMode::Agent) {
+            let note_type_val = serde_json::to_value(&note.note_type).unwrap();
+            let note_type_str = note_type_val.as_str().unwrap_or("context");
+            let resolved_str = if note.resolved { "Yes" } else { "No" };
+            let mut fields = vec![
+                ("ID", note.id.to_string()),
+                ("Issue ID", note.issue_id.map(|id| id.to_string()).unwrap_or_else(|| "-".to_string())),
+                ("Type", note_type_str.to_string()),
+                ("Summary", note.summary.clone()),
+                ("Resolved", resolved_str.to_string()),
+            ];
+            if let Some(ref detail) = note.detail {
+                fields.push(("Detail", detail.clone()));
+            }
+            Ok(Value::String(super::format::make_details("Note Specification", &fields)))
+        } else {
+            Ok(serde_json::to_value(note).unwrap())
+        }
     }
 }
 

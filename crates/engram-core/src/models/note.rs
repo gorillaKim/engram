@@ -27,6 +27,7 @@ pub struct Note {
     pub project_key: Option<String>,
     pub created_at: String,
     pub resolved_at: Option<String>,
+    pub updated_at: String,
 }
 
 fn default_note_scope() -> NoteScope { NoteScope::Issue }

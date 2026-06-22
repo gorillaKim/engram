@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Default)]
 pub struct Issue {
     pub id: i64,
     pub epic_id: i64,
@@ -26,14 +26,16 @@ pub struct Issue {
     #[sqlx(default)]
     pub task_count: Option<i64>,
     #[serde(default)]
+    #[sqlx(default)]
     #[sqlx(skip)]
     pub links: Option<Vec<IssueLink>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type, Default)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum IssueStatus {
+    #[default]
     Required,
     Ready,
     Working,
@@ -56,12 +58,13 @@ impl IssueStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type, Default)]
 #[sqlx(type_name = "TEXT", rename_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum IssuePriority {
     Critical,
     High,
+    #[default]
     Medium,
     Low,
 }
@@ -134,6 +137,7 @@ pub struct IssueFilter {
     pub compact: Option<bool>,
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    pub updated_after: Option<String>,
 }
 
 /// `stalled_issues` 응답 — 특정 상태에서 threshold 분 이상 머문 이슈.

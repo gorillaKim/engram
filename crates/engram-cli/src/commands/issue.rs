@@ -77,9 +77,12 @@ pub enum IssueCommand {
         #[arg(long)] offset: Option<i64>,
         #[arg(long)] compact: Option<bool>,
         #[arg(long, value_delimiter = ',')] projection: Option<Vec<String>>,
+        #[arg(long = "updated-after")] updated_after: Option<String>,
     },
     Get {
-        id: i64,
+        /// 조회할 이슈 ID 목록 (쉼표 구분 또는 복수 지정)
+        #[arg(value_delimiter = ',')]
+        ids: Vec<i64>,
         #[arg(long)] compact: bool,
         #[arg(long = "include-links")] include_links: bool,
     },
@@ -165,7 +168,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mod
         }
         IssueCommand::List {
             project, epic, mission, sprint, backlog_only, status, priority,
-            limit, offset, compact: _, projection,
+            limit, offset, compact: _, projection, updated_after,
         } => {
             let mut target_statuses = Vec::new();
             for s in status {
@@ -183,6 +186,7 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mod
                 compact: None,
                 limit,
                 offset,
+                updated_after,
             }, mode).await?;
  
             if let Some(ref fields) = projection {
@@ -193,14 +197,22 @@ pub async fn run(db: Db, args: IssueArgs, fmt: OutputFormat, agent_id: &str, mod
                 output::print_core_response(res, fmt)?;
             }
         }
-        IssueCommand::Get { id, compact, include_links } => {
+        IssueCommand::Get { ids, compact, include_links } => {
             let actual_mode = if compact {
                 engram_core::models::OutputMode::Compact
             } else {
                 mode
             };
-            let res = db.issue_get_mode(id, actual_mode, include_links).await?;
-            output::print_core_response(res, fmt)?;
+            if ids.is_empty() {
+                anyhow::bail!("조회할 이슈 ID를 지정해야 합니다.");
+            }
+            if ids.len() == 1 {
+                let res = db.issue_get_mode(ids[0], actual_mode, include_links).await?;
+                output::print_core_response(res, fmt)?;
+            } else {
+                let res = db.issue_get_batch(&ids, actual_mode, include_links).await?;
+                output::print_core_response(res, fmt)?;
+            }
         }
         IssueCommand::Ready { id } => {
             let issue = db.issue_update(id, UpdateIssueInput {

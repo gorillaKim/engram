@@ -404,7 +404,7 @@ impl Db {
             active_epic_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
         };
         let mut sql = String::from(
-            "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at \
+            "SELECT id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at \
              FROM notes WHERE resolved = 0 AND ("
         );
         sql.push_str("(scope = 'sprint' AND scope_target_id = ?)");
@@ -1147,46 +1147,36 @@ impl Db {
 
 fn format_agent_session_text(snapshot: &SessionSnapshot) -> String {
     let mut out = String::new();
-    out.push_str("=== ENGRAM SESSION CONTEXT ===\n");
-    out.push_str(&format!("- Sprint: {} (Active)\n", snapshot.sprint_name));
-    out.push_str(&format!("- Project: {}\n\n", snapshot.project_key.as_deref().unwrap_or("All")));
+    out.push_str("session context\n");
+    out.push_str(&format!("sprint: {} (active)\n", snapshot.sprint_name));
+    out.push_str(&format!("project: {}\n\n", snapshot.project_key.as_deref().unwrap_or("all")));
 
-    out.push_str("📋 [NEXT ACTION]\n");
+    out.push_str("next action:\n");
     if let Some(next) = &snapshot.next_action {
-        out.push_str(&format!("- Task: {} (ID: {})\n", next.task_title, next.task_id));
-        out.push_str(&format!("  Issue: #{} {}\n", next.issue_id, next.issue_title));
+        out.push_str(&format!("- task: {} (#{}) on issue #{} {}\n", next.task_title, next.task_id, next.issue_id, next.issue_title));
     } else {
-        out.push_str("- None\n");
+        out.push_str("- none\n");
     }
     out.push_str("\n");
 
-    out.push_str("⚠️ [ACTIVE CAVEATS]\n");
+    out.push_str("caveats:\n");
     if snapshot.active_caveats.is_empty() {
-        out.push_str("- None\n");
+        out.push_str("- none\n");
     } else {
         for caveat in &snapshot.active_caveats {
             let scope_str = serde_json::to_value(&caveat.scope).unwrap().as_str().unwrap_or("sprint").to_string();
-            let scope_cap = if !scope_str.is_empty() {
-                let mut c = scope_str.chars();
-                match c.next() {
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                    None => String::new(),
-                }
-            } else {
-                "Sprint".to_string()
-            };
-            out.push_str(&format!("- [{}] {} (ID: {})\n", scope_cap, caveat.summary, caveat.id));
+            out.push_str(&format!("- [{}] {} (#{})\n", scope_str, caveat.summary, caveat.id));
         }
     }
     out.push_str("\n");
 
-    out.push_str("🎯 [ACTIVE MISSIONS]\n");
+    out.push_str("missions:\n");
     if snapshot.active_missions.is_empty() {
-        out.push_str("- None\n");
+        out.push_str("- none\n");
     } else {
         for mission in &snapshot.active_missions {
             out.push_str(&format!(
-                "- Mission #{}: {} (Progress: {:.1}%)\n",
+                "- mission #{}: {} (progress: {:.1}%)\n",
                 mission.id,
                 mission.title,
                 mission.progress_rate * 100.0
@@ -1195,13 +1185,13 @@ fn format_agent_session_text(snapshot: &SessionSnapshot) -> String {
     }
     out.push_str("\n");
 
-    out.push_str("⚡ [ACTIVE EPICS & ISSUES]\n");
+    out.push_str("epics & issues:\n");
     if snapshot.active_epics.is_empty() {
-        out.push_str("- None\n");
+        out.push_str("- none\n");
     } else {
         for epic_snap in &snapshot.active_epics {
             out.push_str(&format!(
-                "- Epic #{}: {} (Progress: {}/{} Done)\n",
+                "- epic #{}: {} ({}/{} done)\n",
                 epic_snap.epic.id,
                 epic_snap.epic.title,
                 epic_snap.progress.done,

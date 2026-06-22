@@ -11,6 +11,33 @@ Agent Issue Management System — Sprint / Epic / Issue / Task / Note 를 SQLite
 - CLI ↔ MCP 패리티 매트릭스: [`docs/cli-mcp-parity.md`](docs/cli-mcp-parity.md)
 - 플러그인 setup 가이드: [`docs/plugin-setup.md`](docs/plugin-setup.md)
 
+## Architecture: CLI & Desktop App Relationship
+
+> [!NOTE]
+> **중요 (데스크톱 앱과 CLI의 관계)**: engram CLI와 engram-desktop 앱은 **동시에 패키징되거나 한꺼번에 설치되지 않는 독립된 바이너리**입니다.
+> 
+> - 데스크톱 앱을 설치했다고 해서 터미널에서 `engram` 명령어가 자동으로 구성되지는 않습니다.
+> - 두 바이너리는 동일한 중앙 데이터베이스 파일인 `~/.engram/engram.db`를 공유하도록 설계되어 있습니다. 따라서 각각 독립적으로 실행하더라도 동일한 데이터(스프린트, 에픽, 이슈 등)를 참조하고 조작합니다.
+> - 터미널에서 `engram` CLI를 사용하려면, 아래 **Installation** 가이드를 참고하여 CLI를 별도로 설치해 주시기 바랍니다.
+
+### CLI/GUI 독립 패키징 관례 검증 (일반성 검증)
+- GUI 데스크톱 애플리케이션과 CLI 도구를 분리하여 독립 패키징 및 제공하는 것은 **매우 보편적이고 일반적인 아키텍처 패턴**입니다 (예: Docker Desktop ↔ Docker CLI, GitKraken ↔ Git CLI, VS Code ↔ `code` CLI 등).
+- CLI를 자주 쓰지 않는 GUI 전용 사용자의 다운로드 및 설치 용량 부담을 덜고, 각 도구의 릴리즈 주기 및 업데이트 배포(Homebrew, cargo install 등)를 독립적이고 효율적으로 제어할 수 있는 표준적인 확장성 설계로 검증되었습니다.
+
+### 데스크톱 앱 & CLI 동시 활용 시나리오 (호출 예시)
+1. **데스크톱 앱 실행 중인 상태에서 CLI 데이터 추가/조회**:
+   사용자가 데스크톱 앱을 열어두고 터미널에서 아래와 같이 CLI 명령어를 실행하여 이슈를 생성하면, 데스크톱 UI의 칸반보드에 즉시 반영됩니다.
+   ```bash
+   # CLI를 통해 1번 에픽에 새 이슈 생성
+   engram issue create --epic 1 --title "터미널에서 생성한 이슈"
+   
+   # CLI로 현재 프로젝트의 칸반 보드 현황 확인
+   engram board status --project myproj
+   ```
+2. **에이전트가 CLI/MCP로 작업한 결과를 데스크톱 앱으로 실시간 시각화**:
+   개발을 돕는 AI 에이전트가 MCP 서버나 CLI fallback 호출을 통해 세션을 갱신하거나 작업을 마무리하면, 사용자는 데스크톱 앱에서 에이전트의 실시간 진행 현황(working, demo 상태 등)을 시각적으로 확인하고 직접 finished로 드래그하여 수락할 수 있습니다.
+
+
 ## Installation
 
 ### 1차 권장 — `cargo install` (Rust toolchain 보유 시)

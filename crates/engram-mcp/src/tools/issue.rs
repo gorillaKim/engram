@@ -27,10 +27,15 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
-        json!({ "name": "issue_get", "description": "이슈 상세를 조회합니다.",
+        json!({ "name": "issue_get", "description": "이슈 상세를 일괄 또는 단건 조회합니다. id 에 단일 정수 또는 정수 배열을 넘길 수 있습니다.",
             "inputSchema": { "type": "object", "required": ["id"],
                 "properties": {
-                    "id": { "type": "integer" },
+                    "id": {
+                        "oneOf": [
+                            { "type": "integer" },
+                            { "type": "array", "items": { "type": "integer" } }
+                        ]
+                    },
                     "include_tasks": { "type": "boolean" },
                     "include_notes": { "type": "boolean" },
                     "include_links": { "type": "boolean" },
@@ -62,6 +67,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "offset":       { "type": "integer" },
                     "compact":      { "type": "boolean" },
                     "projection":   { "type": "array", "items": { "type": "string" } },
+                    "updated_after": { "type": "string", "description": "이 시각 이후에 업데이트된 이슈만 필터 (YYYY-MM-DD HH:MM:SS)" },
                     "mode": {
                         "type": "string",
                         "enum": ["normal", "compact", "agent"],
@@ -249,13 +255,23 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64().unwrap_or(0);
     let include_links = args["include_links"].as_bool().unwrap_or(false);
     let mode = super::get_mode(args);
-    let response = db.issue_get_mode(id, mode, include_links).await?;
-    match response {
-        engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
-        engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+
+    if let Some(arr) = args["id"].as_array() {
+        let ids: Vec<i64> = arr.iter().filter_map(|v| v.as_i64()).collect();
+        let response = db.issue_get_batch(&ids, mode, include_links).await?;
+        match response {
+            engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+            engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+        }
+    } else {
+        let id = args["id"].as_i64().unwrap_or(0);
+        let response = db.issue_get_mode(id, mode, include_links).await?;
+        match response {
+            engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
+            engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
+        }
     }
 }
 
@@ -291,6 +307,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         compact:      Some(matches!(mode, engram_core::models::OutputMode::Compact) || matches!(mode, engram_core::models::OutputMode::Agent)),
         limit:        args["limit"].as_i64(),
         offset:       args["offset"].as_i64(),
+        updated_after: args["updated_after"].as_str().map(String::from),
     };
     let response = db.issue_list_mode(filter, mode).await?;
 

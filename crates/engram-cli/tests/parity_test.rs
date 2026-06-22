@@ -217,7 +217,7 @@ async fn test_parity_note_list_and_get() {
     })).await.unwrap();
 
     let cli = normalize(serde_json::to_value(
-        db_a.note_list(Some(iid), None, None, false, false, None, None, None, None, None).await.unwrap()
+        db_a.note_list(Some(iid), None, None, None, false, false, None, None, None, None, None, None).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_list",
         &json!({"issue_id": iid_b, "mode": "normal"})).await.unwrap());
@@ -871,7 +871,7 @@ async fn test_task_test_check_uncheck_history_recorded() {
 
     // history 기록 확인
     let hist = db.history_list(
-        engram_core::models::history::EntityType::Task, tt.id
+        engram_core::models::history::EntityType::Task, tt.task_id
     ).await.unwrap();
     assert!(!hist.is_empty(), "task_test_check 후 history 기록이 있어야 함");
     let last = &hist[hist.len() - 1];
@@ -885,7 +885,7 @@ async fn test_task_test_check_uncheck_history_recorded() {
         .expect("task_test_uncheck should succeed");
 
     let hist2 = db.history_list(
-        engram_core::models::history::EntityType::Task, tt.id
+        engram_core::models::history::EntityType::Task, tt.task_id
     ).await.unwrap();
     assert_eq!(hist2.len(), 2, "check + uncheck 각각 1건씩 총 2건");
     let last2 = &hist2[hist2.len() - 1];

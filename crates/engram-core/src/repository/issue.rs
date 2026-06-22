@@ -27,6 +27,10 @@ impl Db {
         let priority = input.priority.unwrap_or(IssuePriority::Medium);
         let pval = serde_json::to_value(&priority).unwrap().as_str().unwrap().to_string();
 
+        let title_nfc = crate::normalize_nfc(&input.title);
+        let desc_nfc = crate::normalize_nfc_opt(input.description);
+        let goal_nfc = crate::normalize_nfc_opt(input.goal);
+
         // epic 존재 확인 + Sprint/Mission derive 는 RETURNING 절의 JOIN 으로 처리.
         sqlx::query_as::<_, Issue>(
             "INSERT INTO issues (epic_id, title, description, goal, priority) VALUES (?, ?, ?, ?, ?) \
@@ -36,9 +40,9 @@ impl Db {
                        title, description, goal, status, priority, assigned_agent, created_at, updated_at",
         )
         .bind(input.epic_id)
-        .bind(&input.title)
-        .bind(&input.description)
-        .bind(&input.goal)
+        .bind(&title_nfc)
+        .bind(&desc_nfc)
+        .bind(&goal_nfc)
         .bind(&pval)
         .fetch_one(&self.pool)
         .await
@@ -138,6 +142,9 @@ impl Db {
         if filter.project_key.is_some() {
             where_clause.push_str(" AND e.project_key = ?");
         }
+        if filter.updated_after.is_some() {
+            where_clause.push_str(" AND i.updated_at > ?");
+        }
 
         let mut target_statuses = Vec::new();
         if let Some(s) = filter.status {
@@ -188,6 +195,10 @@ impl Db {
         if let Some(p) = filter.project_key {
             count_q = count_q.bind(p.clone());
             q = q.bind(p);
+        }
+        if let Some(ua) = filter.updated_after {
+            count_q = count_q.bind(ua.clone());
+            q = q.bind(ua);
         }
         for s in target_statuses {
             let sv = serde_json::to_value(&s).unwrap().as_str().unwrap().to_string();
@@ -264,38 +275,41 @@ impl Db {
             }).await;
         }
         if let Some(ref title) = input.title {
+            let title_nfc = crate::normalize_nfc(title);
             sqlx::query("UPDATE issues SET title = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(title).bind(id).execute(&self.pool).await?;
+                .bind(&title_nfc).bind(id).execute(&self.pool).await?;
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
                 entity_id: id,
                 field: "title".to_string(),
                 old_value: None,
-                new_value: Some(title.clone()),
+                new_value: Some(title_nfc),
                 changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref desc) = input.description {
+            let desc_nfc = crate::normalize_nfc(desc);
             sqlx::query("UPDATE issues SET description = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(desc).bind(id).execute(&self.pool).await?;
+                .bind(&desc_nfc).bind(id).execute(&self.pool).await?;
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
                 entity_id: id,
                 field: "description".to_string(),
                 old_value: None,
-                new_value: Some(desc.clone()),
+                new_value: Some(desc_nfc),
                 changed_by: changed_by.to_string(),
             }).await;
         }
         if let Some(ref goal) = input.goal {
+            let goal_nfc = crate::normalize_nfc(goal);
             sqlx::query("UPDATE issues SET goal = ?, updated_at = datetime('now') WHERE id = ?")
-                .bind(goal).bind(id).execute(&self.pool).await?;
+                .bind(&goal_nfc).bind(id).execute(&self.pool).await?;
             let _ = self.history_record(CreateHistoryInput {
                 entity_type: EntityType::Issue,
                 entity_id: id,
                 field: "goal".to_string(),
                 old_value: None,
-                new_value: Some(goal.clone()),
+                new_value: Some(goal_nfc),
                 changed_by: changed_by.to_string(),
             }).await;
         }
@@ -758,40 +772,72 @@ impl Db {
 
         Ok(BulkUpdateResult { succeeded, failed })
     }
+
+    pub async fn issue_get_batch(&self, ids: &[i64], mode: OutputMode, include_links: bool) -> Result<crate::models::CoreResponse<Vec<Issue>>> {
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
+        let cols = issue_select_columns(compact);
+        if ids.is_empty() {
+            return Ok(if matches!(mode, OutputMode::Agent) {
+                crate::models::CoreResponse::Text("=== ISSUE BATCH ===\nNo issues specified.\n====================".to_string())
+            } else {
+                crate::models::CoreResponse::Json(Vec::new())
+            });
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT {cols} FROM issues i JOIN epics e ON i.epic_id = e.id WHERE i.id IN ({placeholders})"
+        );
+        let mut q = sqlx::query_as::<_, Issue>(&sql);
+        for id in ids { q = q.bind(id); }
+        let mut issues = q.fetch_all(&self.pool).await?;
+
+        if include_links {
+            for issue in &mut issues {
+                let links = self.issue_links_for(issue.id).await?;
+                issue.links = Some(links);
+            }
+        }
+
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== ISSUE BATCH ===\n");
+            for issue in &issues {
+                out.push_str(&format_agent_issue_text(issue));
+                out.push_str("\n\n");
+            }
+            out.push_str("====================");
+            Ok(crate::models::CoreResponse::Text(out))
+        } else {
+            Ok(crate::models::CoreResponse::Json(issues))
+        }
+    }
 }
 
 fn format_agent_issue_text(issue: &Issue) -> String {
     let mut out = String::new();
-    out.push_str("=== ISSUE SPECIFICATION ===\n");
-    out.push_str(&format!("ID: #{}\n", issue.id));
-    out.push_str(&format!("Title: {}\n", issue.title));
-    let status_val = serde_json::to_value(&issue.status).unwrap();
-    let status_str = status_val.as_str().unwrap_or("unknown");
-    out.push_str(&format!("Status: {}\n", status_str));
-    let priority_val = serde_json::to_value(&issue.priority).unwrap();
-    let priority_str = priority_val.as_str().unwrap_or("unknown");
-    out.push_str(&format!("Priority: {}\n", priority_str));
-    out.push_str(&format!("Epic ID: {}\n", issue.epic_id));
-    out.push_str(&format!("Mission ID: {}\n", issue.mission_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
-    out.push_str(&format!("Sprint ID: {}\n", issue.sprint_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string())));
-    out.push_str(&format!("Assigned Agent: {}\n", issue.assigned_agent.as_deref().unwrap_or("None")));
-    out.push_str(&format!("Created At: {}\n", issue.created_at));
-    out.push_str(&format!("Updated At: {}\n", issue.updated_at));
-    out.push_str("\n[Goal]\n");
-    out.push_str(issue.goal.as_deref().unwrap_or("None"));
-    out.push_str("\n\n[Description]\n");
-    out.push_str(issue.description.as_deref().unwrap_or("None"));
+    out.push_str(&format!("issue #{}\n", issue.id));
+    out.push_str(&format!("title: {}\n", issue.title));
+    let status_str = serde_json::to_value(&issue.status).unwrap().as_str().unwrap_or("unknown").to_string();
+    out.push_str(&format!("status: {}\n", status_str));
+    let priority_str = serde_json::to_value(&issue.priority).unwrap().as_str().unwrap_or("unknown").to_string();
+    out.push_str(&format!("priority: {}\n", priority_str));
+    out.push_str(&format!("epic: {}\n", issue.epic_id));
+    if let Some(mid) = issue.mission_id { out.push_str(&format!("mission: {}\n", mid)); }
+    if let Some(sid) = issue.sprint_id { out.push_str(&format!("sprint: {}\n", sid)); }
+    if let Some(ref agent) = issue.assigned_agent { out.push_str(&format!("assignee: {}\n", agent)); }
+    out.push_str(&format!("created: {}\n", issue.created_at));
+    out.push_str(&format!("updated: {}\n", issue.updated_at));
+    if let Some(ref goal) = issue.goal { out.push_str(&format!("goal: {}\n", goal)); }
+    if let Some(ref desc) = issue.description { out.push_str(&format!("desc: {}\n", desc)); }
     if let Some(ref links) = issue.links {
         if !links.is_empty() {
-            out.push_str("\n\n[Links]\n");
+            out.push_str("links:\n");
             for link in links {
-                let lt_val = serde_json::to_value(&link.link_type).unwrap();
-                let lt_str = lt_val.as_str().unwrap_or("unknown");
-                out.push_str(&format!("- Link #{} ({}): #{} -> #{}\n", link.id, lt_str, link.source_id, link.target_id));
+                let lt_str = serde_json::to_value(&link.link_type).unwrap().as_str().unwrap_or("unknown").to_string();
+                out.push_str(&format!("  - link #{} ({}): #{} -> #{}\n", link.id, lt_str, link.source_id, link.target_id));
             }
         }
     }
-    out.push_str("\n==========================");
     out
 }
 

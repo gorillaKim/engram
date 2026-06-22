@@ -60,7 +60,7 @@ impl Db {
         // RETURNING * — WAL 가시성 회피.
         sqlx::query_as::<_, Note>(
             "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author, agent_id, scope, scope_target_id, project_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             RETURNING id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at",
+             RETURNING id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at",
         )
         .bind(issue_id_db)
         .bind(input.task_id)
@@ -79,9 +79,9 @@ impl Db {
 
     pub async fn note_get(&self, id: i64, compact: bool) -> Result<Note> {
         let select_fields = if compact {
-            "id, issue_id, task_id, note_type, summary, NULL AS detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at"
+            "id, issue_id, task_id, note_type, summary, NULL AS detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at"
         } else {
-            "id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at"
+            "id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at"
         };
         sqlx::query_as::<_, Note>(&format!(
             "SELECT {} FROM notes WHERE id = ?", select_fields
@@ -132,6 +132,7 @@ impl Db {
         issue_id: Option<i64>,
         task_id: Option<i64>,
         note_type: Option<NoteType>,
+        note_types: Option<Vec<NoteType>>,
         include_resolved: bool,
         include_detail: bool,
         project_key: Option<&str>,
@@ -139,6 +140,7 @@ impl Db {
         limit: Option<i64>,
         offset: Option<i64>,
         compact: Option<bool>,
+        updated_after: Option<String>,
     ) -> Result<PaginatedResponse<Note>> {
         let select_fields = if include_detail {
             "n.detail"
@@ -156,12 +158,21 @@ impl Db {
         if issue_id.is_some()  { from_where.push_str(" AND n.issue_id = ?"); }
         if task_id.is_some()   { from_where.push_str(" AND n.task_id = ?"); }
         if note_type.is_some() { from_where.push_str(" AND n.note_type = ?"); }
+        if let Some(ref types) = note_types {
+            if !types.is_empty() {
+                let placeholders = types.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+                from_where.push_str(&format!(" AND n.note_type IN ({})", placeholders));
+            }
+        }
         if !include_resolved   { from_where.push_str(" AND n.resolved = 0"); }
         if project_key.is_some() {
             from_where.push_str(" AND COALESCE(n.project_key, ie.project_key, ee.project_key) = ?");
         }
         if sprint_id.is_some() {
             from_where.push_str(" AND COALESCE(CASE WHEN n.scope = 'sprint' THEN n.scope_target_id ELSE NULL END, ie.sprint_id, ee.sprint_id) = ?");
+        }
+        if updated_after.is_some() {
+            from_where.push_str(" AND n.updated_at > ?");
         }
 
         // 1) total count
@@ -171,7 +182,7 @@ impl Db {
         // 2) items
         let (lim, off) = crate::repository::apply_pagination(limit, offset);
         let sql = format!(
-            "SELECT n.id, n.issue_id, n.task_id, n.note_type, n.summary, {}, n.author, n.agent_id, n.resolved, n.scope, n.scope_target_id, n.project_key, n.created_at, n.resolved_at
+            "SELECT n.id, n.issue_id, n.task_id, n.note_type, n.summary, {}, n.author, n.agent_id, n.resolved, n.scope, n.scope_target_id, n.project_key, n.created_at, n.resolved_at, n.updated_at
              {from_where} ORDER BY n.created_at DESC LIMIT ? OFFSET ?",
             select_fields
         );
@@ -191,6 +202,13 @@ impl Db {
             count_q = count_q.bind(ntv.clone());
             q = q.bind(ntv);
         }
+        if let Some(ref types) = note_types {
+            for nt in types {
+                let ntv = serde_json::to_value(nt).unwrap().as_str().unwrap().to_string();
+                count_q = count_q.bind(ntv.clone());
+                q = q.bind(ntv);
+            }
+        }
         if let Some(pk) = project_key {
             let pks = pk.to_string();
             count_q = count_q.bind(pks.clone());
@@ -199,6 +217,11 @@ impl Db {
         if let Some(sid) = sprint_id {
             count_q = count_q.bind(sid);
             q = q.bind(sid);
+        }
+        if let Some(ref ua) = updated_after {
+            let uas = ua.to_string();
+            count_q = count_q.bind(uas.clone());
+            q = q.bind(uas);
         }
 
         // q 에만 pagination 바인딩
@@ -216,6 +239,7 @@ impl Db {
         issue_id: Option<i64>,
         task_id: Option<i64>,
         note_type: Option<NoteType>,
+        note_types: Option<Vec<NoteType>>,
         include_resolved: bool,
         include_detail: bool,
         project_key: Option<&str>,
@@ -223,6 +247,7 @@ impl Db {
         limit: Option<i64>,
         offset: Option<i64>,
         mode: OutputMode,
+        updated_after: Option<String>,
     ) -> Result<CoreResponse<PaginatedResponse<Note>>> {
         let is_agent = matches!(mode, OutputMode::Agent);
         let is_compact = matches!(mode, OutputMode::Compact) || is_agent;
@@ -230,6 +255,7 @@ impl Db {
             issue_id,
             task_id,
             note_type,
+            note_types,
             include_resolved,
             if is_compact { false } else { include_detail },
             project_key,
@@ -237,6 +263,7 @@ impl Db {
             limit,
             offset,
             if is_compact { Some(true) } else { None },
+            updated_after,
         ).await?;
 
         if is_agent {
@@ -264,7 +291,7 @@ impl Db {
     }
 
     pub async fn note_resolve(&self, id: i64, changed_by: &str) -> Result<Note> {
-        sqlx::query("UPDATE notes SET resolved = 1, resolved_at = datetime('now') WHERE id = ?")
+        sqlx::query("UPDATE notes SET resolved = 1, resolved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
             .await?;
@@ -341,7 +368,7 @@ impl Db {
 
             let note = sqlx::query_as::<_, Note>(
                 "INSERT INTO notes (issue_id, task_id, note_type, summary, detail, author, agent_id, scope, scope_target_id, project_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 RETURNING id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at",
+                 RETURNING id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at",
             )
             .bind(issue_id_db)
             .bind(input.task_id)
@@ -361,4 +388,56 @@ impl Db {
         tx.commit().await?;
         Ok(notes)
     }
+
+    pub async fn note_get_batch(&self, ids: &[i64], compact: bool, mode: OutputMode) -> Result<CoreResponse<Vec<Note>>> {
+        let select_fields = if compact {
+            "id, issue_id, task_id, note_type, summary, NULL AS detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at"
+        } else {
+            "id, issue_id, task_id, note_type, summary, detail, author, agent_id, resolved, scope, scope_target_id, project_key, created_at, resolved_at, updated_at"
+        };
+        if ids.is_empty() {
+            return Ok(if matches!(mode, OutputMode::Agent) {
+                CoreResponse::Text("=== NOTE BATCH ===\nNo notes specified.\n====================".to_string())
+            } else {
+                CoreResponse::Json(Vec::new())
+            });
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT {select_fields} FROM notes WHERE id IN ({placeholders})"
+        );
+        let mut q = sqlx::query_as::<_, Note>(&sql);
+        for id in ids { q = q.bind(id); }
+        let notes = q.fetch_all(&self.pool).await?;
+
+        if matches!(mode, OutputMode::Agent) {
+            let mut out = String::new();
+            out.push_str("=== NOTE BATCH ===\n");
+            for note in &notes {
+                out.push_str(&format_agent_note_text(note));
+                out.push_str("\n\n");
+            }
+            out.push_str("====================");
+            Ok(CoreResponse::Text(out))
+        } else {
+            Ok(CoreResponse::Json(notes))
+        }
+    }
+}
+
+fn format_agent_note_text(note: &Note) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("note #{}\n", note.id));
+    if let Some(iid) = note.issue_id { out.push_str(&format!("issue: {}\n", iid)); }
+    if let Some(tid) = note.task_id { out.push_str(&format!("task: {}\n", tid)); }
+    let note_type_str = serde_json::to_value(&note.note_type).unwrap().as_str().unwrap_or("context").to_string();
+    out.push_str(&format!("type: {}\n", note_type_str));
+    out.push_str(&format!("resolved: {}\n", note.resolved));
+    out.push_str(&format!("created: {}\n", note.created_at));
+    out.push_str(&format!("updated: {}\n", note.updated_at));
+    out.push_str(&format!("summary: {}\n", note.summary));
+    if let Some(ref detail) = note.detail {
+        out.push_str(&format!("detail: {}\n", detail));
+    }
+    out
 }

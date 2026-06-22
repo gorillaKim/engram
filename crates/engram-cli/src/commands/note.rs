@@ -66,6 +66,7 @@ pub enum NoteCommand {
         #[arg(long)] issue: Option<i64>,
         #[arg(long)] task: Option<i64>,
         #[arg(long, value_name = "TYPE")] r#type: Option<String>,
+        #[arg(long = "types", value_delimiter = ',')] r#types: Option<Vec<String>>,
         #[arg(long = "include-resolved")] include_resolved: bool,
         #[arg(long = "include-detail")] include_detail: bool,
         #[arg(long = "project-key")] project_key: Option<String>,
@@ -74,11 +75,14 @@ pub enum NoteCommand {
         #[arg(long)] offset: Option<i64>,
         #[arg(long)] compact: bool,
         #[arg(long, value_delimiter = ',')] projection: Option<Vec<String>>,
+        #[arg(long = "updated-after")] updated_after: Option<String>,
     },
     Resolve { id: i64 },
     /// 노트 상세 조회 (detail 포함)
     Get {
-        id: i64,
+        /// 조회할 노트 ID 목록 (쉼표 구분 또는 복수 지정)
+        #[arg(value_delimiter = ',')]
+        ids: Vec<i64>,
         #[arg(long)] compact: bool,
     },
 }
@@ -104,14 +108,24 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
             output::print_value(&note, fmt)?;
         }
         NoteCommand::List {
-            issue, task, r#type, include_resolved, include_detail,
-            project_key, sprint_id, limit, offset, compact: _, projection,
+            issue, task, r#type, r#types, include_resolved, include_detail,
+            project_key, sprint_id, limit, offset, compact: _, projection, updated_after,
         } => {
             let nt = r#type.as_deref().map(parse_note_type_filter).transpose()?;
+            let nts = if let Some(ref list) = r#types {
+                let mut parsed = Vec::new();
+                for s in list {
+                    parsed.push(parse_note_type_filter(s)?);
+                }
+                Some(parsed)
+            } else {
+                None
+            };
             let res = db.note_list_mode(
                 issue,
                 task,
                 nt,
+                nts,
                 include_resolved,
                 include_detail,
                 project_key.as_deref(),
@@ -119,6 +133,7 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
                 limit,
                 offset,
                 mode,
+                updated_after,
             ).await?;
  
             if let Some(ref fields) = projection {
@@ -136,8 +151,16 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
                 fmt,
             )?;
         }
-        NoteCommand::Get { id, compact } => {
-            output::print_value(&db.note_get(id, compact).await?, fmt)?;
+        NoteCommand::Get { ids, compact } => {
+            if ids.is_empty() {
+                anyhow::bail!("조회할 노트 ID를 지정해야 합니다.");
+            }
+            if ids.len() == 1 {
+                output::print_value(&db.note_get(ids[0], compact).await?, fmt)?;
+            } else {
+                let res = db.note_get_batch(&ids, compact, mode).await?;
+                output::print_core_response(res, fmt)?;
+            }
         }
     }
     Ok(())
@@ -153,9 +176,9 @@ mod tests {
 
     #[test]
     fn test_parse_get() {
-        let w = Wrap::try_parse_from(["x", "get", "42"]).unwrap();
+        let w = Wrap::try_parse_from(["x", "get", "42,43"]).unwrap();
         match w.cmd {
-            NoteCommand::Get { id, .. } => assert_eq!(id, 42),
+            NoteCommand::Get { ids, .. } => assert_eq!(ids, vec![42, 43]),
             _ => panic!("Get 변형이 파싱되어야 함"),
         }
     }

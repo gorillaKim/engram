@@ -27,3 +27,15 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub fn normalize_nfc(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    s.nfc().collect()
+}
+
+pub fn normalize_nfc_opt(s: Option<String>) -> Option<String> {
+    use unicode_normalization::UnicodeNormalization;
+    s.map(|val| val.nfc().collect())
+}
+// force compile to include 0012 migration
+
