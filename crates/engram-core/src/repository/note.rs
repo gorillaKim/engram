@@ -137,6 +137,8 @@ impl Db {
         include_detail: bool,
         project_key: Option<&str>,
         sprint_id: Option<i64>,
+        epic_id: Option<i64>,
+        rollup: Option<bool>,
         limit: Option<i64>,
         offset: Option<i64>,
         compact: Option<bool>,
@@ -170,6 +172,13 @@ impl Db {
         }
         if sprint_id.is_some() {
             from_where.push_str(" AND COALESCE(CASE WHEN n.scope = 'sprint' THEN n.scope_target_id ELSE NULL END, ie.sprint_id, ee.sprint_id) = ?");
+        }
+        if let Some(eid) = epic_id {
+            if rollup.unwrap_or(false) {
+                from_where.push_str(" AND ( (n.scope = 'epic' AND n.scope_target_id = ?) OR (n.issue_id IN (SELECT id FROM issues WHERE epic_id = ?)) OR (n.task_id IN (SELECT id FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?))) )");
+            } else {
+                from_where.push_str(" AND n.scope = 'epic' AND n.scope_target_id = ?");
+            }
         }
         if updated_after.is_some() {
             from_where.push_str(" AND n.updated_at > ?");
@@ -218,6 +227,15 @@ impl Db {
             count_q = count_q.bind(sid);
             q = q.bind(sid);
         }
+        if let Some(eid) = epic_id {
+            if rollup.unwrap_or(false) {
+                count_q = count_q.bind(eid).bind(eid).bind(eid);
+                q = q.bind(eid).bind(eid).bind(eid);
+            } else {
+                count_q = count_q.bind(eid);
+                q = q.bind(eid);
+            }
+        }
         if let Some(ref ua) = updated_after {
             let uas = ua.to_string();
             count_q = count_q.bind(uas.clone());
@@ -244,6 +262,8 @@ impl Db {
         include_detail: bool,
         project_key: Option<&str>,
         sprint_id: Option<i64>,
+        epic_id: Option<i64>,
+        rollup: Option<bool>,
         limit: Option<i64>,
         offset: Option<i64>,
         mode: OutputMode,
@@ -260,6 +280,8 @@ impl Db {
             if is_compact { false } else { include_detail },
             project_key,
             sprint_id,
+            epic_id,
+            rollup,
             limit,
             offset,
             if is_compact { Some(true) } else { None },

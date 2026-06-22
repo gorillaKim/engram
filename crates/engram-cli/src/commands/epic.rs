@@ -54,6 +54,10 @@ pub enum EpicCommand {
     Delete {
         id: i64,
     },
+    /// 에픽 하위의 모든 demo 상태 이슈를 finished로 일괄 완료하고 에픽도 Completed 상태로 전이 (사용자 전용)
+    Finish {
+        id: i64,
+    },
 }
 
 pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str, mode: engram_core::models::OutputMode) -> anyhow::Result<()> {
@@ -98,6 +102,14 @@ pub async fn run(db: Db, args: EpicArgs, fmt: OutputFormat, agent_id: &str, mode
                 fmt,
             )?;
         }
+        EpicCommand::Finish { id } => {
+            db.epic_finish(id, agent_id).await?;
+            if matches!(mode, engram_core::models::OutputMode::Agent) {
+                output::print_core_response(engram_core::models::CoreResponse::<serde_json::Value>::Text(format!("Epic #{} finished.", id)), fmt)?;
+            } else {
+                output::print_value(&serde_json::json!({ "id": id, "status": "ok" }), fmt)?;
+            }
+        }
     }
     Ok(())
 }
@@ -134,6 +146,15 @@ mod tests {
         match w.cmd {
             EpicCommand::Delete { id } => assert_eq!(id, 12),
             _ => panic!("Delete 변형이 파싱되어야 함"),
+        }
+    }
+
+    #[test]
+    fn test_parse_finish() {
+        let w = Wrap::try_parse_from(["x", "finish", "12"]).unwrap();
+        match w.cmd {
+            EpicCommand::Finish { id } => assert_eq!(id, 12),
+            _ => panic!("Finish 변형이 파싱되어야 함"),
         }
     }
 

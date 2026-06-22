@@ -24,7 +24,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                 "properties": {
                     "issue_id":  { "type": "integer", "description": "scope='issue'|'task' 일 때 필수." },
                     "task_id":   { "type": "integer" },
-                    "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
+                    "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment","evaluation"] },
                     "summary":   { "type": "string", "description": "한 줄 요약 (session_restore에서 항상 표시)" },
                     "detail":    { "type": "string", "description": "상세 내용 (길어도 됨, note_get으로만 로드)" },
                     "omit_detail": { "type": "boolean", "description": "true인 경우 반환값에서 detail 필드를 생략하여 대역폭 절약" },
@@ -42,15 +42,17 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                 "properties": {
                     "issue_id": { "type": "integer" },
                     "task_id":  { "type": "integer" },
-                    "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
+                    "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment","evaluation"] },
                     "note_types": {
                         "type": "array",
-                        "items": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] }
+                        "items": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment","evaluation"] }
                     },
                     "include_resolved": { "type": "boolean" },
                     "include_detail": { "type": "boolean", "description": "detail 필드를 포함하여 조회할지 여부 (기본값 false)" },
                     "project_key": { "type": "string", "description": "특정 프로젝트의 노트만 필터" },
                     "sprint_id": { "type": "integer", "description": "특정 스프린트의 노트만 필터" },
+                    "epic_id": { "type": "integer", "description": "특정 에픽의 노트만 필터" },
+                    "rollup": { "type": "boolean", "description": "true일 경우 에픽 하위 이슈 및 태스크의 노트를 포함하여 조회 (기본값 false)" },
                     "limit":            { "type": "integer" },
                     "offset":           { "type": "integer" },
                     "compact":          { "type": "boolean" },
@@ -98,7 +100,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                             "properties": {
                                 "issue_id":  { "type": "integer" },
                                 "task_id":   { "type": "integer" },
-                                "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment"] },
+                                "note_type": { "type": "string", "enum": ["caveat","decision","discovery","blocker_detail","context","reference","comment","evaluation"] },
                                 "summary":   { "type": "string" },
                                 "detail":    { "type": "string" },
                                 "author":    { "type": "string" },
@@ -124,6 +126,7 @@ fn parse_note_type(s: &str) -> Option<NoteType> {
         "context"        => Some(NoteType::Context),
         "reference"      => Some(NoteType::Reference),
         "comment"        => Some(NoteType::Comment),
+        "evaluation"     => Some(NoteType::Evaluation),
         _ => None,
     }
 }
@@ -186,6 +189,8 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let include_detail = args["include_detail"].as_bool().unwrap_or(false);
     let project_key = args["project_key"].as_str();
     let sprint_id = args["sprint_id"].as_i64();
+    let epic_id = args["epic_id"].as_i64();
+    let rollup = args["rollup"].as_bool();
     let limit = args["limit"].as_i64();
     let offset = args["offset"].as_i64();
     let mode = super::get_mode(args);
@@ -200,6 +205,8 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         include_detail,
         project_key,
         sprint_id,
+        epic_id,
+        rollup,
         limit,
         offset,
         mode,
@@ -278,7 +285,7 @@ pub async fn add_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         let note_type = v["note_type"].as_str()
             .and_then(parse_note_type)
             .ok_or_else(|| engram_core::Error::Validation(
-                format!("invalid note_type: {:?}. 허용값: caveat, decision, discovery, blocker_detail, context, reference, comment", v["note_type"])
+                format!("invalid note_type: {:?}. 허용값: caveat, decision, discovery, blocker_detail, context, reference, comment, evaluation", v["note_type"])
             ))?;
         let scope = v["scope"].as_str().and_then(|s| match s {
             "project" => Some(engram_core::models::note::NoteScope::Project),

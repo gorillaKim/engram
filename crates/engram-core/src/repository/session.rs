@@ -68,6 +68,8 @@ pub struct SessionEpic {
     pub status: Option<crate::models::epic::EpicStatus>,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_to_complete: Option<bool>,
 }
 
 impl SessionEpic {
@@ -82,6 +84,7 @@ impl SessionEpic {
             status: if compact { None } else { Some(epic.status) },
             created_at: epic.created_at,
             updated_at: epic.updated_at,
+            ready_to_complete: epic.ready_to_complete,
         }
     }
 }

@@ -24,11 +24,18 @@ impl Db {
     }
 
     pub async fn epic_get(&self, id: i64) -> Result<Epic> {
-        sqlx::query_as::<_, Epic>(&format!("SELECT {EPIC_COLS} FROM epics WHERE id = ?"))
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?
-            .ok_or_else(|| Error::NotFound(format!("epic:{id}")))
+        sqlx::query_as::<_, Epic>(
+            "SELECT id, project_key, mission_id, sprint_id, title, description, status, created_at, updated_at, \
+             (CASE WHEN status != 'completed' \
+                   AND EXISTS (SELECT 1 FROM issues WHERE epic_id = epics.id) \
+                   AND NOT EXISTS (SELECT 1 FROM issues WHERE epic_id = epics.id AND status NOT IN ('finished', 'cancelled')) \
+                   THEN 1 ELSE 0 END) as ready_to_complete \
+             FROM epics WHERE id = ?"
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::NotFound(format!("epic:{id}")))
     }
 
     pub async fn epic_get_mode(&self, id: i64, mode: OutputMode) -> Result<CoreResponse<Epic>> {
@@ -95,7 +102,12 @@ impl Db {
             "description"
         };
         let mut sql = format!(
-            "SELECT id, project_key, mission_id, sprint_id, title, {}, status, created_at, updated_at FROM epics WHERE 1=1",
+            "SELECT id, project_key, mission_id, sprint_id, title, {}, status, created_at, updated_at, \
+             (CASE WHEN status != 'completed' \
+                   AND EXISTS (SELECT 1 FROM issues WHERE epic_id = epics.id) \
+                   AND NOT EXISTS (SELECT 1 FROM issues WHERE epic_id = epics.id AND status NOT IN ('finished', 'cancelled')) \
+                   THEN 1 ELSE 0 END) as ready_to_complete \
+             FROM epics WHERE 1=1",
             desc_col
         );
         if project_key.is_some() { sql.push_str(" AND project_key = ?"); }
@@ -290,6 +302,48 @@ impl Db {
                 changed_by: changed_by.to_string(),
             }).await;
         }
+        Ok(())
+    }
+
+    /// 에픽 하위의 모든 이슈를 돌며 status 가 'demo' 인 이슈들을 'finished' 로 cascade 전이시키고 에픽도 Completed 상태로 만듭니다.
+    /// agent_demo_gate 규칙에 따라 changed_by 가 "user" 일 때만 완료가 허용된다.
+    pub async fn epic_finish(&self, epic_id: i64, changed_by: &str) -> Result<()> {
+        if changed_by != "user" {
+            return Err(Error::Validation(
+                "에이전트는 이슈를 직접 finished 상태로 변경할 수 없습니다. 오직 사용자(user)만 가능합니다.".to_string(),
+            ));
+        }
+
+        // 에픽 존재 확인
+        let _epic = self.epic_get(epic_id).await?;
+
+        // 에픽 산하의 status = 'demo' 인 이슈 조회
+        let demo_issues: Vec<crate::models::Issue> = sqlx::query_as::<_, crate::models::Issue>(
+            "SELECT i.id, i.epic_id, e.mission_id AS mission_id, e.sprint_id AS sprint_id, \
+             i.title, i.description, i.goal, i.status, i.priority, i.assigned_agent, i.created_at, i.updated_at \
+             FROM issues i JOIN epics e ON i.epic_id = e.id \
+             WHERE i.epic_id = ? AND i.status = 'demo'"
+        )
+        .bind(epic_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // 각 이슈를 finished 로 업데이트
+        for issue in demo_issues {
+            let input = crate::models::issue::UpdateIssueInput {
+                status: Some(crate::models::issue::IssueStatus::Finished),
+                ..Default::default()
+            };
+            self.issue_update(issue.id, input, changed_by).await?;
+        }
+
+        // 에픽의 상태도 Completed로 변경
+        let input = UpdateEpicInput {
+            status: Some(EpicStatus::Completed),
+            ..Default::default()
+        };
+        self.epic_update(epic_id, input, changed_by).await?;
+
         Ok(())
     }
 }

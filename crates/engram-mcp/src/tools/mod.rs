@@ -94,6 +94,7 @@ pub async fn dispatch(
         "epic_update"     => epic::update(db, args).await,
         "epic_delete"     => epic::delete(db, args).await,
         "epic_set_sprint" => epic::set_sprint(db, args).await,
+        "epic_finish"     => epic::finish(db, args).await,
         // Issue
         "issue_create" => issue::create(db, args).await,
         "issue_get"    => issue::get(db, args).await,

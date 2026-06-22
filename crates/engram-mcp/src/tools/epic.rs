@@ -78,6 +78,14 @@ pub fn tool_definitions() -> Vec<Value> {
                 }
             }
         }),
+        json!({ "name": "epic_finish", "description": "에픽 하위의 모든 demo 상태 이슈를 finished로 일괄 완료하고 에픽도 Completed 상태로 전이합니다. 오직 사용자(user)만 호출 가능합니다.",
+            "inputSchema": { "type": "object", "required": ["id", "agent_id"],
+                "properties": {
+                    "id":       { "type": "integer" },
+                    "agent_id": { "type": "string", "description": "호출 에이전트 식별자. 'user'여야 성공합니다." }
+                }
+            }
+        }),
     ]
 }
 
@@ -184,5 +192,24 @@ pub async fn set_sprint(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
         )))
     } else {
         Ok(json!({ "id": epic.id, "sprint_id": epic.sprint_id, "status": "ok" }))
+    }
+}
+
+pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let id = args["id"].as_i64()
+        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
+    
+    db.epic_finish(id, agent_id).await?;
+    
+    let mode = super::get_mode(args);
+    if matches!(mode, engram_core::models::OutputMode::Agent) {
+        Ok(super::format::success(&format!(
+            "Epic #{} finished.",
+            id
+        )))
+    } else {
+        Ok(json!({ "id": id, "status": "ok" }))
     }
 }

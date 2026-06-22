@@ -8,7 +8,7 @@ use tauri::State;
 // ── Inner functions (testable without Tauri context) ──────────────────────────
 
 pub async fn do_note_list(db: &Db, issue_id: i64) -> engram_core::Result<Vec<Note>> {
-    let res = db.note_list(Some(issue_id), None, None, None, false, true, None, None, None, None, None, None).await?;
+    let res = db.note_list(Some(issue_id), None, None, None, false, true, None, None, None, None, None, None, None, None).await?;
     Ok(res.items)
 }
 

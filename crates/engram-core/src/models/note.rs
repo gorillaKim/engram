@@ -64,6 +64,7 @@ pub enum NoteType {
     Context,        // 다음 세션 인수인계 (session_restore 자동 로드)
     Reference,      // 외부 링크/문서 참조
     Comment,        // 사용자/에이전트 간 코멘트 — 데스크톱 CommentSection 으로 노출
+    Evaluation,     // 평가/회고 피드백
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

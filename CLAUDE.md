@@ -23,7 +23,7 @@ engram/
 
 **의존성 방향은 한방향**: `engram-cli`, `engram-mcp` → `engram-core`.
 `engram-core` 가 MCP/CLI 의 타입을 import 하는 일은 **금지**.
-`engram-mcp`는 6개의 mission 도구를 포함하여 56개 MCP 도구를 제공하고, `engram-cli`는 14개의 서브커맨드를 제공해 모두 `engram-core`를 참조합니다.
+`engram-mcp`는 6개의 mission 도구를 포함하여 57개 MCP 도구를 제공하고, `engram-cli`는 15개의 서브커맨드를 제공해 모두 `engram-core`를 참조합니다.
 
 Phase 3 Desktop: `crates/engram-desktop/` — Tauri v2 앱. `engram-core`, `engram-mcp` 만 참조.
 
@@ -76,7 +76,7 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 
 ## 현재 진행 상황 요약
 
-- ✅ Phase 1 코어: models / repository / migrations / **MCP tools 56개 ↔ CLI 14 서브커맨드 (1:1 패리티, ADR-0010)**
+- ✅ Phase 1 코어: models / repository / migrations / **MCP tools 57개 ↔ CLI 15 서브커맨드 (1:1 패리티, ADR-0010)**
 - ✅ Mission 레이어 도입 (ADR-0012) — Sprint→Mission→Epic 계층 구조로 cross-project 미션 추적 및 mission_* 도구 7개 추가
 - ✅ CLI ↔ MCP 동치 통합 테스트 `crates/engram-cli/tests/parity_test.rs` 15건 — read-only 9 + 변경 도구 6. 회귀 방지 자동화.
 - ✅ 통합 테스트 `crates/engram-core/tests/workflow_test.rs` 7건 (full_sprint / blocked_by / fractional_ord / session_filter / task_next_priority / cross_project_blocking / scope_expansion)

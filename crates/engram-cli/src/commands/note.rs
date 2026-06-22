@@ -10,6 +10,7 @@ fn parse_note_type(s: &str) -> NoteType {
         "blocker_detail" => NoteType::BlockerDetail,
         "reference"      => NoteType::Reference,
         "comment"        => NoteType::Comment,
+        "evaluation"     => NoteType::Evaluation,
         _                => NoteType::Context,
     }
 }
@@ -23,6 +24,7 @@ fn parse_note_type_filter(s: &str) -> anyhow::Result<NoteType> {
         "context"        => Ok(NoteType::Context),
         "reference"      => Ok(NoteType::Reference),
         "comment"        => Ok(NoteType::Comment),
+        "evaluation"     => Ok(NoteType::Evaluation),
         other            => Err(anyhow::anyhow!("알 수 없는 note_type: {other}")),
     }
 }
@@ -71,6 +73,8 @@ pub enum NoteCommand {
         #[arg(long = "include-detail")] include_detail: bool,
         #[arg(long = "project-key")] project_key: Option<String>,
         #[arg(long = "sprint-id")] sprint_id: Option<i64>,
+        #[arg(long)] epic: Option<i64>,
+        #[arg(long)] rollup: bool,
         #[arg(long)] limit: Option<i64>,
         #[arg(long)] offset: Option<i64>,
         #[arg(long)] compact: bool,
@@ -109,7 +113,7 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
         }
         NoteCommand::List {
             issue, task, r#type, r#types, include_resolved, include_detail,
-            project_key, sprint_id, limit, offset, compact: _, projection, updated_after,
+            project_key, sprint_id, epic, rollup, limit, offset, compact: _, projection, updated_after,
         } => {
             let nt = r#type.as_deref().map(parse_note_type_filter).transpose()?;
             let nts = if let Some(ref list) = r#types {
@@ -130,6 +134,8 @@ pub async fn run(db: Db, args: NoteArgs, fmt: OutputFormat, global_agent_id: &st
                 include_detail,
                 project_key.as_deref(),
                 sprint_id,
+                epic,
+                Some(rollup),
                 limit,
                 offset,
                 mode,

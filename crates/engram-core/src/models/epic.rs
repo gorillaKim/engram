@@ -12,6 +12,9 @@ pub struct Epic {
     pub status: EpicStatus,
     pub created_at: String,
     pub updated_at: String,
+    #[sqlx(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ready_to_complete: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, sqlx::Type)]

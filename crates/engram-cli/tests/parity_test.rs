@@ -217,7 +217,7 @@ async fn test_parity_note_list_and_get() {
     })).await.unwrap();
 
     let cli = normalize(serde_json::to_value(
-        db_a.note_list(Some(iid), None, None, None, false, false, None, None, None, None, None, None).await.unwrap()
+        db_a.note_list(Some(iid), None, None, None, false, false, None, None, None, None, None, None, None, None).await.unwrap()
     ).unwrap());
     let mcp = normalize(dispatch(Arc::clone(&db_b), "note_list",
         &json!({"issue_id": iid_b, "mode": "normal"})).await.unwrap());
