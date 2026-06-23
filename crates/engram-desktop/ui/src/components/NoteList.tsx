@@ -13,6 +13,7 @@ const NOTE_ICON: Record<NoteType, string> = {
   context: '✎',
   reference: '📎',
   comment: '💬',
+  evaluation: '🏆',
 };
 
 const NOTE_COLOR: Record<NoteType, string> = {
@@ -23,6 +24,7 @@ const NOTE_COLOR: Record<NoteType, string> = {
   context: 'text-slate-700 bg-slate-50',
   reference: 'text-blue-700 bg-blue-50',
   comment: 'text-slate-700 bg-slate-50',
+  evaluation: 'text-purple-700 bg-purple-50',
 };
 
 const NOTE_LABEL: Record<NoteType, string> = {
@@ -33,6 +35,7 @@ const NOTE_LABEL: Record<NoteType, string> = {
   context: '컨텍스트',
   reference: '참조',
   comment: '코멘트',
+  evaluation: '평가',
 };
 
 // 생성 UI 에 노출할 타입 — comment 는 CommentSection 으로 분리되어 있어 제외
