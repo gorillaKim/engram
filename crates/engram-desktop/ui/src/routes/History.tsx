@@ -8,6 +8,7 @@ import { useUIStore } from '../store/ui';
 import { missionList, missionUpdate } from '../ipc/invoke';
 import type { Mission } from '../ipc/types';
 import { groupIssuesByMissionAndEpic } from '../utils/historyHelper';
+import { parseUTCDate } from '../utils/date';
 import { toast } from 'sonner';
 import { MissionHierarchy } from '../components/MissionHierarchy';
 
@@ -69,7 +70,7 @@ export function History() {
 
       // 날짜 필터링
       if (issue.updated_at) {
-        const issueDate = new Date(issue.updated_at).toISOString().split('T')[0];
+        const issueDate = parseUTCDate(issue.updated_at).toISOString().split('T')[0];
         if (dateFrom && issueDate < dateFrom) return false;
         if (dateTo && issueDate > dateTo) return false;
       } else if (dateFrom || dateTo) {
@@ -196,7 +197,7 @@ export function History() {
             }}
             renderIssueExtra={(issue) => (
               <span className="text-slate-400 text-[11px] w-24 flex-shrink-0 text-right font-medium" title={issue.updated_at}>
-                {issue.updated_at ? new Date(issue.updated_at).toLocaleDateString() : ''}
+                {issue.updated_at ? parseUTCDate(issue.updated_at).toLocaleDateString() : ''}
               </span>
             )}
           />

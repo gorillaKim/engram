@@ -1,9 +1,10 @@
 import { useDraggable } from '@dnd-kit/core';
 import type { Issue } from '../ipc/types';
 import { PriorityBadge } from './PriorityBadge';
+import { parseUTCDate } from '../utils/date';
 
 function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const diff = Date.now() - parseUTCDate(iso).getTime();
   if (diff < 0) return '방금';
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return '방금';
