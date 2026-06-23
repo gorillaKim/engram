@@ -62,10 +62,26 @@ impl Db {
         include_completed: bool,
         mode: OutputMode,
     ) -> Result<CoreResponse<Vec<Epic>>> {
-        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent);
+        let is_ref = matches!(mode, OutputMode::Ref);
+        let compact = matches!(mode, OutputMode::Compact) || matches!(mode, OutputMode::Agent) || is_ref;
         let epics = self.epic_list_filtered(project_key, include_completed, None, false, compact).await?;
 
-        if matches!(mode, OutputMode::Agent) {
+        if is_ref {
+            // Ref 모드: #id status title 한 줄씩 — 토큰 최소화 인덱스 전용
+            let mut out = String::new();
+            out.push_str("=== EPIC REF LIST ===\n");
+            if epics.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for epic in &epics {
+                    let status_val = serde_json::to_value(&epic.status).unwrap();
+                    let status_str = status_val.as_str().unwrap_or("active");
+                    out.push_str(&format!("#{} [{}] {}\n", epic.id, status_str, epic.title));
+                }
+            }
+            out.push_str("====================");
+            Ok(CoreResponse::Text(out))
+        } else if matches!(mode, OutputMode::Agent) {
             let mut out = String::new();
             out.push_str("=== EPIC LIST ===\n");
             if epics.is_empty() {

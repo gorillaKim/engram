@@ -269,8 +269,9 @@ impl Db {
         mode: OutputMode,
         updated_after: Option<String>,
     ) -> Result<CoreResponse<PaginatedResponse<Note>>> {
+        let is_ref = matches!(mode, OutputMode::Ref);
         let is_agent = matches!(mode, OutputMode::Agent);
-        let is_compact = matches!(mode, OutputMode::Compact) || is_agent;
+        let is_compact = matches!(mode, OutputMode::Compact) || is_agent || is_ref;
         let paginated = self.note_list(
             issue_id,
             task_id,
@@ -288,7 +289,23 @@ impl Db {
             updated_after,
         ).await?;
 
-        if is_agent {
+        if is_ref {
+            // Ref 모드: #id type summary 한 줄씩 — 토큰 최소화 인덱스 전용
+            let mut out = String::new();
+            out.push_str("=== NOTE REF LIST ===\n");
+            if paginated.items.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for note in &paginated.items {
+                    let type_val = serde_json::to_value(&note.note_type).unwrap();
+                    let type_str = type_val.as_str().unwrap_or("general");
+                    out.push_str(&format!("#{} [{}] {}\n", note.id, type_str, note.summary));
+                }
+            }
+            out.push_str(&format!("Total: {} | Has More: {}\n", paginated.total, paginated.has_more));
+            out.push_str("====================");
+            Ok(CoreResponse::Text(out))
+        } else if is_agent {
             let mut out = String::new();
             out.push_str("=== NOTE LIST ===\n");
             if paginated.items.is_empty() {

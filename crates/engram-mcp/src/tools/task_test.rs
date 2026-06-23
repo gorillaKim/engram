@@ -42,9 +42,10 @@ pub fn tool_definitions() -> Vec<Value> {
         }),
         json!({ "name": "task_test_check_bulk",
             "description": "테스트 항목 여러 개를 한 번에 완료 처리합니다. 일괄 검증 완료 시 사용하세요.",
-            "inputSchema": { "type": "object", "required": ["ids"],
+            "inputSchema": { "type": "object", "required": ["ids", "agent_id"],
                 "properties": {
-                    "ids": { "type": "array", "items": { "type": "integer" } }
+                    "ids":      { "type": "array", "items": { "type": "integer" } },
+                    "agent_id": { "type": "string", "description": "호출 액터 식별자 (history.changed_by에 기록됨)" }
                 }
             }
         }),
@@ -135,13 +136,15 @@ pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let agent_id = args["agent_id"].as_str()
+        .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     let ids: Vec<i64> = args["ids"]
         .as_array()
         .unwrap_or(&vec![])
         .iter()
         .filter_map(|v| v.as_i64())
         .collect();
-    db.task_test_check_bulk(ids.clone()).await?;
+    db.task_test_check_bulk(ids.clone(), agent_id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
         Ok(super::format::success(&format!("Task tests checked (Count: {}).", ids.len())))

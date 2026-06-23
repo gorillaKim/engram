@@ -60,7 +60,7 @@ note_type: caveat | decision | discovery | blocker_detail | context | reference 
                     "updated_after": { "type": "string", "description": "이 시각 이후에 업데이트/생성된 노트만 필터 (YYYY-MM-DD HH:MM:SS)" },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }

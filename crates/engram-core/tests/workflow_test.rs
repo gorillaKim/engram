@@ -3587,7 +3587,76 @@ async fn test_epic_e5_improvements() {
     assert_eq!(issue_after.status, IssueStatus::Finished);
 }
 
+#[tokio::test]
+async fn test_output_mode_ref_returns_index_text() {
+    // mode=ref: id+status+title 한 줄 인덱스 포맷 검증 (T5 2단계 페치 패턴)
+    let db = setup().await;
+    let (_, epic_id, _) = seed_sprint_epic(&db).await;
 
+    // 이슈 2개 생성
+    let i1 = db.issue_create(engram_core::models::issue::CreateIssueInput {
+        epic_id,
+        title: "이슈 알파".to_string(),
+        description: Some("긴 설명 A".to_string()),
+        goal: None,
+        priority: None,
+    }).await.unwrap();
+    let i2 = db.issue_create(engram_core::models::issue::CreateIssueInput {
+        epic_id,
+        title: "이슈 베타".to_string(),
+        description: Some("긴 설명 B".to_string()),
+        goal: None,
+        priority: None,
+    }).await.unwrap();
 
+    use engram_core::models::{OutputMode, IssueFilter};
+
+    // issue_list_mode ref
+    let filter = IssueFilter {
+        epic_id: Some(epic_id),
+        mission_id: None, sprint_id: None, backlog_only: false,
+        project_key: None, status: None, statuses: None, priority: None,
+        compact: None, limit: None, offset: None, updated_after: None,
+    };
+    let resp = db.issue_list_mode(filter, OutputMode::Ref).await.unwrap();
+    let text = match resp {
+        engram_core::models::CoreResponse::Text(t) => t,
+        _ => panic!("mode=ref는 Text 응답이어야 함"),
+    };
+    assert!(text.contains("=== ISSUE REF LIST ==="), "헤더 확인: {text}");
+    assert!(text.contains(&format!("#{}", i1.id)), "이슈 id 포함: {text}");
+    assert!(text.contains("이슈 알파"), "이슈 타이틀 포함: {text}");
+    assert!(text.contains(&format!("#{}", i2.id)), "이슈 id2 포함: {text}");
+    // ref 모드에는 description이 포함되지 않아야 함
+    assert!(!text.contains("긴 설명"), "description 미포함 확인: {text}");
+
+    // note 생성 후 note_list_mode ref 테스트
+    use engram_core::models::note::{CreateNoteInput, NoteType, NoteScope};
+    db.note_add(CreateNoteInput {
+        issue_id: i1.id,
+        task_id: None,
+        note_type: NoteType::Decision,
+        summary: "결정 요약 텍스트".to_string(),
+        detail: None,
+        author: Some("agent".to_string()),
+        agent_id: Some("test-agent".to_string()),
+        scope: Some(NoteScope::Issue),
+        scope_target_id: Some(i1.id),
+        project_key: None,
+    }).await.unwrap();
+
+    let note_resp = db.note_list_mode(
+        Some(i1.id), None, None, None, true, false,
+        None, None, None, None, None, None,
+        OutputMode::Ref, None,
+    ).await.unwrap();
+    let note_text = match note_resp {
+        engram_core::models::CoreResponse::Text(t) => t,
+        _ => panic!("note mode=ref는 Text 응답이어야 함"),
+    };
+    assert!(note_text.contains("=== NOTE REF LIST ==="), "노트 헤더 확인: {note_text}");
+    assert!(note_text.contains("결정 요약 텍스트"), "노트 summary 포함: {note_text}");
+    assert!(note_text.contains("[decision]"), "노트 타입 포함: {note_text}");
+}
 
 

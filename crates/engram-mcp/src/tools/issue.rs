@@ -42,7 +42,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "compact": { "type": "boolean", "description": "true인 경우 description 과 goal 을 200자로 잘라서 반환 (기본값 false)" },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }
@@ -70,7 +70,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "updated_after": { "type": "string", "description": "이 시각 이후에 업데이트된 이슈만 필터 (YYYY-MM-DD HH:MM:SS)" },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }
@@ -85,7 +85,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     "threshold_minutes": { "type": "integer", "minimum": 1 },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }

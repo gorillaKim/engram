@@ -24,7 +24,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }
@@ -63,7 +63,7 @@ pub fn tool_definitions() -> Vec<Value> {
                     },
                     "mode": {
                         "type": "string",
-                        "enum": ["normal", "compact", "agent"],
+                        "enum": ["normal", "compact", "agent", "ref"],
                         "description": "출력 모드. 기본값은 'agent' (영문 요약 텍스트). 'compact' 또는 'normal' 선택 가능"
                     }
                 }

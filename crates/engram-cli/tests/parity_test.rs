@@ -426,7 +426,7 @@ async fn test_parity_task_test_workflow() {
     db_a.task_test_add_bulk(tid_a, vec!["A".into(), "B".into(), "C".into()]).await.unwrap();
     let list_a = db_a.task_test_list(Some(tid_a), None).await.unwrap();
     let ids_a: Vec<i64> = list_a.iter().map(|t| t.id).collect();
-    db_a.task_test_check_bulk(vec![ids_a[0], ids_a[1]]).await.unwrap();
+    db_a.task_test_check_bulk(vec![ids_a[0], ids_a[1]], "test").await.unwrap();
     db_a.task_test_uncheck(ids_a[1], "test").await.unwrap();
     db_a.task_test_remove(ids_a[2]).await.unwrap();
 
@@ -437,7 +437,7 @@ async fn test_parity_task_test_workflow() {
     let ids_b: Vec<i64> = list_b.as_array().unwrap().iter()
         .map(|v| v["id"].as_i64().unwrap()).collect();
     dispatch(Arc::clone(&db_b), "task_test_check_bulk",
-        &json!({"ids": [ids_b[0], ids_b[1]]})).await.unwrap();
+        &json!({"ids": [ids_b[0], ids_b[1]], "agent_id": "test"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "task_test_uncheck",
         &json!({"id": ids_b[1], "agent_id": "test"})).await.unwrap();
     dispatch(Arc::clone(&db_b), "task_test_remove",

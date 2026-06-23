@@ -39,7 +39,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
                             "mode".to_string(),
                             json!({
                                 "type": "string",
-                                "enum": ["agent", "normal", "compact"],
+                                "enum": ["agent", "normal", "compact", "ref"],
                                 "default": "agent",
                                 "description": "Output format mode. 'agent' (LLM-optimized Markdown/text), 'normal' (full JSON), 'compact' (compact JSON)."
                             })
@@ -58,6 +58,7 @@ pub fn get_mode(args: &Value) -> engram_core::models::OutputMode {
             "normal" | "full" => engram_core::models::OutputMode::Normal,
             "compact" => engram_core::models::OutputMode::Compact,
             "agent" => engram_core::models::OutputMode::Agent,
+            "ref" => engram_core::models::OutputMode::Ref,
             _ => engram_core::models::OutputMode::Agent,
         }
     } else if args["compact"].as_bool().unwrap_or(false) {

@@ -22,6 +22,9 @@ pub enum OutputMode {
     Normal,
     Compact,
     Agent,
+    /// id + title/label 요약만 반환하는 2단계 페치 첫 번째 패스.
+    /// agent가 대형 목록을 참조용 인덱스로 먼저 파악한 후 필요한 항목만 full load할 때 사용.
+    Ref,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

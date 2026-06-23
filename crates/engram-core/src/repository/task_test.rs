@@ -78,7 +78,7 @@ impl Db {
         Ok(tt)
     }
 
-    pub async fn task_test_check_bulk(&self, ids: Vec<i64>) -> Result<Vec<TaskTest>> {
+    pub async fn task_test_check_bulk(&self, ids: Vec<i64>, changed_by: &str) -> Result<Vec<TaskTest>> {
         if ids.is_empty() {
             return Ok(vec![]);
         }
@@ -95,7 +95,16 @@ impl Db {
 
         let mut result = Vec::with_capacity(ids.len());
         for id in ids {
-            result.push(self.task_test_get(id).await?);
+            let tt = self.task_test_get(id).await?;
+            let _ = self.history_record(CreateHistoryInput {
+                entity_type: EntityType::Task,
+                entity_id:   tt.task_id,
+                field:        "task_test.checked".to_string(),
+                old_value:    Some("false".to_string()),
+                new_value:    Some("true".to_string()),
+                changed_by:   changed_by.to_string(),
+            }).await;
+            result.push(tt);
         }
         Ok(result)
     }

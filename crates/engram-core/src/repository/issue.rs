@@ -84,14 +84,31 @@ impl Db {
     }
 
     pub async fn issue_list_mode(&self, filter: IssueFilter, mode: OutputMode) -> Result<crate::models::CoreResponse<PaginatedResponse<Issue>>> {
+        let is_ref = matches!(mode, OutputMode::Ref);
         let is_agent = matches!(mode, OutputMode::Agent);
-        let is_compact = matches!(mode, OutputMode::Compact) || is_agent;
+        let is_compact = matches!(mode, OutputMode::Compact) || is_agent || is_ref;
         let mut filter_cloned = filter;
         if is_compact {
             filter_cloned.compact = Some(true);
         }
         let paginated = self.issue_list(filter_cloned).await?;
-        if is_agent {
+        if is_ref {
+            // Ref 모드: #id status title 한 줄씩 — 토큰 최소화 인덱스 전용
+            let mut out = String::new();
+            out.push_str("=== ISSUE REF LIST ===\n");
+            if paginated.items.is_empty() {
+                out.push_str("- None\n");
+            } else {
+                for issue in &paginated.items {
+                    let status_str = serde_json::to_value(&issue.status).unwrap();
+                    let status_name = status_str.as_str().unwrap_or("ready");
+                    out.push_str(&format!("#{} [{}] {}\n", issue.id, status_name, issue.title));
+                }
+            }
+            out.push_str(&format!("Total: {} | Has More: {}\n", paginated.total, paginated.has_more));
+            out.push_str("=====================");
+            Ok(crate::models::CoreResponse::Text(out))
+        } else if is_agent {
             let mut out = String::new();
             out.push_str("=== ISSUE LIST ===\n");
             if paginated.items.is_empty() {
