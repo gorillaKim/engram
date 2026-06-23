@@ -13,8 +13,29 @@ permissions:
   contents: write   # release asset 업로드용
 
 jobs:
+  test:
+    name: test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+
+      # engram-desktop(Tauri)은 Linux 에서 webkitgtk 등 시스템 의존성이 필요하므로 제외.
+      # 마이그레이션은 engram-core 테스트가 :memory: 에서 실제로 실행하므로,
+      # 0012 같은 깨진 마이그레이션은 여기서 빌드/배포 전에 차단된다.
+      - name: Run workspace tests (migrations included)
+        run: cargo test --workspace --exclude engram-desktop
+
   build:
     name: build (${{ matrix.target }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -82,6 +103,7 @@ jobs:
 
   desktop:
     name: desktop (${{ matrix.target }})
+    needs: test
     runs-on: macos-latest
     strategy:
       fail-fast: false
