@@ -87,7 +87,7 @@ export function TaskChecklist({ issueId }: Props) {
                 }
                 className="mt-0.5 rounded border-slate-300 text-indigo-600"
               />
-              <span className={`text-sm flex-1 min-w-0 ${finished ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+              <span className={`text-sm flex-1 min-w-0 break-all ${finished ? 'line-through text-slate-400' : 'text-slate-700'}`}>
                 {task.title}
                 {SOURCE_LABEL[task.source] && (
                   <span className="ml-1 text-xs opacity-60">{SOURCE_LABEL[task.source]}</span>
