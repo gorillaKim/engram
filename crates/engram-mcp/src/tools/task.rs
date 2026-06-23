@@ -70,12 +70,14 @@ pub fn tool_definitions() -> Vec<Value> {
 }
 
 pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let issue_id = super::parse_required_i64(&args["issue_id"], "issue_id")?;
+    let after_task_id = super::parse_optional_i64(&args["after_task_id"], "after_task_id")?;
     let input = CreateTaskInput {
-        issue_id:     args["issue_id"].as_i64().unwrap_or(0),
+        issue_id,
         title:        args["title"].as_str().unwrap_or("").to_string(),
         description:  args["description"].as_str().map(String::from),
         goal:         args["goal"].as_str().map(String::from),
-        after_task_id: args["after_task_id"].as_i64(),
+        after_task_id,
         source:       None,
     };
     let task = db.task_create(input).await?;
@@ -91,7 +93,7 @@ pub async fn create(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let issue_id = args["issue_id"].as_i64().unwrap_or(0);
+    let issue_id = super::parse_required_i64(&args["issue_id"], "issue_id")?;
     let status: Option<TaskStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
     let mode = super::get_mode(args);
@@ -103,7 +105,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64().unwrap_or(0);
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let status: Option<TaskStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(Value::String(s.to_string())).ok());
     let agent_id = args["agent_id"].as_str()
@@ -127,12 +129,14 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
+    let issue_id = super::parse_required_i64(&args["issue_id"], "issue_id")?;
+    let after_task_id = super::parse_optional_i64(&args["after_task_id"], "after_task_id")?;
     let input = CreateTaskInput {
-        issue_id:     args["issue_id"].as_i64().unwrap_or(0),
+        issue_id,
         title:        args["title"].as_str().unwrap_or("").to_string(),
         description:  args["description"].as_str().map(String::from),
         goal:         args["goal"].as_str().map(String::from),
-        after_task_id: args["after_task_id"].as_i64(),
+        after_task_id,
         source:       Some(TaskSource::AgentDiscovered),
     };
     let task = db.task_create(input).await?;
@@ -149,7 +153,7 @@ pub async fn insert_after(db: Arc<Db>, args: &Value) -> engram_core::Result<Valu
 
 pub async fn next(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str();
-    let issue_id    = args["issue_id"].as_i64();
+    let issue_id = super::parse_optional_i64(&args["issue_id"], "issue_id")?;
     let mode = super::get_mode(args);
     let response = db.task_next_mode(project_key, issue_id, mode).await?;
     match response {
@@ -159,8 +163,7 @@ pub async fn next(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     db.task_delete(id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {

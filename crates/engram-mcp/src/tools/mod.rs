@@ -144,3 +144,67 @@ pub async fn dispatch(
         _ => Err(engram_core::Error::NotFound(format!("tool:{name}"))),
     }
 }
+
+/// Value에서 i64를 강제 형변환(coercion)해서 파싱하는 헬퍼.
+/// Number 타입이면 그대로 i64로 가져오고, String 타입이면 parse를 시도합니다.
+pub fn parse_i64(v: &Value) -> Option<i64> {
+    if v.is_number() {
+        v.as_i64()
+    } else if let Some(s) = v.as_str() {
+        s.parse::<i64>().ok()
+    } else {
+        None
+    }
+}
+
+/// parse_i64를 활용하여 필수 i64 인자값을 파싱합니다.
+/// 파싱이 실패하면 명확한 Validation Error를 반환합니다.
+pub fn parse_required_i64(v: &Value, field_name: &str) -> Result<i64, engram_core::Error> {
+    parse_i64(v).ok_or_else(|| {
+        engram_core::Error::Validation(format!(
+            "필드 '{field_name}'의 값이 유효한 정수가 아닙니다 (전달된 값: {v})"
+        ))
+    })
+}
+
+/// parse_i64를 활용하여 선택적 i64 인자값을 파싱합니다.
+/// 값이 Null이거나 누락된 상태가 아니면서 파싱에 실패하면 Validation Error를 반환합니다.
+pub fn parse_optional_i64(v: &Value, field_name: &str) -> Result<Option<i64>, engram_core::Error> {
+    if v.is_null() {
+        return Ok(None);
+    }
+    let val = parse_i64(v).ok_or_else(|| {
+        engram_core::Error::Validation(format!(
+            "필드 '{field_name}'의 값이 유효한 정수가 아닙니다 (전달된 값: {v})"
+        ))
+    })?;
+    Ok(Some(val))
+}
+
+/// Value에서 i64 배열을 강제 형변환하여 파싱하는 헬퍼.
+/// 단일 정수/문자열 단건인 경우 단일 요소 배열로도 변환을 지원하며,
+/// 배열일 경우 내부 요소들을 각각 coerced 파싱합니다.
+pub fn parse_i64_array(v: &Value, field_name: &str) -> Result<Vec<i64>, engram_core::Error> {
+    if v.is_null() {
+        return Ok(vec![]);
+    }
+    if let Some(arr) = v.as_array() {
+        let mut result = Vec::new();
+        for (i, item) in arr.iter().enumerate() {
+            let val = parse_i64(item).ok_or_else(|| {
+                engram_core::Error::Validation(format!(
+                    "필드 '{field_name}' 배열의 {i}번째 요소가 유효한 정수가 아닙니다 (전달된 값: {item})"
+                ))
+            })?;
+            result.push(val);
+        }
+        Ok(result)
+    } else if let Some(n) = parse_i64(v) {
+        Ok(vec![n])
+    } else {
+        Err(engram_core::Error::Validation(format!(
+            "필드 '{field_name}'은(는) 정수 또는 정수 배열이어야 합니다 (전달된 값: {v})"
+        )))
+    }
+}
+

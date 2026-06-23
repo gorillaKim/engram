@@ -258,15 +258,15 @@ pub async fn get(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let include_links = args["include_links"].as_bool().unwrap_or(false);
     let mode = super::get_mode(args);
 
-    if let Some(arr) = args["id"].as_array() {
-        let ids: Vec<i64> = arr.iter().filter_map(|v| v.as_i64()).collect();
+    if args["id"].is_array() {
+        let ids = super::parse_i64_array(&args["id"], "id")?;
         let response = db.issue_get_batch(&ids, mode, include_links).await?;
         match response {
             engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
             engram_core::models::CoreResponse::Json(j) => Ok(serde_json::to_value(j).unwrap()),
         }
     } else {
-        let id = args["id"].as_i64().unwrap_or(0);
+        let id = super::parse_required_i64(&args["id"], "id")?;
         let response = db.issue_get_mode(id, mode, include_links).await?;
         match response {
             engram_core::models::CoreResponse::Text(s) => Ok(Value::String(s)),
@@ -338,7 +338,7 @@ pub async fn stalled(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64().unwrap_or(0);
+    let id = super::parse_required_i64(&args["id"], "id")?;
 
     let status: Option<IssueStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
@@ -358,7 +358,7 @@ pub async fn update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         title,
         description,
         goal,
-        epic_id: args["epic_id"].as_i64(),
+        epic_id: super::parse_optional_i64(&args["epic_id"], "epic_id")?,
     };
     let issue = db.issue_update(id, input, agent_id).await?;
     let mode = super::get_mode(args);
@@ -457,8 +457,7 @@ pub async fn unlink(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let agent_id = args["agent_id"].as_str().unwrap_or("agent");
     db.issue_delete(id, agent_id).await?;
     let mode = super::get_mode(args);
@@ -470,8 +469,7 @@ pub async fn delete(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required for claim (멀티 에이전트 식별)".to_string()))?;
     db.issue_claim(id, agent_id).await?;
@@ -487,8 +485,7 @@ pub async fn claim(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required for release".to_string()))?;
     let transition_to: IssueStatus = args["transition_to"].as_str()
@@ -511,7 +508,7 @@ pub async fn release(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let project_key = args["project_key"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("project_key is required".to_string()))?;
-    let sprint_id = args["sprint_id"].as_i64();
+    let sprint_id = super::parse_optional_i64(&args["sprint_id"], "sprint_id")?;
     let statuses: Option<Vec<IssueStatus>> = if let Some(arr) = args["statuses"].as_array() {
         let mut result = Vec::new();
         for v in arr {
@@ -561,8 +558,7 @@ pub async fn planning_review_queue(db: Arc<Db>, args: &Value) -> engram_core::Re
 }
 
 pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
     db.issue_finish(id, agent_id).await?;
@@ -575,8 +571,7 @@ pub async fn finish(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64()
-        .ok_or_else(|| engram_core::Error::Validation("id is required".to_string()))?;
+    let id = super::parse_required_i64(&args["id"], "id")?;
     let reason = args["reason"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("reason is required".to_string()))?;
     let agent_id = args["agent_id"].as_str()
@@ -591,11 +586,10 @@ pub async fn cancel(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn bulk_update(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let ids: Vec<i64> = args["ids"].as_array()
-        .ok_or_else(|| engram_core::Error::Validation("ids (integer array) is required".to_string()))?
-        .iter()
-        .map(|v| v.as_i64().unwrap_or(0))
-        .collect();
+    let ids = super::parse_i64_array(&args["ids"], "ids")?;
+    if ids.is_empty() {
+        return Err(engram_core::Error::Validation("ids list cannot be empty".to_string()));
+    }
 
     let status: Option<IssueStatus> = args["status"].as_str()
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());

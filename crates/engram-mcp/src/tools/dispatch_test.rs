@@ -962,3 +962,68 @@ async fn test_mission_list_epic_list_projection_and_detail() {
     assert!(!target_e_detail["description"].as_str().unwrap().contains("..."), "detail=true 이면 절단되지 않아야 함");
 }
 
+#[tokio::test]
+async fn test_mcp_coerced_parameter_parsing_and_validation() {
+    let db = setup().await;
+    let (_, _, issue_id) = seed(&db).await;
+
+    // 1) 문자열 형태의 ID ("issue_id")를 전달해도 강제 형변환(coercion)으로 성공해야 함
+    let task_res = dispatch(
+        Arc::clone(&db),
+        "task_create",
+        &json!({
+            "issue_id": issue_id.to_string(), // 💡 문자열로 전달
+            "title": "Coerced ID Task"
+        })
+    ).await;
+    assert!(task_res.is_ok(), "String issue_id should be coerced to integer");
+    let task_id = task_res.unwrap()["id"].as_i64().unwrap();
+
+    // 2) 단일 ID ("id")를 문자열로 전달해 업데이트하는 경우 성공해야 함
+    let update_res = dispatch(
+        Arc::clone(&db),
+        "task_update",
+        &json!({
+            "id": task_id.to_string(), // 💡 문자열로 전달
+            "status": "ready",
+            "agent_id": "test-agent"
+        })
+    ).await;
+    assert!(update_res.is_ok(), "String id should be coerced to integer");
+
+    // 3) bulk 정수 배열에 문자열이 섞여 들어왔을 때도 변환이 성공해야 함
+    let task_test = dispatch(
+        Arc::clone(&db),
+        "task_test_add",
+        &json!({
+            "task_id": task_id,
+            "label": "Test 1"
+        })
+    ).await.unwrap();
+    let tt_id = task_test["id"].as_i64().unwrap();
+
+    let check_bulk_res = dispatch(
+        Arc::clone(&db),
+        "task_test_check_bulk",
+        &json!({
+            "ids": [tt_id.to_string()], // 💡 문자열 배열
+            "agent_id": "test-agent"
+        })
+    ).await;
+    assert!(check_bulk_res.is_ok(), "String array elements should be coerced to integer");
+
+    // 4) 유효하지 않은 문자열(숫자 변환 불가능)을 보내면 Validation Error가 리턴되어야 함
+    let invalid_res = dispatch(
+        Arc::clone(&db),
+        "issue_get",
+        &json!({
+            "id": "not-a-number"
+        })
+    ).await;
+    assert!(invalid_res.is_err(), "Invalid ID string should return error");
+    let err = invalid_res.unwrap_err();
+    assert!(matches!(err, engram_core::Error::Validation(_)));
+    assert!(err.to_string().contains("유효한 정수가 아닙니다"));
+}
+
+

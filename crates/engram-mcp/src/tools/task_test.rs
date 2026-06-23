@@ -125,7 +125,7 @@ pub async fn list(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let id = args["id"].as_i64().unwrap_or(0);
+    let id = super::parse_required_i64(&args["id"], "id")?;
     db.task_test_check(id, agent_id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
@@ -138,12 +138,10 @@ pub async fn check(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let ids: Vec<i64> = args["ids"]
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter_map(|v| v.as_i64())
-        .collect();
+    let ids = super::parse_i64_array(&args["ids"], "ids")?;
+    if ids.is_empty() {
+        return Err(engram_core::Error::Validation("ids list cannot be empty".to_string()));
+    }
     db.task_test_check_bulk(ids.clone(), agent_id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
@@ -156,7 +154,7 @@ pub async fn check_bulk(db: Arc<Db>, args: &Value) -> engram_core::Result<Value>
 pub async fn uncheck(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
     let agent_id = args["agent_id"].as_str()
         .ok_or_else(|| engram_core::Error::Validation("agent_id is required".to_string()))?;
-    let id = args["id"].as_i64().unwrap_or(0);
+    let id = super::parse_required_i64(&args["id"], "id")?;
     db.task_test_uncheck(id, agent_id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
@@ -167,7 +165,7 @@ pub async fn uncheck(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
 }
 
 pub async fn remove(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
-    let id = args["id"].as_i64().unwrap_or(0);
+    let id = super::parse_required_i64(&args["id"], "id")?;
     db.task_test_remove(id).await?;
     let mode = super::get_mode(args);
     if matches!(mode, engram_core::models::OutputMode::Agent) {
@@ -176,3 +174,4 @@ pub async fn remove(db: Arc<Db>, args: &Value) -> engram_core::Result<Value> {
         Ok(json!({ "ok": true }))
     }
 }
+
