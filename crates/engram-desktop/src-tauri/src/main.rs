@@ -14,12 +14,63 @@ use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tracing_subscriber::prelude::*;
 
+/// DB open / migration 실패를 사용자에게 알리고 진단용 로그를 남긴다.
+/// silent panic 으로 앱이 그냥 "열리지 않는" 상황(예: 깨진 마이그레이션)을 방지한다.
+fn report_db_open_failure(err: &engram_core::Error) {
+    let message = format!(
+        "Engram 데이터베이스를 여는 중 오류가 발생했습니다.\n\n\
+         {err}\n\n\
+         최신 버전으로 업데이트하면 자동으로 복구될 수 있습니다.\n\
+         문제가 계속되면 ~/.engram/db-open-error.log 를 확인해 주세요."
+    );
+
+    // 1) stderr 로그 (시스템 콘솔에서 확인 가능)
+    eprintln!("[engram] DB open failed: {err}");
+
+    // 2) ~/.engram/db-open-error.log 에 append (재발 시 진단용)
+    if let Ok(home) = std::env::var("HOME") {
+        let _ = std::fs::create_dir_all(format!("{home}/.engram"));
+        let log_path = format!("{home}/.engram/db-open-error.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+            use std::io::Write;
+            let _ = writeln!(f, "[{}] {err}", chrono::Local::now().to_rfc3339());
+        }
+    }
+
+    // 3) 네이티브 에러 다이얼로그
+    show_native_error_dialog(&message);
+}
+
+#[cfg(target_os = "macos")]
+fn show_native_error_dialog(message: &str) {
+    // AppleScript 문자열 리터럴 escape (백슬래시, 큰따옴표). 개행은 그대로 허용된다.
+    let escaped = message.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        "display dialog \"{escaped}\" with title \"Engram\" buttons {{\"확인\"}} default button 1 with icon stop"
+    );
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_native_error_dialog(_message: &str) {
+    // 비-macOS 빌드: stderr/로그 파일로 대체 (현재 배포 타깃은 macOS).
+}
+
 fn main() {
     let settings = settings::load().unwrap_or_default();
 
-    let db = tauri::async_runtime::block_on(async {
-        Arc::new(Db::open_default().await.expect("DB open failed"))
-    });
+    // DB open + migration 자동 적용. 실패 시 silent crash 대신
+    // 크래시 로그 + 네이티브 다이얼로그로 원인을 안내한 뒤 종료한다.
+    let db = match tauri::async_runtime::block_on(Db::open_default()) {
+        Ok(db) => Arc::new(db),
+        Err(e) => {
+            report_db_open_failure(&e);
+            std::process::exit(1);
+        }
+    };
     let supervisor = McpSupervisor::new(Arc::clone(&db), settings.mcp.autostart);
 
     // Layered tracing: fmt stderr + env-filter + broadcast for McpManager UI
