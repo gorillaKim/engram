@@ -39,7 +39,7 @@ const NOTE_LABEL: Record<NoteType, string> = {
 };
 
 // 생성 UI 에 노출할 타입 — comment 는 CommentSection 으로 분리되어 있어 제외
-const CREATABLE_TYPES: NoteType[] = ['caveat', 'decision', 'discovery', 'blocker_detail', 'context', 'reference'];
+const CREATABLE_TYPES: NoteType[] = ['caveat', 'decision', 'discovery', 'blocker_detail', 'context', 'reference', 'evaluation'];
 
 function NoteDetail({ id }: { id: number }) {
   const { data } = useQuery({
