@@ -174,83 +174,90 @@ export function KanbanBoard() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveIssue(null)}
     >
-      <div className="p-6 overflow-y-auto overflow-x-hidden h-full">
-        <div className="flex flex-col gap-4 w-full">
-        {/* Filter bar */}
-        <FilterBar
-          boards={boards}
-          filters={boardFilters}
-          hideFinished={hideFinished}
-          onToggleHideFinished={toggleHideFinished}
-          showCancelled={showCancelled}
-          onToggleShowCancelled={toggleShowCancelled}
-          onChange={setBoardFilters}
-          onReset={resetBoardFilters}
-          missions={missions}
-          epics={epics}
-        />
+      {/* Outer: full height flex column — no scroll here */}
+      <div className="flex flex-col h-full overflow-hidden">
 
-        {/* Scope expansion banner */}
-        {warnings.length > 0 && (
-          <ScopeExpansionBanner
-            warnings={warnings}
-            onIssueClick={selectIssue}
+        {/* ── Sticky Filter Bar (never scrolls) ── */}
+        <div className="flex-shrink-0 bg-white border-b border-slate-200 px-6 pt-4 pb-3 z-20">
+          <FilterBar
+            boards={boards}
+            filters={boardFilters}
+            hideFinished={hideFinished}
+            onToggleHideFinished={toggleHideFinished}
+            showCancelled={showCancelled}
+            onToggleShowCancelled={toggleShowCancelled}
+            onChange={setBoardFilters}
+            onReset={resetBoardFilters}
+            missions={missions}
+            epics={epics}
           />
-        )}
-
-        {/* Stalled working banner */}
-        <StalledWorkingBanner
-          issues={stalledIssues}
-          onIssueClick={selectIssue}
-        />
-
-        {filteredBoards.length === 0 && (
-          <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>
-        )}
-
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-xs text-slate-400 font-medium">{filteredBoards.length} 프로젝트</span>
-            <div className="h-3 w-px bg-slate-200" />
-            {visibleColumns.map((col) => {
-              const count = filteredBoards.reduce(
-                (sum, b) => sum + ((b as unknown as Record<string, Issue[]>)[col]?.length ?? 0), 0
-              );
-              return (
-                <span key={col} className="text-[10px] text-slate-500">
-                  <span className="font-semibold">{COLUMN_LABELS[col]}</span>{' '}
-                  <span className={count > 0 ? 'text-slate-700 font-bold' : ''}>{count}</span>
-                </span>
-              );
-            })}
-          </div>
-          <div className="flex gap-2">
-            {activeSprint && (
-              <button
-                type="button"
-                onClick={() => setCompleteSprintTarget(activeSprint)}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-0.5"
-                title="현재 활성화된 스프린트 완료 처리"
-              >
-                스프린트 완료
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSprintModalOpen(true)}
-              className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded-md"
-            >
-              + 새 스프린트
-            </button>
-            <button
-              type="button"
-              onClick={() => setEpicModalProject(selectedProjectKey ?? '')}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md"
-            >
-              + 새 에픽
-            </button>
-          </div>
         </div>
+
+        {/* ── Single scrollable content area ── */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+          <div className="p-6 flex flex-col gap-4 w-full">
+
+            {/* Scope expansion banner */}
+            {warnings.length > 0 && (
+              <ScopeExpansionBanner
+                warnings={warnings}
+                onIssueClick={selectIssue}
+              />
+            )}
+
+            {/* Stalled working banner */}
+            <StalledWorkingBanner
+              issues={stalledIssues}
+              onIssueClick={selectIssue}
+            />
+
+            {filteredBoards.length === 0 && (
+              <div className="text-slate-400 text-center mt-20">이슈가 없습니다. CLI로 이슈를 생성하세요.</div>
+            )}
+
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs text-slate-400 font-medium">{filteredBoards.length} 프로젝트</span>
+                <div className="h-3 w-px bg-slate-200" />
+                {visibleColumns.map((col) => {
+                  const count = filteredBoards.reduce(
+                    (sum, b) => sum + ((b as unknown as Record<string, Issue[]>)[col]?.length ?? 0), 0
+                  );
+                  return (
+                    <span key={col} className="text-[10px] text-slate-500">
+                      <span className="font-semibold">{COLUMN_LABELS[col]}</span>{' '}
+                      <span className={count > 0 ? 'text-slate-700 font-bold' : ''}>{count}</span>
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="flex gap-2">
+                {activeSprint && (
+                  <button
+                    type="button"
+                    onClick={() => setCompleteSprintTarget(activeSprint)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center justify-center gap-0.5"
+                    title="현재 활성화된 스프린트 완료 처리"
+                  >
+                    스프린트 완료
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSprintModalOpen(true)}
+                  className="px-3 py-1.5 bg-slate-600 hover:bg-slate-500 text-white text-xs rounded-md"
+                >
+                  + 새 스프린트
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEpicModalProject(selectedProjectKey ?? '')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-md"
+                >
+                  + 새 에픽
+                </button>
+              </div>
+            </div>
 
         {filteredBoards.map((board) => (
           <div key={board.project_key} className="pb-4 shrink-0 flex flex-col">
@@ -307,9 +314,10 @@ export function KanbanBoard() {
               </div>
             </div>
           </div>
-        ))}
-      </div>
-      </div>
+            ))}
+          </div>{/* end p-6 content */}
+        </div>{/* end overflow-y-auto scroll area */}
+      </div>{/* end outer h-full flex col */}
 
       <CreateSprintModal
         open={sprintModalOpen}
