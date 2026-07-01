@@ -205,7 +205,7 @@ function AppContent() {
       {/* Container holding Main and Side Panels */}
       <div className="flex-1 flex overflow-hidden min-h-0 relative">
         {/* Main Content Area */}
-        <main className="flex-1 min-w-0 overflow-hidden">
+        <main className="flex-1 min-w-0 h-full min-h-0 flex flex-col overflow-hidden">
           {view === 'board' && <KanbanBoard />}
           {view === 'history' && <History />}
           {view === 'issues' && <IssueManager />}
