@@ -262,8 +262,8 @@ export function KanbanBoard() {
 
         {filteredBoards.map((board) => (
           <div key={board.project_key} className="pb-4 shrink-0 flex flex-col">
-            {/* 프로젝트명 영역 (가로 고정) */}
-            <div className="flex items-center justify-between mb-3 py-1 flex-shrink-0">
+            {/* 프로젝트명 영역 (세로 스크롤 시 sticky 고정) */}
+            <div className="flex items-center justify-between py-2.5 sticky top-0 bg-slate-50/95 backdrop-blur-[2px] z-10 border-b border-slate-100 mb-3 -mx-6 px-6">
               <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
               <button
                 type="button"
