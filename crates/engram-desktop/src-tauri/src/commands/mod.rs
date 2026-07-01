@@ -159,7 +159,7 @@ mod tests {
         }).await.unwrap();
         assert_eq!(note.summary, "context note");
 
-        let notes = do_note_list(&db, issue_id).await.unwrap();
+        let notes = do_note_list(&db, Some(issue_id), None, None).await.unwrap();
         assert_eq!(notes.len(), 1);
 
         let fetched = do_note_get(&db, note.id).await.unwrap();

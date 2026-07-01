@@ -639,7 +639,7 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
 
     // 사전: 모든 자식 존재 확인
     assert_eq!(db.task_list(issue_a.id, None).await.unwrap().len(), 1, "이슈 A 에 태스크 1건");
-    assert_eq!(db.note_list(Some(issue_a.id), None, None, None, false, true, None, None, None, None, None, None, None, None).await.unwrap().items.len(), 1, "이슈 A 에 노트 1건");
+    assert_eq!(db.note_list(Some(issue_a.id), None, None, None, false, true, None, None, None, None, None, None, None, None, None).await.unwrap().items.len(), 1, "이슈 A 에 노트 1건");
     assert_eq!(db.issue_links_for(issue_a.id).await.unwrap().len(), 1, "이슈 A 에 링크 1건");
 
     // 이슈 A 삭제
@@ -650,7 +650,7 @@ async fn test_issue_delete_cascades_tasks_notes_links() {
 
     // 자식 데이터 cascade 확인
     assert!(db.task_list(issue_a.id, None).await.unwrap().is_empty(), "태스크가 모두 삭제됨");
-    assert!(db.note_list(Some(issue_a.id), None, None, None, false, true, None, None, None, None, None, None, None, None).await.unwrap().items.is_empty(), "노트가 모두 삭제됨");
+    assert!(db.note_list(Some(issue_a.id), None, None, None, false, true, None, None, None, None, None, None, None, None, None).await.unwrap().items.is_empty(), "노트가 모두 삭제됨");
     assert!(db.issue_links_for(issue_b.id).await.unwrap().is_empty(), "이슈 B 측에서 본 링크도 cascade 됨");
 
     // 이슈 B 는 살아 있어야 한다
@@ -697,7 +697,7 @@ async fn test_epic_delete_cascades_all_issues_and_descendants() {
     assert!(db.issue_get(i1.id, false).await.is_err(), "하위 이슈 i1 cascade");
     assert!(db.issue_get(i2.id, false).await.is_err(), "하위 이슈 i2 cascade");
     assert!(db.task_list(i1.id, None).await.unwrap().is_empty(), "i1 의 태스크 cascade");
-    assert!(db.note_list(Some(i1.id), None, None, None, false, true, None, None, None, None, None, None, None, None).await.unwrap().items.is_empty(), "i1 의 노트 cascade");
+    assert!(db.note_list(Some(i1.id), None, None, None, false, true, None, None, None, None, None, None, None, None, None).await.unwrap().items.is_empty(), "i1 의 노트 cascade");
 
     // 다른 에픽/이슈는 살아 있어야 한다
     assert!(db.epic_get(other_epic.id).await.is_ok(), "다른 에픽은 살아 있음");
@@ -828,7 +828,7 @@ async fn test_note_add_persists_agent_id() {
     assert_eq!(n2.agent_id, None, "agent_id 미지정은 NULL 유지");
 
     // note_list 응답에도 agent_id 가 노출되어야 한다
-    let notes = db.note_list(Some(issue.id), None, None, None, false, true, None, None, None, None, None, None, None, None).await.unwrap().items;
+    let notes = db.note_list(Some(issue.id), None, None, None, false, true, None, None, None, None, None, None, None, None, None).await.unwrap().items;
     let opus_notes: Vec<_> = notes.iter()
         .filter(|n| n.agent_id.as_deref() == Some("claude-opus@sess-A"))
         .collect();
@@ -2111,21 +2111,21 @@ async fn test_note_list_derive_filtering() {
     }).await.unwrap();
 
     // project_key 필터 조회
-    let notes_p = db.note_list(None, None, None, None, false, true, Some("test-project"), None, None, None, None, None, None, None).await.unwrap().items;
+    let notes_p = db.note_list(None, None, None, None, false, true, Some("test-project"), None, None, None, None, None, None, None, None).await.unwrap().items;
     assert_eq!(notes_p.len(), 3, "test-project에 속한 노트가 3개여야 함");
 
     // sprint_id 필터 조회
-    let notes_s = db.note_list(None, None, None, None, false, true, None, Some(sprint_id), None, None, None, None, None, None).await.unwrap().items;
+    let notes_s = db.note_list(None, None, None, None, false, true, None, Some(sprint_id), None, None, None, None, None, None, None).await.unwrap().items;
     assert_eq!(notes_s.len(), 2, "sprint에 속한 노트가 2개여야 함");
     assert!(notes_s.iter().any(|n| n.id == n_issue.id));
     assert!(notes_s.iter().any(|n| n.id == n_epic.id));
 
     // project_key + sprint_id 필터 조합 교집합 조회
-    let notes_both = db.note_list(None, None, None, None, false, true, Some("test-project"), Some(sprint_id), None, None, None, None, None, None).await.unwrap().items;
+    let notes_both = db.note_list(None, None, None, None, false, true, Some("test-project"), Some(sprint_id), None, None, None, None, None, None, None).await.unwrap().items;
     assert_eq!(notes_both.len(), 2, "교집합 조회 결과 2개여야 함");
 
     // 다른 project_key 필터 조회 -> 빈 결과여야 함
-    let notes_other = db.note_list(None, None, None, None, false, true, Some("other-project"), None, None, None, None, None, None, None).await.unwrap().items;
+    let notes_other = db.note_list(None, None, None, None, false, true, Some("other-project"), None, None, None, None, None, None, None, None).await.unwrap().items;
     assert_eq!(notes_other.len(), 0);
 }
 
@@ -2284,6 +2284,7 @@ async fn test_list_pagination_and_compact() {
         None,
         None,
         None,       // epic_id
+        None,       // mission_id
         None,       // rollup
         Some(1),    // limit
         Some(0),    // offset
@@ -2365,17 +2366,17 @@ async fn test_note_list_derive_filter_project_and_sprint() {
     }).await.unwrap();
 
     // project_key 필터: proj-a 만 반환
-    let res = db.note_list(None, None, None, None, true, false, Some("proj-a"), None, None, None, None, None, None, None).await.unwrap();
+    let res = db.note_list(None, None, None, None, true, false, Some("proj-a"), None, None, None, None, None, None, None, None).await.unwrap();
     assert_eq!(res.items.len(), 1);
     assert_eq!(res.items[0].summary, "note for proj-a sprint-a");
 
     // sprint_id 필터: sprint_b 만 반환
-    let res2 = db.note_list(None, None, None, None, true, false, None, Some(sprint_b.id), None, None, None, None, None, None).await.unwrap();
+    let res2 = db.note_list(None, None, None, None, true, false, None, Some(sprint_b.id), None, None, None, None, None, None, None).await.unwrap();
     assert_eq!(res2.items.len(), 1);
     assert_eq!(res2.items[0].summary, "note for proj-b sprint-b");
 
     // 교집합 필터: proj-a + sprint_b → 0건
-    let res3 = db.note_list(None, None, None, None, true, false, Some("proj-a"), Some(sprint_b.id), None, None, None, None, None, None).await.unwrap();
+    let res3 = db.note_list(None, None, None, None, true, false, Some("proj-a"), Some(sprint_b.id), None, None, None, None, None, None, None).await.unwrap();
     assert_eq!(res3.items.len(), 0);
 }
 
@@ -2470,7 +2471,7 @@ async fn test_note_list_compact_token_limit_regression() {
     // compact=true, limit=50 로 조회
     let res = db.note_list(
         Some(issue.id), None, None, None, true, false, None, None,
-        None, None, Some(50), Some(0), Some(true), None,
+        None, None, None, Some(50), Some(0), Some(true), None,
     ).await.unwrap();
 
     assert_eq!(res.total, 30);
@@ -3486,7 +3487,8 @@ async fn test_epic_e5_improvements() {
         true,
         None,
         None,
-        None,
+        None,  // epic_id
+        None,  // mission_id
         None,
         None,
         None,
@@ -3522,7 +3524,8 @@ async fn test_epic_e5_improvements() {
         None,
         None,
         Some(epic_id),
-        Some(false),
+        None,        // mission_id
+        Some(false), // rollup
         None,
         None,
         None,
@@ -3542,7 +3545,8 @@ async fn test_epic_e5_improvements() {
         None,
         None,
         Some(epic_id),
-        Some(true),
+        None,       // mission_id
+        Some(true), // rollup
         None,
         None,
         None,
