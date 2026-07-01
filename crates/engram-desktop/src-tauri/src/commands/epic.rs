@@ -8,6 +8,10 @@ use tauri::State;
 
 // ── Inner functions (testable without Tauri context) ──────────────────────────
 
+pub async fn do_epic_get(db: &Db, id: i64) -> engram_core::Result<Epic> {
+    db.epic_get(id).await
+}
+
 pub async fn do_epic_list(
     db: &Db,
     project_key: Option<&str>,
@@ -45,6 +49,14 @@ pub async fn do_epic_set_sprint(
 }
 
 // ── Tauri command wrappers ────────────────────────────────────────────────────
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn epic_get(
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<Epic, String> {
+    do_epic_get(&db, id).await.map_err(|e| e.to_string())
+}
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn epic_list(

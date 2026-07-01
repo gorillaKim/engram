@@ -131,4 +131,27 @@ impl Db {
             .await?;
         Ok(())
     }
+
+    pub async fn sprint_progress_list(&self) -> Result<Vec<SprintProgress>> {
+        sqlx::query_as::<_, SprintProgress>(
+            "SELECT 
+                e.sprint_id as sprint_id,
+                COUNT(i.id) as total_issues,
+                SUM(CASE WHEN i.status = 'finished' THEN 1 ELSE 0 END) as completed_issues
+             FROM issues i
+             JOIN epics e ON i.epic_id = e.id
+             WHERE e.sprint_id IS NOT NULL
+             GROUP BY e.sprint_id"
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, sqlx::FromRow)]
+pub struct SprintProgress {
+    pub sprint_id: i64,
+    pub total_issues: i64,
+    pub completed_issues: i64,
 }

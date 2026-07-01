@@ -108,3 +108,10 @@ pub fn show_main_window(app: tauri::AppHandle) {
 pub fn mcp_get_tool_definitions() -> Vec<serde_json::Value> {
     engram_mcp::tools::all_tool_definitions()
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn mcp_recent_logs(
+    sup: State<'_, Arc<McpSupervisor>>,
+) -> Result<Vec<crate::mcp_supervisor::LogLine>, String> {
+    Ok(sup.recent_logs().await)
+}

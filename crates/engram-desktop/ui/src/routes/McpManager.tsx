@@ -319,18 +319,18 @@ export function McpManager() {
                     호출 내역이 없습니다.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="max-h-[300px] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                     <table className="w-full text-xs text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                          <th className="p-3 font-semibold">시각</th>
-                          <th className="p-3 font-semibold">도구명</th>
-                          <th className="p-3 font-semibold">결과</th>
-                          <th className="p-3 font-semibold text-right">소요시간(ms)</th>
+                        <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0 z-10 shadow-[inset_0_-1px_0_rgba(0,0,0,0.1)]">
+                          <th className="p-3 font-semibold bg-slate-50">시각</th>
+                          <th className="p-3 font-semibold bg-slate-50">도구명</th>
+                          <th className="p-3 font-semibold bg-slate-50">결과</th>
+                          <th className="p-3 font-semibold text-right bg-slate-50">소요시간(ms)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {calls.slice(0, 50).map((c, i) => (
+                        {calls.slice(0, 200).map((c, i) => (
                           <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
                             <td className="p-3 text-slate-400 font-mono">
                               {new Date(c.ts).toLocaleTimeString()}

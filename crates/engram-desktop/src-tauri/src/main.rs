@@ -143,8 +143,10 @@ fn main() {
             {
                 let ah_log = ah.clone();
                 let mut log_rx = sup.subscribe_logs();
+                let sup_log = Arc::clone(&sup);
                 tauri::async_runtime::spawn(async move {
                     while let Ok(line) = log_rx.recv().await {
+                        sup_log.push_log(line.clone()).await;
                         let _ = ah_log.emit("mcp://log", &line);
                     }
                 });
@@ -171,11 +173,13 @@ fn main() {
             commands::issue_set_status,
             commands::issue_set_priority,
             commands::epic_list,
+            commands::epic_get,
             commands::sprint_current,
             commands::sprint_list,
             commands::sprint_create,
             commands::sprint_update,
             commands::sprint_delete,
+            commands::sprint_progress_list,
             commands::epic_set_sprint,
             commands::task_list,
             commands::task_set_status,
@@ -203,6 +207,7 @@ fn main() {
             commands::mcp_stop,
             commands::mcp_restart,
             commands::mcp_recent_calls,
+            commands::mcp_recent_logs,
             commands::mcp_get_tool_definitions,
             commands::mcp_set_autostart,
             commands::get_activity_settings,

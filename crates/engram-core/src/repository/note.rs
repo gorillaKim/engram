@@ -54,6 +54,13 @@ impl Db {
                     ))?;
                 (None, Some(target), None)
             }
+            NoteScope::Mission => {
+                let target = input.scope_target_id
+                    .ok_or_else(|| Error::Validation(
+                        r#"{"scope":"mission","expected_fields":["scope_target_id"],"message":"mission scope 는 scope_target_id (mission id) 가 필수입니다"}"#.to_string()
+                    ))?;
+                (None, Some(target), None)
+            }
         };
 
 
@@ -138,6 +145,7 @@ impl Db {
         project_key: Option<&str>,
         sprint_id: Option<i64>,
         epic_id: Option<i64>,
+        mission_id: Option<i64>,
         rollup: Option<bool>,
         limit: Option<i64>,
         offset: Option<i64>,
@@ -173,11 +181,18 @@ impl Db {
         if sprint_id.is_some() {
             from_where.push_str(" AND COALESCE(CASE WHEN n.scope = 'sprint' THEN n.scope_target_id ELSE NULL END, ie.sprint_id, ee.sprint_id) = ?");
         }
-        if let Some(eid) = epic_id {
+        if let Some(_) = epic_id {
             if rollup.unwrap_or(false) {
                 from_where.push_str(" AND ( (n.scope = 'epic' AND n.scope_target_id = ?) OR (n.issue_id IN (SELECT id FROM issues WHERE epic_id = ?)) OR (n.task_id IN (SELECT id FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id = ?))) )");
             } else {
                 from_where.push_str(" AND n.scope = 'epic' AND n.scope_target_id = ?");
+            }
+        }
+        if let Some(_) = mission_id {
+            if rollup.unwrap_or(false) {
+                from_where.push_str(" AND ( (n.scope = 'mission' AND n.scope_target_id = ?) OR (n.scope = 'epic' AND n.scope_target_id IN (SELECT id FROM epics WHERE mission_id = ?)) OR (n.issue_id IN (SELECT id FROM issues WHERE epic_id IN (SELECT id FROM epics WHERE mission_id = ?))) OR (n.task_id IN (SELECT id FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id IN (SELECT id FROM epics WHERE mission_id = ?)))) )");
+            } else {
+                from_where.push_str(" AND ( (n.scope = 'mission' AND n.scope_target_id = ?) OR (n.scope = 'sprint') )");
             }
         }
         if updated_after.is_some() {
@@ -236,6 +251,15 @@ impl Db {
                 q = q.bind(eid);
             }
         }
+        if let Some(mid) = mission_id {
+            if rollup.unwrap_or(false) {
+                count_q = count_q.bind(mid).bind(mid).bind(mid).bind(mid);
+                q = q.bind(mid).bind(mid).bind(mid).bind(mid);
+            } else {
+                count_q = count_q.bind(mid);
+                q = q.bind(mid);
+            }
+        }
         if let Some(ref ua) = updated_after {
             let uas = ua.to_string();
             count_q = count_q.bind(uas.clone());
@@ -282,6 +306,7 @@ impl Db {
             project_key,
             sprint_id,
             epic_id,
+            None,
             rollup,
             limit,
             offset,
@@ -400,6 +425,13 @@ impl Db {
                     let target = input.scope_target_id
                         .ok_or_else(|| Error::Validation(
                             r#"{"scope":"epic","expected_fields":["scope_target_id"],"message":"epic scope 는 scope_target_id (epic id) 가 필수입니다"}"#.to_string()
+                        ))?;
+                    (None, Some(target), None)
+                }
+                NoteScope::Mission => {
+                    let target = input.scope_target_id
+                        .ok_or_else(|| Error::Validation(
+                            r#"{"scope":"mission","expected_fields":["scope_target_id"],"message":"mission scope 는 scope_target_id (mission id) 가 필수입니다"}"#.to_string()
                         ))?;
                     (None, Some(target), None)
                 }

@@ -14,7 +14,6 @@ import { ConfirmBulkActionModal } from '../components/ConfirmBulkActionModal';
 import { toast } from 'sonner';
 import { useUIStore } from '../store/ui';
 import { MissionModal } from '../components/MissionModal';
-import { EditEpicModal } from '../components/EditEpicModal';
 import { CreateEpicModal } from '../components/CreateEpicModal';
 import { StatusBadge } from '../components/StatusBadge';
 import { MissionNode } from '../components/flow/MissionNode';
@@ -84,7 +83,6 @@ export function MissionsBoard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [createEpicOpen, setCreateEpicOpen] = useState(false);
   const [editingMission, setEditingMission] = useState<Mission | undefined>(undefined);
-  const [editingEpic, setEditingEpic] = useState<Epic | null>(null);
 
   // 추가 상태
   const [sprints, setSprints] = useState<Sprint[]>([]);
@@ -127,7 +125,7 @@ export function MissionsBoard() {
     });
   };
 
-  const { selectIssue, selectProject } = useUIStore();
+  const { selectedEpicId, selectedMissionId, selectIssue, selectProject, selectEpic, selectMission } = useUIStore();
 
   // issue.id → project_key lookup built from current tree
   const issueProjectMap = useMemo<Map<number, string>>(() => {
@@ -148,13 +146,12 @@ export function MissionsBoard() {
   }, [issueProjectMap, selectIssue, selectProject]);
 
   const handleEpicDoubleClick = useCallback((epic: Epic) => {
-    setEditingEpic(epic);
-  }, []);
+    selectEpic(epic.id);
+  }, [selectEpic]);
 
   const handleMissionDoubleClick = useCallback((mission: Mission) => {
-    setEditingMission(mission);
-    setModalOpen(true);
-  }, []);
+    selectMission(mission.id);
+  }, [selectMission]);
 
   // 스프린트 목록, 활성 스프린트 및 에픽 목록 로드
   useEffect(() => {
@@ -179,6 +176,13 @@ export function MissionsBoard() {
       .catch((e: unknown) => setError(String(e)))
       .finally(() => setTreeLoading(false));
   }, []);
+
+  // selectedEpicId 나 selectedMissionId 가 null 이 될 때 (즉, 서랍이 닫혔을 때) 트리 새로고침
+  useEffect(() => {
+    if (selectedEpicId === null && selectedMissionId === null && selectedId != null) {
+      loadTree(selectedId);
+    }
+  }, [selectedEpicId, selectedMissionId, selectedId, loadTree]);
 
   const reloadMissions = useCallback(() => {
     setLoading(true);
@@ -335,7 +339,7 @@ export function MissionsBoard() {
                 <StatusBadge status={m.status} />
               </button>
               <button
-                onClick={(e) => { e.stopPropagation(); setEditingMission(m); setModalOpen(true); }}
+                onClick={(e) => { e.stopPropagation(); selectMission(m.id); }}
                 className="absolute right-2 top-2.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-violet-600 transition-all text-xs"
                 title="미션 수정"
               >
@@ -412,10 +416,7 @@ export function MissionsBoard() {
         onClose={handleModalClose}
         mission={editingMission}
       />
-      <EditEpicModal
-        epic={editingEpic}
-        onClose={() => { setEditingEpic(null); if (selectedId) loadTree(selectedId); }}
-      />
+
       <CreateEpicModal
         open={createEpicOpen}
         onClose={() => { setCreateEpicOpen(false); if (selectedId) loadTree(selectedId); }}

@@ -55,10 +55,12 @@ function NoteDetail({ id }: { id: number }) {
 }
 
 interface Props {
-  issueId: number;
+  issueId?: number | null;
+  epicId?: number | null;
+  missionId?: number | null;
 }
 
-export function NoteList({ issueId }: Props) {
+export function NoteList({ issueId, epicId, missionId }: Props) {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -66,21 +68,37 @@ export function NoteList({ issueId }: Props) {
   const [newSummary, setNewSummary] = useState('');
   const [newDetail, setNewDetail] = useState('');
 
+  const queryKey = ['notes', { issueId, epicId, missionId }];
+
   const { data: notes = [] } = useQuery({
-    queryKey: ['notes', issueId],
-    queryFn: () => noteList(issueId),
+    queryKey,
+    queryFn: () => noteList(issueId, epicId, missionId),
   });
 
   const add = useMutation({
-    mutationFn: () =>
-      noteAdd({
-        issue_id: issueId,
+    mutationFn: () => {
+      let scope: 'issue' | 'epic' | 'mission' = 'issue';
+      let scope_target_id: number | undefined = undefined;
+      
+      if (missionId) {
+        scope = 'mission';
+        scope_target_id = missionId;
+      } else if (epicId) {
+        scope = 'epic';
+        scope_target_id = epicId;
+      }
+
+      return noteAdd({
+        issue_id: issueId ?? 0,
         note_type: newType,
         summary: newSummary.trim(),
         detail: newDetail.trim() || undefined,
-      }),
+        scope: scope as any,
+        scope_target_id,
+      });
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['notes', issueId] });
+      qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
       setNewSummary('');
       setNewDetail('');
@@ -93,7 +111,7 @@ export function NoteList({ issueId }: Props) {
   const resolve = useMutation({
     mutationFn: (id: number) => noteResolve(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['notes', issueId] });
+      qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ['sessionRestore'] });
       toast.success('노트가 해결됨으로 표시되었습니다');
     },

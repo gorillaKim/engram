@@ -26,7 +26,7 @@ import { useGroupedMissions } from '../hooks/useGroupedMissions';
 const BACKLOG_ID = 0;
 
 export function IssueManager() {
-  const { selectedSprintId, selectSprint, selectIssue, setView } = useUIStore();
+  const { selectedSprintId, selectSprint, selectIssue, setView, selectEpic, selectMission } = useUIStore();
   const qc = useQueryClient();
 
   const handleSelectSprint = (id: number | null) => {
@@ -687,11 +687,8 @@ export function IssueManager() {
                   return next;
                 });
               }}
-              onEpicEdit={setEditEpic}
-              onMissionEdit={(mission) => {
-                setEditMission(mission);
-                setMissionModalOpen(true);
-              }}
+              onEpicEdit={(epic) => selectEpic(epic.id)}
+              onMissionEdit={(mission) => selectMission(mission.id)}
               onIssueStatusChange={(id, status) => updateIssueStatus.mutate({ id, status })}
               onIssuePriorityChange={(id, priority) => updateIssuePriority.mutate({ id, priority })}
               renderMissionActions={(mission) => {

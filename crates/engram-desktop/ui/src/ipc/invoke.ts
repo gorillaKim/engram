@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type {
   SessionSnapshot, IssueBoardStatus, Issue, Epic, Sprint,
   IssueFilter, Task, Note, CreateNoteInput, BlockingGraph,
-  SupervisorStatusSnapshot, CallRecord,
+  SupervisorStatusSnapshot, CallRecord, LogLine, SprintProgress,
   CreateEpicInput, CreateIssueInput, CreateTaskInput,
   IssueLink, LinkType, EpicStatus, HistoryEntry, CreateSprintInput,
   Mission, MissionProgress, MissionTree,
@@ -44,6 +44,9 @@ export const issueUpdate = (
     epic_id: input.epic_id ?? null,
   });
 
+export const epicGet = (id: number) =>
+  invoke<Epic>('epic_get', { id });
+
 export const epicList = (project_key?: string, include_completed?: boolean) =>
   invoke<Epic[]>('epic_list', {
     project_key: project_key ?? null,
@@ -59,6 +62,9 @@ export const sprintCurrent = () =>
 
 export const sprintList = () =>
   invoke<Sprint[]>('sprint_list');
+
+export const sprintProgressList = () =>
+  invoke<SprintProgress[]>('sprint_progress_list');
 
 export const sprintCreate = (input: CreateSprintInput) =>
   invoke<Sprint>('sprint_create', {
@@ -85,8 +91,12 @@ export const taskList = (issue_id: number) =>
 export const taskSetStatus = (id: number, status: string) =>
   invoke<Task>('task_set_status', { id, status });
 
-export const noteList = (issue_id: number) =>
-  invoke<Note[]>('note_list', { issue_id });
+export const noteList = (issue_id?: number | null, epic_id?: number | null, mission_id?: number | null) =>
+  invoke<Note[]>('note_list', {
+    issue_id: issue_id ?? null,
+    epic_id: epic_id ?? null,
+    mission_id: mission_id ?? null,
+  });
 
 export const noteGet = (id: number) =>
   invoke<Note>('note_get', { id });
@@ -119,6 +129,9 @@ export const mcpRestart = (port: number) =>
 
 export const mcpRecentCalls = () =>
   invoke<CallRecord[]>('mcp_recent_calls');
+
+export const mcpRecentLogs = () =>
+  invoke<LogLine[]>('mcp_recent_logs');
 
 export const mcpSetAutostart = (on: boolean) =>
   invoke<void>('mcp_set_autostart', { on });

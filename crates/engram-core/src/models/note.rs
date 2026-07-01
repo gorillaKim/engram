@@ -41,6 +41,7 @@ pub enum NoteScope {
     Epic,
     Issue,
     Task,
+    Mission,
 }
 
 /// session_restore 시 summary만 반환 — 토큰 절약 핵심

@@ -174,8 +174,8 @@ export function KanbanBoard() {
       onDragEnd={handleDragEnd}
       onDragCancel={() => setActiveIssue(null)}
     >
-      <div className="p-6 overflow-auto h-full">
-        <div className="flex flex-col gap-4 w-fit min-w-full">
+      <div className="p-6 overflow-y-auto overflow-x-hidden h-full">
+        <div className="flex flex-col gap-4 w-full">
         {/* Filter bar */}
         <FilterBar
           boards={boards}
@@ -253,52 +253,58 @@ export function KanbanBoard() {
         </div>
 
         {filteredBoards.map((board) => (
-          <div key={board.project_key} className="pb-4 shrink-0">
-            {/* Sticky header group: project name + column headers */}
-            <div className="sticky -top-6 z-20 bg-slate-50 pt-6 pb-2 -mx-6 px-6">
-              <div className="flex items-center justify-between mb-2 py-1">
-                <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
-                <button
-                  type="button"
-                  onClick={() => setIssueModalProject(board.project_key)}
-                  className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
-                >
-                  + 이슈 추가
-                </button>
-              </div>
-              <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))` }}>
-                {visibleColumns.map((status) => {
-                  const issues = (board as unknown as Record<string, Issue[]>)[status] ?? [];
-                  return (
-                    <KanbanColumnHeader
-                      key={status}
-                      status={status}
-                      issueCount={issues.length}
-                      onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
-                      onBulkFinish={status === 'demo' ? () => {
-                        const demoIssues = (board as unknown as Record<string, Issue[]>)['demo'] ?? [];
-                        if (demoIssues.length > 0) {
-                          setBulkFinishTarget({ projectKey: board.project_key, issues: demoIssues });
-                        }
-                      } : undefined}
-                    />
-                  );
-                })}
-              </div>
+          <div key={board.project_key} className="pb-4 shrink-0 flex flex-col">
+            {/* 프로젝트명 영역 (가로 고정) */}
+            <div className="flex items-center justify-between mb-3 py-1 flex-shrink-0">
+              <h2 className="text-base font-semibold text-slate-700">{board.project_key}</h2>
+              <button
+                type="button"
+                onClick={() => setIssueModalProject(board.project_key)}
+                className="text-xs px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded"
+              >
+                + 이슈 추가
+              </button>
             </div>
-            {/* Cards grid */}
-            <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(280px, 1fr))` }}>
-              {visibleColumns.map((status) => (
-                <KanbanColumn
-                  key={status}
-                  projectKey={board.project_key}
-                  status={status}
-                  issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
-                  onIssueClick={(id) => selectIssue(id)}
-                  expansionIds={expansionIds}
-                  epicMap={epicMap}
-                />
-              ))}
+
+            {/* 가로 스크롤 영역 (컬럼 헤더 & 카드 그리드) */}
+            <div className="overflow-x-auto pb-4 -mx-6 px-6">
+              <div className="min-w-max flex flex-col gap-3">
+                {/* Column Headers */}
+                <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 300px)` }}>
+                  {visibleColumns.map((status) => {
+                    const issues = (board as unknown as Record<string, Issue[]>)[status] ?? [];
+                    return (
+                      <KanbanColumnHeader
+                        key={status}
+                        status={status}
+                        issueCount={issues.length}
+                        onCreateIssue={status === 'required' ? () => setIssueModalProject(board.project_key) : undefined}
+                        onBulkFinish={status === 'demo' ? () => {
+                          const demoIssues = (board as unknown as Record<string, Issue[]>)['demo'] ?? [];
+                          if (demoIssues.length > 0) {
+                            setBulkFinishTarget({ projectKey: board.project_key, issues: demoIssues });
+                          }
+                        } : undefined}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Cards grid */}
+                <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${visibleColumns.length}, 300px)` }}>
+                  {visibleColumns.map((status) => (
+                    <KanbanColumn
+                      key={status}
+                      projectKey={board.project_key}
+                      status={status}
+                      issues={(board as unknown as Record<string, Issue[]>)[status] ?? []}
+                      onIssueClick={(id) => selectIssue(id)}
+                      expansionIds={expansionIds}
+                      epicMap={epicMap}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         ))}

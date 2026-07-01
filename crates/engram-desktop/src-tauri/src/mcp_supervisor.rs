@@ -43,6 +43,7 @@ pub struct McpSupervisor {
     db: Arc<Db>,
     state: Mutex<SupervisorState>,
     pub log_tx: broadcast::Sender<LogLine>,
+    log_buffer: Mutex<VecDeque<LogLine>>,
     call_broadcast_tx: broadcast::Sender<CallRecord>,
     call_log: Mutex<VecDeque<CallRecord>>,
     call_count: AtomicU64,
@@ -63,6 +64,7 @@ impl McpSupervisor {
                 shutdown_tx: None,
             }),
             log_tx,
+            log_buffer: Mutex::new(VecDeque::with_capacity(100)),
             call_broadcast_tx,
             call_log: Mutex::new(VecDeque::with_capacity(200)),
             call_count: AtomicU64::new(0),
@@ -132,6 +134,18 @@ impl McpSupervisor {
 
     pub fn subscribe_logs(&self) -> broadcast::Receiver<LogLine> {
         self.log_tx.subscribe()
+    }
+
+    pub async fn recent_logs(&self) -> Vec<LogLine> {
+        self.log_buffer.lock().await.iter().cloned().collect()
+    }
+
+    pub async fn push_log(&self, line: LogLine) {
+        let mut buffer = self.log_buffer.lock().await;
+        if buffer.len() >= 100 {
+            buffer.pop_front();
+        }
+        buffer.push_back(line);
     }
 
     pub async fn recent_calls(&self) -> Vec<CallRecord> {

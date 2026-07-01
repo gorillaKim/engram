@@ -5,7 +5,6 @@ import { issueGet, issueSetStatus, issueSetPriority, issueUpdate, blockingGraphF
 import { TaskChecklist } from '../components/TaskChecklist';
 import { NoteList } from '../components/NoteList';
 import { PriorityBadge } from '../components/PriorityBadge';
-import { StatusBadge } from '../components/StatusBadge';
 import { BlockingGraphView } from '../components/BlockingGraph';
 import { IssueLinkSection } from '../components/IssueLinkSection';
 import { CommentSection } from '../components/CommentSection';
@@ -17,7 +16,7 @@ import { useEpics } from '../hooks/useEpics';
 import type { Issue } from '../ipc/types';
 
 export function IssueDetail() {
-  const { selectedIssueId, selectedProjectKey, selectIssue } = useUIStore();
+  const { selectedIssueId, selectedProjectKey, selectIssue, selectProject, selectEpic, selectMission } = useUIStore();
   const qc = useQueryClient();
 
   const { data: issue } = useQuery({
@@ -29,8 +28,6 @@ export function IssueDetail() {
   const { data: epics = [] } = useEpics(undefined, true);
   const epic = useMemo(() => issue ? epics.find((e) => e.id === issue.epic_id) : undefined, [epics, issue]);
   const targetProjectKey = selectedProjectKey || epic?.project_key;
-  const [epicOpen, setEpicOpen] = useState(false);
-  const [missionOpen, setMissionOpen] = useState(false);
   const [editingField, setEditingField] = useState<'title' | 'description' | 'goal' | null>(null);
 
   const { data: mission } = useQuery({
@@ -104,6 +101,7 @@ export function IssueDetail() {
       qc.invalidateQueries({ queryKey: ['blockingGraph'] });
       qc.removeQueries({ queryKey: ['issue', selectedIssueId] });
       toast.success('이슈가 삭제되었습니다');
+      selectProject(null);
       selectIssue(null);
     },
     onError: (err) => toast.error(`삭제 실패: ${err}`),
@@ -115,18 +113,25 @@ export function IssueDetail() {
     remove.mutate();
   };
 
+  const handleClose = () => {
+    selectProject(null);
+    selectIssue(null);
+  };
+
   if (!selectedIssueId) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex justify-end bg-black/30"
-      onClick={(e) => { if (e.target === e.currentTarget) selectIssue(null); }}
-    >
-      <div className="relative w-full max-w-lg bg-white shadow-2xl flex flex-col h-full overflow-y-auto">
+    <div className="relative w-full h-full bg-white flex flex-col overflow-y-auto">
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-slate-200 sticky top-0 bg-white z-10">
-          <div className="flex items-start gap-2 min-w-0 flex-1">
-            {issue && <PriorityBadge priority={issue.priority} />}
+        <div className="flex items-center justify-between p-5 border-b border-slate-200 sticky top-0 bg-white z-10">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {issue && (
+              <PriorityBadge
+                priority={issue.priority}
+                onChange={(newPriority) => updatePriority.mutate(newPriority)}
+                disabled={updatePriority.isPending}
+              />
+            )}
             <div className="flex-1 min-w-0">
               {editingField === 'title' ? (
                 <input
@@ -161,7 +166,7 @@ export function IssueDetail() {
             </div>
           </div>
           <button
-            onClick={() => selectIssue(null)}
+            onClick={handleClose}
             className="ml-3 shrink-0 text-slate-400 hover:text-slate-600 text-lg leading-none"
           >
             ×
@@ -170,84 +175,64 @@ export function IssueDetail() {
 
         {issue && (
           <div className="p-5 flex flex-col gap-6">
-            {/* Status + Priority */}
-            <div className="flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">상태</span>
-                <StatusBadge status={issue.status} type="issue" />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">우선순위</span>
-                <select
-                  value={issue.priority}
-                  disabled={updatePriority.isPending}
-                  onChange={(e) => updatePriority.mutate(e.target.value)}
-                  className="text-xs border border-slate-200 rounded px-2 py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
-                >
-                  <option value="critical">긴급</option>
-                  <option value="high">높음</option>
-                  <option value="medium">보통</option>
-                  <option value="low">낮음</option>
-                </select>
+            {/* Status Selector */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-0.5">상태</label>
+              <div className="bg-slate-100/80 p-1 rounded-xl flex gap-1 w-full">
+                {(['required', 'ready', 'working', 'demo'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    disabled={transition.isPending}
+                    onClick={() => transition.mutate(st)}
+                    className={`flex-1 text-[11px] py-1 px-1.5 rounded-lg font-semibold transition-all duration-200 ${
+                      issue.status === st
+                        ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-slate-200/50'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-white/40'
+                    }`}
+                  >
+                    {st === 'required' ? 'Required' : st === 'ready' ? 'Ready' : st === 'working' ? 'Working' : 'Demo'}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Mission (collapsible, default closed) */}
-            {mission && (
-              <div className="rounded-lg border border-violet-100 bg-violet-50/60 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setMissionOpen((v) => !v)}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-violet-100/50 transition-colors text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-violet-400 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-violet-700 uppercase tracking-wide">미션</span>
-                  <span className="flex-1 text-xs text-violet-800 font-medium truncate">{mission.title}</span>
-                  {mission.jira_key && (
-                    <span className="text-[10px] font-mono text-violet-400 flex-shrink-0">{mission.jira_key}</span>
-                  )}
-                  <StatusBadge status={mission.status} type="mission" />
-                  <span className="text-violet-400 text-xs ml-1">{missionOpen ? '▲' : '▼'}</span>
-                </button>
-                {missionOpen && (
-                  <div className="px-3 pb-3 border-t border-violet-100 pt-2">
-                    {mission.description ? (
-                      <div className="text-xs text-violet-700/80">
-                        <Markdown>{mission.description}</Markdown>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-violet-400 italic">설명 없음</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
 
-            {/* Epic (collapsible, default closed) */}
-            {epic && (
-              <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setEpicOpen((v) => !v)}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-indigo-100/50 transition-colors text-left"
-                >
-                  <span className="w-2 h-2 rounded-full bg-indigo-400 flex-shrink-0" />
-                  <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">에픽</span>
-                  <span className="flex-1 text-xs text-indigo-800 font-medium truncate">{epic.title}</span>
-                  <StatusBadge status={epic.status} type="epic" />
-                  <span className="text-indigo-400 text-xs ml-1">{epicOpen ? '▲' : '▼'}</span>
-                </button>
-                {epicOpen && (
-                  <div className="px-3 pb-3 border-t border-indigo-100 pt-2">
-                    {epic.description ? (
-                      <div className="text-xs text-indigo-700/80">
-                        <Markdown>{epic.description}</Markdown>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-indigo-400 italic">설명 없음</p>
-                    )}
-                  </div>
-                )}
+
+            {/* Mission (collapsible, default closed) */}
+            {/* Mission & Epic Links (Compact buttons) */}
+            {(mission || epic) && (
+              <div className="flex flex-col gap-2 bg-slate-50 p-3.5 rounded-xl border border-slate-100/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-0.5">연관 항목</span>
+                <div className="flex flex-col gap-1.5">
+                  {mission && (
+                    <button
+                      type="button"
+                      onClick={() => selectMission(mission.id)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200/60 hover:bg-slate-50 hover:border-slate-300 transition-all text-left shadow-sm group"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 flex-shrink-0" />
+                      <span className="text-[11px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded shrink-0">미션</span>
+                      <span className="text-xs text-slate-700 font-medium truncate flex-1 leading-none">{mission.title}</span>
+                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md shrink-0 uppercase tracking-wider">{mission.status}</span>
+                      <span className="text-[10px] text-slate-400 group-hover:text-slate-600 ml-1">➔</span>
+                    </button>
+                  )}
+
+                  {epic && (
+                    <button
+                      type="button"
+                      onClick={() => selectEpic(epic.id)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200/60 hover:bg-slate-50 hover:border-slate-300 transition-all text-left shadow-sm group"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+                      <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded shrink-0">에픽</span>
+                      <span className="text-xs text-slate-700 font-medium truncate flex-1 leading-none">{epic.title}</span>
+                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-md shrink-0 uppercase tracking-wider">{epic.status}</span>
+                      <span className="text-[10px] text-slate-400 group-hover:text-slate-600 ml-1">➔</span>
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -448,7 +433,6 @@ export function IssueDetail() {
           </div>
         )}
       </div>
-    </div>
   );
 }
 

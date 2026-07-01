@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import type { Sprint } from '../ipc/types';
+import { useQuery } from '@tanstack/react-query';
+import type { Sprint, SprintProgress } from '../ipc/types';
+import { sprintProgressList } from '../ipc/invoke';
 import { StatusBadge } from './StatusBadge';
 import { clampSidebarWidth } from '../utils/sidebarHelper';
 
@@ -28,9 +30,10 @@ function BacklogItem({
 }
 
 function SprintItem({
-  sprint, selected, onClick, onActivate, onComplete, onDelete, onEdit,
+  sprint, progress, selected, onClick, onActivate, onComplete, onDelete, onEdit,
 }: {
   sprint: Sprint;
+  progress?: SprintProgress;
   selected: boolean;
   onClick: () => void;
   onActivate: () => void;
@@ -45,6 +48,10 @@ function SprintItem({
     const t = setTimeout(() => setConfirmDelete(false), 3000);
     return () => clearTimeout(t);
   }, [confirmDelete]);
+
+  const completionRate = progress && progress.total_issues > 0
+    ? Math.round((progress.completed_issues / progress.total_issues) * 100)
+    : 0;
 
   return (
     <div
@@ -107,6 +114,22 @@ function SprintItem({
           {sprint.start_date ?? '?'} ~ {sprint.end_date ?? '?'}
         </p>
       )}
+
+      {/* Progress Bar */}
+      {progress && progress.total_issues > 0 && (
+        <div className="mt-2.5 flex flex-col gap-1 animate-fade-in">
+          <div className="flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+            <span>완료율 {completionRate}%</span>
+            <span>{progress.completed_issues}/{progress.total_issues}개</span>
+          </div>
+          <div className="h-1 w-full bg-slate-200/80 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+              style={{ width: `${completionRate}%` }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -142,6 +165,13 @@ export function SprintSidebar({
   });
 
   const [showPastSprints, setShowPastSprints] = useState(false);
+
+  // 스프린트별 하위 이슈 진행률 로드
+  const { data: progressList = [] } = useQuery<SprintProgress[]>({
+    queryKey: ['sprintsProgress'],
+    queryFn: sprintProgressList,
+    refetchInterval: 10_000,
+  });
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -199,20 +229,24 @@ export function SprintSidebar({
             <p className="text-xs text-slate-400 text-center mt-4">활성 스프린트가 없습니다</p>
           )}
 
-          {activeSprints.map((sprint) => (
-            <div key={sprint.id}>
-              <SprintItem
-                sprint={sprint}
-                selected={sprint.id === selectedSprintId}
-                onClick={() => onSelectSprint(sprint.id)}
-                onActivate={() => onActivateSprint(sprint.id)}
-                onComplete={() => onCompleteSprint(sprint)}
-                onDelete={() => onDeleteSprint(sprint.id)}
-                onEdit={() => onEditSprint(sprint)}
-              />
-              {sprint.id === selectedSprintId && children}
-            </div>
-          ))}
+          {activeSprints.map((sprint) => {
+            const progress = progressList.find((p) => p.sprint_id === sprint.id);
+            return (
+              <div key={sprint.id}>
+                <SprintItem
+                  sprint={sprint}
+                  progress={progress}
+                  selected={sprint.id === selectedSprintId}
+                  onClick={() => onSelectSprint(sprint.id)}
+                  onActivate={() => onActivateSprint(sprint.id)}
+                  onComplete={() => onCompleteSprint(sprint)}
+                  onDelete={() => onDeleteSprint(sprint.id)}
+                  onEdit={() => onEditSprint(sprint)}
+                />
+                {sprint.id === selectedSprintId && children}
+              </div>
+            );
+          })}
 
           {/* 완료된 스프린트 아코디언 */}
           {pastSprints.length > 0 && (
@@ -228,20 +262,24 @@ export function SprintSidebar({
 
               {showPastSprints && (
                 <div className="mt-1 px-1">
-                  {pastSprints.map((sprint) => (
-                    <div key={sprint.id}>
-                      <SprintItem
-                        sprint={sprint}
-                        selected={sprint.id === selectedSprintId}
-                        onClick={() => onSelectSprint(sprint.id)}
-                        onActivate={() => onActivateSprint(sprint.id)}
-                        onComplete={() => onCompleteSprint(sprint)}
-                        onDelete={() => onDeleteSprint(sprint.id)}
-                        onEdit={() => onEditSprint(sprint)}
-                      />
-                      {sprint.id === selectedSprintId && children}
-                    </div>
-                  ))}
+                  {pastSprints.map((sprint) => {
+                    const progress = progressList.find((p) => p.sprint_id === sprint.id);
+                    return (
+                      <div key={sprint.id}>
+                        <SprintItem
+                          sprint={sprint}
+                          progress={progress}
+                          selected={sprint.id === selectedSprintId}
+                          onClick={() => onSelectSprint(sprint.id)}
+                          onActivate={() => onActivateSprint(sprint.id)}
+                          onComplete={() => onCompleteSprint(sprint)}
+                          onDelete={() => onDeleteSprint(sprint.id)}
+                          onEdit={() => onEditSprint(sprint)}
+                        />
+                        {sprint.id === selectedSprintId && children}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

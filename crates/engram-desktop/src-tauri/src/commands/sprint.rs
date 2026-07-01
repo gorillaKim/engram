@@ -78,3 +78,10 @@ pub async fn sprint_delete(
 ) -> Result<(), String> {
     do_sprint_delete(&db, id).await.map_err(|e| e.to_string())
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub async fn sprint_progress_list(
+    db: State<'_, Arc<Db>>,
+) -> Result<Vec<engram_core::repository::sprint::SprintProgress>, String> {
+    db.sprint_progress_list().await.map_err(|e| e.to_string())
+}

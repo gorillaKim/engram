@@ -95,6 +95,8 @@ export interface CreateNoteInput {
   summary: string;
   detail?: string | null;
   author?: string | null;
+  scope?: string | null;
+  scope_target_id?: number | null;
 }
 
 export interface BlockingGraph {
@@ -359,4 +361,10 @@ export interface McpToolDefinition {
     }>;
     required?: string[];
   };
+}
+
+export interface SprintProgress {
+  sprint_id: number;
+  total_issues: number;
+  completed_issues: number;
 }

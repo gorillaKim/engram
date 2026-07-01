@@ -4,6 +4,8 @@ import { Toaster } from 'sonner';
 import { KanbanBoard } from './components/KanbanBoard';
 import { History } from './routes/History';
 import { IssueDetail } from './routes/IssueDetail';
+import { EpicDetail } from './routes/EpicDetail';
+import { MissionDetail } from './routes/MissionDetail';
 import { IssueManager } from './routes/IssueManager';
 import { McpManager } from './routes/McpManager';
 import { MissionsBoard } from './routes/MissionsBoard';
@@ -104,7 +106,7 @@ function UpdateModal({
 }
 
 function AppContent() {
-  const { selectedIssueId, view, setView } = useUIStore();
+  const { selectedIssueId, selectedEpicId, selectedMissionId, view, setView, selectProject, popPanel } = useUIStore();
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
 
   useEffect(() => {
@@ -112,6 +114,27 @@ function AppContent() {
       if (update) setPendingUpdate(update);
     });
   }, []);
+
+  // Esc key down global listener to pop drawers in LIFO order
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        const activeEl = document.activeElement;
+        if (
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.getAttribute('contenteditable') === 'true')
+        ) {
+          (activeEl as HTMLElement).blur();
+          return;
+        }
+        popPanel();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [popPanel]);
 
   // URL 쿼리 스트링의 view 값을 기반으로 초기 탭 상태 설정
   useEffect(() => {
@@ -124,6 +147,7 @@ function AppContent() {
 
   const handleSetView = (key: 'board' | 'missions' | 'issues' | 'history' | 'mcp' | 'settings' | 'guide') => {
     setView(key);
+    selectProject(null); // 다른 탭으로 가거나 탭을 클릭할 때 프로젝트 포커스 해제
     const params = new URLSearchParams(window.location.search);
     params.set('view', key);
     
@@ -178,16 +202,53 @@ function AppContent() {
           {/* 우측 도구 영역 - 향후 추가 가능 */}
         </div>
       </header>
-      <main className="flex-1 overflow-hidden">
-        {view === 'board' && <KanbanBoard />}
-        {view === 'history' && <History />}
-        {view === 'issues' && <IssueManager />}
-        {view === 'mcp' && <McpManager />}
-        {view === 'missions' && <MissionsBoard />}
-        {view === 'guide' && <Guide />}
-        {view === 'settings' && <Settings />}
-      </main>
-      {selectedIssueId != null && <IssueDetail />}
+      {/* Container holding Main and Side Panels */}
+      <div className="flex-1 flex overflow-hidden min-h-0 relative">
+        {/* Main Content Area */}
+        <main className="flex-1 min-w-0 overflow-hidden">
+          {view === 'board' && <KanbanBoard />}
+          {view === 'history' && <History />}
+          {view === 'issues' && <IssueManager />}
+          {view === 'mcp' && <McpManager />}
+          {view === 'missions' && <MissionsBoard />}
+          {view === 'guide' && <Guide />}
+          {view === 'settings' && <Settings />}
+        </main>
+      </div>
+
+      {/* Floating Overlay Drawers: All views use the same overlay modal style */}
+      {(selectedIssueId != null || selectedEpicId != null || selectedMissionId != null) && (
+        <div className="fixed inset-0 z-40 flex justify-end pointer-events-none">
+          {/* Backdrop overlay */}
+          <div
+            className="absolute inset-0 bg-slate-900/20 backdrop-blur-[2px] pointer-events-auto transition-opacity duration-300"
+            onClick={() => {
+              useUIStore.getState().selectIssue(null);
+              useUIStore.getState().selectEpic(null);
+              useUIStore.getState().selectMission(null);
+            }}
+          />
+          {/* Cascading drawers floating over content */}
+          <div className="relative flex flex-row-reverse items-stretch h-full gap-4 p-4 pointer-events-none z-10 overflow-x-auto max-w-full">
+            {selectedIssueId != null && (
+              <div className="pointer-events-auto h-full shadow-2xl rounded-2xl bg-white border border-slate-100 animate-slide-in w-[460px] flex-shrink-0 overflow-hidden">
+                <IssueDetail />
+              </div>
+            )}
+            {selectedEpicId != null && (
+              <div className="pointer-events-auto h-full shadow-2xl rounded-2xl bg-white border border-slate-100 animate-slide-in w-[460px] flex-shrink-0 overflow-hidden">
+                <EpicDetail />
+              </div>
+            )}
+            {selectedMissionId != null && (
+              <div className="pointer-events-auto h-full shadow-2xl rounded-2xl bg-white border border-slate-100 animate-slide-in w-[460px] flex-shrink-0 overflow-hidden">
+                <MissionDetail />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {pendingUpdate && (
         <UpdateModal update={pendingUpdate} onClose={() => setPendingUpdate(null)} />
       )}
