@@ -1755,6 +1755,54 @@ async fn test_issue_cancel_success() {
     let updated = res.unwrap();
     assert_eq!(updated.status, IssueStatus::Cancelled);
     assert!(updated.assigned_agent.is_none(), "취소 시 assigned_agent 는 NULL 로 정리되어야 함");
+
+    // 취소 시 코멘트 노트가 제대로 들어갔는지 검증
+    let note_res = db.note_list(
+        Some(issue.id),
+        None,
+        None,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ).await.unwrap();
+    let note_rows = note_res.items;
+    assert_eq!(note_rows.len(), 1);
+    assert_eq!(note_rows[0].summary, "이슈가 취소되었습니다. 사유: No longer needed");
+}
+
+#[tokio::test]
+async fn test_issue_cancel_rejects_empty_reason() {
+    let db = setup().await;
+    let (sprint_id, epic_id, mission_id) = seed_sprint_epic(&db).await;
+    let issue = db.issue_create(CreateIssueInput {
+        epic_id,
+        title: "cancel empty reason test".into(),
+        description: None,
+        goal: None,
+        priority: None,
+        }).await.unwrap();
+
+    db.issue_update(issue.id, UpdateIssueInput { status: Some(IssueStatus::Ready), ..Default::default() }, "agent").await.unwrap();
+    db.issue_claim(issue.id, "agent-1").await.unwrap();
+
+    // 1) 빈 문자열 취소 사유 차단
+    let res = db.issue_cancel(issue.id, "", "user").await;
+    assert!(res.is_err());
+    assert!(format!("{:?}", res.err().unwrap()).contains("취소 사유(reason)를 필수 입력해야 합니다"));
+
+    // 2) 공백만 있는 취소 사유 차단
+    let res = db.issue_cancel(issue.id, "   ", "user").await;
+    assert!(res.is_err());
+    assert!(format!("{:?}", res.err().unwrap()).contains("취소 사유(reason)를 필수 입력해야 합니다"));
 }
 
 #[tokio::test]

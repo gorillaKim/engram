@@ -1,5 +1,6 @@
 use crate::models::history::{CreateHistoryInput, EntityType};
 use crate::models::issue::*;
+use crate::models::note::{CreateNoteInput, NoteType, NoteScope};
 use crate::models::PaginatedResponse;
 use crate::models::{OutputMode, CoreResponse};
 use crate::{Db, Error, Result};
@@ -493,6 +494,11 @@ impl Db {
             return Err(Error::Validation("issue_cancel 은 사용자 전용입니다".to_string()));
         }
 
+        let trimmed_reason = reason.trim();
+        if trimmed_reason.is_empty() {
+            return Err(Error::Validation("취소 사유(reason)를 필수 입력해야 합니다".to_string()));
+        }
+
         let current = self.issue_get(id, false).await?;
         if current.status == IssueStatus::Finished {
             return Err(Error::Conflict("이미 finished 로 종결된 이슈는 cancelled 로 전이할 수 없습니다".to_string()));
@@ -519,8 +525,21 @@ impl Db {
             entity_id: id,
             field: "cancel_reason".to_string(),
             old_value: None,
-            new_value: Some(reason.to_string()),
+            new_value: Some(trimmed_reason.to_string()),
             changed_by: changed_by.to_string(),
+        }).await;
+
+        let _ = self.note_add(CreateNoteInput {
+            issue_id: id,
+            task_id: None,
+            note_type: NoteType::Comment,
+            summary: format!("이슈가 취소되었습니다. 사유: {}", trimmed_reason),
+            detail: None,
+            author: Some("user".to_string()),
+            agent_id: Some(changed_by.to_string()),
+            scope: Some(NoteScope::Issue),
+            scope_target_id: Some(id),
+            project_key: None,
         }).await;
 
         self.issue_get(id, false).await
