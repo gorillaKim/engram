@@ -18,6 +18,7 @@ use tauri_nspanel::ManagerExt;
 /// `on_window_event` 의 auto-hide 가 팝오버를 곧바로 닫아버린다. show 직후 짧은
 /// grace period 동안 hide 를 막기 위해 main.rs 의 핸들러에서 이 값을 참조한다.
 pub static POPOVER_SHOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
+pub static POPOVER_HIDDEN_AT_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Focused(false) 이벤트를 무시할 grace period (ms).
 pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 200;
@@ -121,12 +122,19 @@ fn show_main_window(app: &AppHandle, _view: &str) {
 
 fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
     if let Some(popover) = app.get_webview_window("tray_popover") {
+        let now = now_ms();
         #[cfg(target_os = "macos")]
         {
             if let Ok(panel) = app.get_webview_panel("tray_popover") {
                 if panel.is_visible() {
                     panel.hide();
+                    POPOVER_HIDDEN_AT_MS.store(now, Ordering::Relaxed);
                 } else {
+                    let elapsed_since_hide = now.saturating_sub(POPOVER_HIDDEN_AT_MS.load(Ordering::Relaxed));
+                    if elapsed_since_hide < 300 {
+                        return;
+                    }
+
                     const POPUP_W: f64 = 380.0;
                     let x = (icon_cx - POPUP_W / 2.0).max(0.0);
                     let y = icon_bottom;
@@ -134,7 +142,7 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
                         tauri::PhysicalPosition::new(x as i32, y as i32),
                     ));
 
-                    POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
+                    POPOVER_SHOWN_AT_MS.store(now, Ordering::Relaxed);
                     panel.show_and_make_key();
                 }
             }
@@ -144,7 +152,13 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
         {
             if popover.is_visible().unwrap_or(false) {
                 let _ = popover.hide();
+                POPOVER_HIDDEN_AT_MS.store(now, Ordering::Relaxed);
             } else {
+                let elapsed_since_hide = now.saturating_sub(POPOVER_HIDDEN_AT_MS.load(Ordering::Relaxed));
+                if elapsed_since_hide < 300 {
+                    return;
+                }
+
                 const POPUP_W: f64 = 380.0;
                 let x = (icon_cx - POPUP_W / 2.0).max(0.0);
                 let y = icon_bottom;
@@ -152,7 +166,7 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
                     tauri::PhysicalPosition::new(x as i32, y as i32),
                 ));
 
-                POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
+                POPOVER_SHOWN_AT_MS.store(now, Ordering::Relaxed);
                 let _ = popover.show();
                 let _ = popover.set_focus();
             }

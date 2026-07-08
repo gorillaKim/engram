@@ -274,19 +274,20 @@ fn main() {
             // Focused(false) 가 튀는 시나리오를 막기 위함.
             if window.label() == "tray_popover" {
                 if let tauri::WindowEvent::Focused(false) = event {
+                    use std::sync::atomic::Ordering;
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
                     let elapsed = {
-                        use std::sync::atomic::Ordering;
-                        use std::time::{SystemTime, UNIX_EPOCH};
-                        let now = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map(|d| d.as_millis() as u64)
-                            .unwrap_or(0);
                         let shown = tray::POPOVER_SHOWN_AT_MS.load(Ordering::Relaxed);
                         now.saturating_sub(shown)
                     };
                     tracing::info!("Tray popover lost focus. Elapsed: {}ms, Grace: {}ms", elapsed, tray::POPOVER_AUTO_HIDE_GRACE_MS);
                     if elapsed >= tray::POPOVER_AUTO_HIDE_GRACE_MS {
                         let _ = window.hide();
+                        tray::POPOVER_HIDDEN_AT_MS.store(now, Ordering::Relaxed);
                     }
                 }
                 return;
