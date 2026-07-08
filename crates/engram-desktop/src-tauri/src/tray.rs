@@ -1,6 +1,6 @@
 use crate::mcp_supervisor::McpSupervisor;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     image::Image,
@@ -18,7 +18,6 @@ use tauri_nspanel::ManagerExt;
 /// `on_window_event` 의 auto-hide 가 팝오버를 곧바로 닫아버린다. show 직후 짧은
 /// grace period 동안 hide 를 막기 위해 main.rs 의 핸들러에서 이 값을 참조한다.
 pub static POPOVER_SHOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
-static POPOVER_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Focused(false) 이벤트를 무시할 grace period (ms).
 pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 200;
@@ -134,19 +133,6 @@ fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
                     let _ = popover.set_position(tauri::Position::Physical(
                         tauri::PhysicalPosition::new(x as i32, y as i32),
                     ));
-
-                    if !POPOVER_INITIALIZED.load(Ordering::Relaxed) {
-                        panel.set_hides_on_deactivate(false);
-                        panel.set_floating_panel(true);
-                        panel.set_level(tauri_nspanel::PanelLevel::Status.value());
-                        panel.set_style_mask(
-                            tauri_nspanel::StyleMask::empty().nonactivating_panel().into(),
-                        );
-                        let mut behavior = tauri_nspanel::CollectionBehavior::new();
-                        behavior = behavior.can_join_all_spaces().full_screen_auxiliary().stationary();
-                        panel.set_collection_behavior(behavior.into());
-                        POPOVER_INITIALIZED.store(true, Ordering::Relaxed);
-                    }
 
                     POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
                     panel.show_and_make_key();

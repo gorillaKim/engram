@@ -60,7 +60,7 @@ fn show_native_error_dialog(_message: &str) {
 }
 
 #[cfg(target_os = "macos")]
-use tauri_nspanel::tauri_panel;
+use tauri_nspanel::{tauri_panel, WebviewWindowExt};
 
 #[cfg(target_os = "macos")]
 tauri_panel! {
@@ -128,6 +128,28 @@ fn main() {
         .setup(move |app| {
             app.manage(db);
             app.manage(supervisor_for_setup);
+
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(popover) = app.get_webview_window("tray_popover") {
+                    match popover.to_panel::<Panel>() {
+                        Ok(panel) => {
+                            panel.set_hides_on_deactivate(false);
+                            panel.set_floating_panel(true);
+                            panel.set_level(tauri_nspanel::PanelLevel::Status.value());
+                            panel.set_style_mask(
+                                tauri_nspanel::StyleMask::empty().nonactivating_panel().into(),
+                            );
+                            let mut behavior = tauri_nspanel::CollectionBehavior::new();
+                            behavior = behavior.can_join_all_spaces().full_screen_auxiliary().stationary();
+                            panel.set_collection_behavior(behavior.into());
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to convert tray_popover to NSPanel: {:?}", e);
+                        }
+                    }
+                }
+            }
 
             // Build tray icon + menu
             tray::build(app.handle())?;
