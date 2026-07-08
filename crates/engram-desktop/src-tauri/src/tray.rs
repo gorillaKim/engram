@@ -9,6 +9,9 @@ use tauri::{
     AppHandle, Manager,
 };
 
+#[cfg(target_os = "macos")]
+use tauri_nspanel::ManagerExt;
+
 /// 팝오버가 마지막으로 show 된 시각(ms since UNIX_EPOCH).
 ///
 /// fullscreen Space 에서 set_focus 가 OS 의 거부로 즉시 Focused(false) 를 트리거하면
@@ -119,63 +122,55 @@ fn show_main_window(app: &AppHandle, _view: &str) {
 
 fn show_or_hide_popover(app: &AppHandle, icon_cx: f64, icon_bottom: f64) {
     if let Some(popover) = app.get_webview_window("tray_popover") {
-        if popover.is_visible().unwrap_or(false) {
-            let _ = popover.hide();
-        } else {
-            const POPUP_W: f64 = 380.0;
-            let x = (icon_cx - POPUP_W / 2.0).max(0.0);
-            let y = icon_bottom;
-            let _ = popover.set_position(tauri::Position::Physical(
-                tauri::PhysicalPosition::new(x as i32, y as i32),
-            ));
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(panel) = app.get_webview_panel("tray_popover") {
+                if panel.is_visible() {
+                    panel.hide();
+                } else {
+                    const POPUP_W: f64 = 380.0;
+                    let x = (icon_cx - POPUP_W / 2.0).max(0.0);
+                    let y = icon_bottom;
+                    let _ = popover.set_position(tauri::Position::Physical(
+                        tauri::PhysicalPosition::new(x as i32, y as i32),
+                    ));
 
-            if !POPOVER_INITIALIZED.load(Ordering::Relaxed) {
-                let _ = popover.set_visible_on_all_workspaces(true);
-                #[cfg(target_os = "macos")]
-                macos_enable_fullscreen_popover(&popover);
-                POPOVER_INITIALIZED.store(true, Ordering::Relaxed);
+                    if !POPOVER_INITIALIZED.load(Ordering::Relaxed) {
+                        panel.set_hides_on_deactivate(false);
+                        panel.set_floating_panel(true);
+                        panel.set_level(tauri_nspanel::PanelLevel::Status.value());
+                        panel.set_style_mask(
+                            tauri_nspanel::StyleMask::empty().nonactivating_panel().into(),
+                        );
+                        let mut behavior = tauri_nspanel::CollectionBehavior::new();
+                        behavior = behavior.can_join_all_spaces().full_screen_auxiliary().stationary();
+                        panel.set_collection_behavior(behavior.into());
+                        POPOVER_INITIALIZED.store(true, Ordering::Relaxed);
+                    }
+
+                    POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
+                    panel.show_and_make_key();
+                }
             }
+        }
 
-            POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
-            let _ = popover.show();
-            let _ = popover.set_focus();
+        #[cfg(not(target_os = "macos"))]
+        {
+            if popover.is_visible().unwrap_or(false) {
+                let _ = popover.hide();
+            } else {
+                const POPUP_W: f64 = 380.0;
+                let x = (icon_cx - POPUP_W / 2.0).max(0.0);
+                let y = icon_bottom;
+                let _ = popover.set_position(tauri::Position::Physical(
+                    tauri::PhysicalPosition::new(x as i32, y as i32),
+                ));
 
-            // fullscreen Space 에서 OS 가 첫 set_focus 를 거부할 수 있으므로
-            // 200ms 후 한 번 더 재시도한다.
-            let popover_clone = popover.clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                let _ = popover_clone.set_focus();
-            });
+                POPOVER_SHOWN_AT_MS.store(now_ms(), Ordering::Relaxed);
+                let _ = popover.show();
+                let _ = popover.set_focus();
+            }
         }
     }
 }
 
-/// macOS 에서 트레이 팝오버가 사용자가 fullscreen 상태인 다른 앱의 Space 위에도 떠야 한다.
-///
-/// `set_visible_on_all_workspaces(true)` 는 `NSWindowCollectionBehaviorCanJoinAllSpaces`
-/// 만 세팅하지만, fullscreen Space 침투에는 `FullScreenAuxiliary` 가 추가로 필요하다.
-/// 추가로 `Stationary | IgnoresCycle` 을 켜 Mission Control 탭 사이클에서 빼고,
-/// 윈도우 레벨을 NSPopUpMenuWindowLevel(101) 로 올려 fullscreen 앱이 띄우는
-/// 어떤 시스템 UI 위에도 표시되게 한다.
-///
-/// **호출 시점**: 앱 초기화(setup) 단계에서 최초 1회 설정하여 윈도우의 속성을 고정한다.
-#[cfg(target_os = "macos")]
-pub fn macos_enable_fullscreen_popover(popover: &tauri::WebviewWindow) {
-    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-
-    let Ok(ns_ptr) = popover.ns_window() else { return };
-    if ns_ptr.is_null() {
-        return;
-    }
-    let ns_window: *const NSWindow = ns_ptr as *const NSWindow;
-    unsafe {
-        let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-            | NSWindowCollectionBehavior::Transient
-            | NSWindowCollectionBehavior::FullScreenAuxiliary;
-        (*ns_window).setCollectionBehavior(behavior);
-        // 전체화면 앱 레이어 위에 팝오버가 확실히 표시될 수 있도록 팝업 메뉴 레벨(101)로 설정함.
-        // extern static 상수는 dynamic link 주소 매핑 문제로 예외를 던질 수 있어 정수 리터럴을 직접 사용함.
-        (*ns_window).setLevel(101);
-    }
-}

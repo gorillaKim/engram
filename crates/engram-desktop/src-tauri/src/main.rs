@@ -59,6 +59,20 @@ fn show_native_error_dialog(_message: &str) {
     // 비-macOS 빌드: stderr/로그 파일로 대체 (현재 배포 타깃은 macOS).
 }
 
+#[cfg(target_os = "macos")]
+use tauri_nspanel::tauri_panel;
+
+#[cfg(target_os = "macos")]
+tauri_panel! {
+    panel!(Panel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: false
+        }
+    })
+    panel_event!(PanelEventHandler {})
+}
+
 fn main() {
     let settings = settings::load().unwrap_or_default();
 
@@ -94,7 +108,14 @@ fn main() {
 
     let supervisor_for_setup = Arc::clone(&supervisor);
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    builder
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.show();
