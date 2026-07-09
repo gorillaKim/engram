@@ -124,8 +124,11 @@ pub async fn do_issue_links(db: &Db, issue_id: i64) -> engram_core::Result<Vec<I
 #[tauri::command(rename_all = "snake_case")]
 pub async fn issue_list(
     db: State<'_, Arc<Db>>,
-    filter: IssueFilter,
+    mut filter: IssueFilter,
 ) -> Result<Vec<Issue>, String> {
+    if filter.limit.is_none() {
+        filter.limit = Some(100000);
+    }
     do_issue_list(&db, filter).await.map_err(|e| e.to_string())
 }
 

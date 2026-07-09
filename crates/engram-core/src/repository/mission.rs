@@ -270,17 +270,18 @@ impl Db {
     pub async fn mission_delete(&self, id: i64) -> Result<()> {
         let _mission = self.mission_get(id).await?;
 
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM epics WHERE mission_id = ?")
+        // 1. 해당 미션에 속한 모든 에픽 ID 조회
+        let epic_ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM epics WHERE mission_id = ?")
             .bind(id)
-            .fetch_one(&self.pool)
+            .fetch_all(&self.pool)
             .await?;
 
-        if count > 0 {
-            return Err(Error::Validation(format!(
-                "mission:{id} has {count} child epics, cannot delete"
-            )));
+        // 2. 각 에픽을 epic_delete 로 일괄 삭제 (하위 이슈/태스크/노트/링크 cascade 포함)
+        for epic_id in epic_ids {
+            self.epic_delete(epic_id, "user").await?;
         }
 
+        // 3. 미션 본체 삭제
         sqlx::query("DELETE FROM missions WHERE id = ?")
             .bind(id)
             .execute(&self.pool)
@@ -425,20 +426,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mission_delete_blocked_by_child_epic() {
+    async fn test_mission_delete_cascade() {
         let db = setup_db().await;
         let m = db.mission_create(make_input("M1")).await.unwrap();
 
-        sqlx::query("INSERT INTO epics (project_key, mission_id, title) VALUES ('test', ?, 'E1')")
-            .bind(m.id)
-            .execute(&db.pool)
-            .await
-            .unwrap();
+        // 1. 자식 에픽 E1 생성
+        let e = db.epic_create(crate::models::epic::CreateEpicInput {
+            project_key: "test".to_string(),
+            title: "E1".to_string(),
+            description: None,
+            mission_id: Some(m.id),
+            sprint_id: None,
+        })
+        .await
+        .unwrap();
 
-        let result = db.mission_delete(m.id).await;
-        assert!(result.is_err());
-        let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("child epics"), "{err_msg}");
+        // 2. 자식 이슈 I1 생성
+        let i = db.issue_create(crate::models::issue::CreateIssueInput {
+            epic_id: e.id,
+            title: "I1".to_string(),
+            description: None,
+            goal: None,
+            priority: None,
+        })
+        .await
+        .unwrap();
+
+        // 3. 미션 삭제 (Cascade)
+        db.mission_delete(m.id).await.unwrap();
+
+        // 4. 미션, 에픽, 이슈가 모두 삭제되었는지 확인
+        assert!(db.mission_get(m.id).await.is_err());
+        assert!(db.epic_get(e.id).await.is_err());
+        assert!(db.issue_get(i.id, false).await.is_err());
     }
 
     #[tokio::test]

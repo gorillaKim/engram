@@ -104,10 +104,47 @@ export function FilterBar({
 }: Props) {
   const allProjects = boards.map((b) => b.project_key);
 
-  // 미션 필터가 활성화된 경우 해당 미션 소속 에픽만 표시
+  // 1. 현재 보드(스프린트)에 존재하는 모든 이슈 수집
+  const allIssuesInBoard = useMemo(() => {
+    const list: any[] = [];
+    const columns = ['required', 'ready', 'working', 'demo', 'finished', 'cancelled'];
+    for (const board of boards) {
+      for (const col of columns) {
+        const issues = (board as any)[col] ?? [];
+        list.push(...issues);
+      }
+    }
+    return list;
+  }, [boards]);
+
+  // 2. 이슈들과 연결된 활성 epic_id와 mission_id 수집
+  const activeEpicIds = useMemo(() => {
+    return new Set(allIssuesInBoard.map((i) => i.epic_id));
+  }, [allIssuesInBoard]);
+
+  const activeMissionIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const issue of allIssuesInBoard) {
+      if (issue.mission_id != null) {
+        set.add(issue.mission_id);
+      }
+    }
+    return set;
+  }, [allIssuesInBoard]);
+
+  // 3. 미션 및 에픽 목록을 활성 ID로 필터링 (현재 스프린트에 속한 항목만 남김)
+  const sprintMissions = useMemo(() => {
+    return missions.filter((m) => activeMissionIds.has(m.id));
+  }, [missions, activeMissionIds]);
+
+  const sprintEpics = useMemo(() => {
+    return epics.filter((e) => activeEpicIds.has(e.id));
+  }, [epics, activeEpicIds]);
+
+  // 4. 미션 필터가 활성화된 경우 해당 미션 소속 에픽만 표시
   const visibleEpics = filters.missionIds.length > 0
-    ? epics.filter((e) => e.mission_id != null && filters.missionIds.includes(e.mission_id))
-    : epics;
+    ? sprintEpics.filter((e) => e.mission_id != null && filters.missionIds.includes(e.mission_id))
+    : sprintEpics;
 
   const hasActiveFilters =
     filters.projects.length > 0 ||
@@ -158,13 +195,13 @@ export function FilterBar({
       )}
 
       {/* 미션 드롭다운 */}
-      {missions.length > 0 && (
+      {sprintMissions.length > 0 && (
         <FilterDropdown
           label="미션"
           count={filters.missionIds.length}
           activeColor="bg-violet-100 text-violet-700 border-violet-300"
         >
-          {missions.map((m) => (
+          {sprintMissions.map((m) => (
             <DropdownItem
               key={m.id}
               label={m.title}
