@@ -19,6 +19,8 @@ use tauri_nspanel::ManagerExt;
 /// grace period 동안 hide 를 막기 위해 main.rs 의 핸들러에서 이 값을 참조한다.
 pub static POPOVER_SHOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
 pub static POPOVER_HIDDEN_AT_MS: AtomicU64 = AtomicU64::new(0);
+pub static TRAY_CLICK_DOWN_AT_MS: AtomicU64 = AtomicU64::new(0);
+pub static POPOVER_FOCUS_LOST_AT_MS: AtomicU64 = AtomicU64::new(0);
 
 /// Focused(false) 이벤트를 무시할 grace period (ms).
 pub const POPOVER_AUTO_HIDE_GRACE_MS: u64 = 200;
@@ -55,22 +57,34 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .on_tray_icon_event(|tray, ev| {
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
+                button_state,
                 rect,
                 ..
             } = ev
             {
-                let (px, py) = match rect.position {
-                    tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
-                    tauri::Position::Logical(p) => (p.x, p.y),
-                };
-                let (sw, sh) = match rect.size {
-                    tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
-                    tauri::Size::Logical(s) => (s.width, s.height),
-                };
-                let icon_cx = px + sw / 2.0;
-                let icon_bottom = py + sh;
-                show_or_hide_popover(tray.app_handle(), icon_cx, icon_bottom);
+                let now = now_ms();
+                if button_state == MouseButtonState::Down {
+                    TRAY_CLICK_DOWN_AT_MS.store(now, Ordering::Relaxed);
+                    
+                    // 포커스 유실이 마우스 다운 직전에 이미 발생했는지 확인
+                    let focus_lost = POPOVER_FOCUS_LOST_AT_MS.load(Ordering::Relaxed);
+                    if now.saturating_sub(focus_lost) < 150 {
+                        // 트레이 클릭에 의해 닫힌 것이 확실하므로 디바운스 활성화
+                        POPOVER_HIDDEN_AT_MS.store(focus_lost, Ordering::Relaxed);
+                    }
+                } else if button_state == MouseButtonState::Up {
+                    let (px, py) = match rect.position {
+                        tauri::Position::Physical(p) => (p.x as f64, p.y as f64),
+                        tauri::Position::Logical(p) => (p.x, p.y),
+                    };
+                    let (sw, sh) = match rect.size {
+                        tauri::Size::Physical(s) => (s.width as f64, s.height as f64),
+                        tauri::Size::Logical(s) => (s.width, s.height),
+                    };
+                    let icon_cx = px + sw / 2.0;
+                    let icon_bottom = py + sh;
+                    show_or_hide_popover(tray.app_handle(), icon_cx, icon_bottom);
+                }
             }
         })
         .build(app)?;

@@ -287,7 +287,19 @@ fn main() {
                     tracing::info!("Tray popover lost focus. Elapsed: {}ms, Grace: {}ms", elapsed, tray::POPOVER_AUTO_HIDE_GRACE_MS);
                     if elapsed >= tray::POPOVER_AUTO_HIDE_GRACE_MS {
                         let _ = window.hide();
-                        tray::POPOVER_HIDDEN_AT_MS.store(now, Ordering::Relaxed);
+                        
+                        // 포커스 유실 시간을 기록
+                        tray::POPOVER_FOCUS_LOST_AT_MS.store(now, Ordering::Relaxed);
+                        
+                        // 트레이 마우스 다운 이벤트가 아주 최근에 일어났는지 검증 (마우스 다운이 먼저 온 경우)
+                        let tray_down = tray::TRAY_CLICK_DOWN_AT_MS.load(Ordering::Relaxed);
+                        if now.saturating_sub(tray_down) < 150 {
+                            // 트레이 클릭에 의해 닫힌 것이 확실하므로 디바운스 활성화
+                            tray::POPOVER_HIDDEN_AT_MS.store(now, Ordering::Relaxed);
+                        } else {
+                            // 외부 클릭에 의해 닫혔으므로 디바운스 즉시 통과하도록 0 세팅
+                            tray::POPOVER_HIDDEN_AT_MS.store(0, Ordering::Relaxed);
+                        }
                     }
                 }
                 return;
