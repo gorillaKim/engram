@@ -7,7 +7,9 @@ export function useMcpCalls() {
   const [calls, setCalls] = useState<CallRecord[]>([]);
 
   useEffect(() => {
-    mcpRecentCalls().then(setCalls);
+    mcpRecentCalls().then((initialCalls) => {
+      setCalls([...initialCalls].reverse());
+    });
     const unlisten = listen<CallRecord>('mcp://call', (e) => {
       setCalls(prev => [e.payload, ...prev].slice(0, 200));
     });

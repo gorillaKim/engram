@@ -188,9 +188,19 @@ fn main() {
                 let mut log_rx = sup.subscribe_logs();
                 let sup_log = Arc::clone(&sup);
                 tauri::async_runtime::spawn(async move {
-                    while let Ok(line) = log_rx.recv().await {
-                        sup_log.push_log(line.clone()).await;
-                        let _ = ah_log.emit("mcp://log", &line);
+                    loop {
+                        match log_rx.recv().await {
+                            Ok(line) => {
+                                sup_log.push_log(line.clone()).await;
+                                let _ = ah_log.emit("mcp://log", &line);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                                tracing::warn!("Log pump lagged behind, skipped {skipped} logs");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                break;
+                            }
+                        }
                     }
                 });
             }
@@ -200,8 +210,18 @@ fn main() {
                 let ah_call = ah.clone();
                 let mut call_rx = sup.call_broadcast_sender().subscribe();
                 tauri::async_runtime::spawn(async move {
-                    while let Ok(rec) = call_rx.recv().await {
-                        let _ = ah_call.emit("mcp://call", &rec);
+                    loop {
+                        match call_rx.recv().await {
+                            Ok(rec) => {
+                                let _ = ah_call.emit("mcp://call", &rec);
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                                tracing::warn!("Call pump lagged behind, skipped {skipped} calls");
+                            }
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                                break;
+                            }
+                        }
                     }
                 });
             }
