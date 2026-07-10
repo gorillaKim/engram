@@ -233,11 +233,11 @@ export function MissionDetail() {
                     onClick={() => selectEpic(epic.id)}
                     className="flex items-center justify-between p-2.5 rounded-lg border border-slate-100 hover:border-indigo-100 hover:bg-indigo-50/20 cursor-pointer transition-all"
                   >
-                    <div className="flex flex-col gap-0.5 min-w-0">
+                    <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-3">
                       <span className="text-xs font-semibold text-slate-700 truncate">{epic.title}</span>
                       <span className="text-[10px] text-slate-400">{epic.project_key}</span>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${
                       epic.status === 'completed'
                         ? 'bg-emerald-50 text-emerald-600'
                         : epic.status === 'cancelled'
