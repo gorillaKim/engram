@@ -168,7 +168,7 @@ export function MissionsBoard() {
       })
       .catch((e: unknown) => console.error("활성 스프린트 로드 실패:", e));
 
-    epicList()
+    epicList(undefined, true)
       .then(setEpics)
       .catch((e: unknown) => console.error("에픽 목록 로드 실패:", e));
   }, []);
