@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { IssuePriority, IssueProjectBoard, Mission, Epic } from '../ipc/types';
 import type { BoardFilters } from '../store/ui';
 
@@ -119,7 +119,7 @@ export function FilterBar({
 
   // 2. 이슈들과 연결된 활성 epic_id와 mission_id 수집
   const activeEpicIds = useMemo(() => {
-    return new Set(allIssuesInBoard.map((i) => i.epic_id));
+    return new Set(allIssuesInBoard.map((i: any) => i.epic_id));
   }, [allIssuesInBoard]);
 
   const activeMissionIds = useMemo(() => {
@@ -134,16 +134,16 @@ export function FilterBar({
 
   // 3. 미션 및 에픽 목록을 활성 ID로 필터링 (현재 스프린트에 속한 항목만 남김)
   const sprintMissions = useMemo(() => {
-    return missions.filter((m) => activeMissionIds.has(m.id));
+    return missions.filter((m: Mission) => activeMissionIds.has(m.id));
   }, [missions, activeMissionIds]);
 
   const sprintEpics = useMemo(() => {
-    return epics.filter((e) => activeEpicIds.has(e.id));
+    return epics.filter((e: Epic) => activeEpicIds.has(e.id));
   }, [epics, activeEpicIds]);
 
   // 4. 미션 필터가 활성화된 경우 해당 미션 소속 에픽만 표시
   const visibleEpics = filters.missionIds.length > 0
-    ? sprintEpics.filter((e) => e.mission_id != null && filters.missionIds.includes(e.mission_id))
+    ? sprintEpics.filter((e: Epic) => e.mission_id != null && filters.missionIds.includes(e.mission_id))
     : sprintEpics;
 
   const hasActiveFilters =
@@ -201,7 +201,7 @@ export function FilterBar({
           count={filters.missionIds.length}
           activeColor="bg-violet-100 text-violet-700 border-violet-300"
         >
-          {sprintMissions.map((m) => (
+          {sprintMissions.map((m: Mission) => (
             <DropdownItem
               key={m.id}
               label={m.title}
@@ -219,7 +219,7 @@ export function FilterBar({
           count={filters.epicIds.length}
           activeColor="bg-sky-100 text-sky-700 border-sky-300"
         >
-          {visibleEpics.map((e) => (
+          {visibleEpics.map((e: Epic) => (
             <DropdownItem
               key={e.id}
               label={e.title}

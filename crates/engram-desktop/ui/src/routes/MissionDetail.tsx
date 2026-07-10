@@ -334,5 +334,3 @@ export function MissionDetail() {
     </div>
   );
 }
-  );
-}
