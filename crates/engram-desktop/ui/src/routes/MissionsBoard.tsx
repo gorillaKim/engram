@@ -160,7 +160,12 @@ export function MissionsBoard() {
       .catch((e: unknown) => console.error("스프린트 목록 로드 실패:", e));
       
     sprintCurrent()
-      .then(setActiveSprint)
+      .then((s) => {
+        setActiveSprint(s);
+        if (s) {
+          setSelectedFilterSprintId(s.id);
+        }
+      })
       .catch((e: unknown) => console.error("활성 스프린트 로드 실패:", e));
 
     epicList()
@@ -297,8 +302,8 @@ export function MissionsBoard() {
         </div>
         
         {/* 스프린트 필터 */}
-        <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/50">
-          <label className="text-[10px] font-bold text-slate-400 block mb-1">스프린트 필터</label>
+        <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/20">
+          <label className="text-[10px] font-bold text-slate-400 block mb-1.5 uppercase tracking-wider pl-0.5">스프린트 필터</label>
           <select
             value={selectedFilterSprintId}
             onChange={(e) => {
@@ -309,7 +314,7 @@ export function MissionsBoard() {
                 setSelectedFilterSprintId(Number(val));
               }
             }}
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium text-slate-700"
+            className="w-full text-xs border border-slate-200 rounded-lg h-9 py-0 pl-2.5 pr-8 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-slate-700 font-semibold transition-all duration-200 cursor-pointer hover:border-slate-300"
           >
             <option value="all">전체 스프린트</option>
             <option value="backlog">백로그 (스프린트 미지정)</option>
