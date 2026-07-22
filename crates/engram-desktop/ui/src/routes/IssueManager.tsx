@@ -21,8 +21,6 @@ import { BulkActionBar } from '../components/BulkActionBar';
 import { SprintSidebar } from '../components/SprintSidebar';
 import { IssueFilterPanel } from '../components/IssueFilterPanel';
 import { IssueManagerModals } from '../components/IssueManagerModals';
-import { CopyableId } from '../components/CopyableId';
-import { PromptButton } from '../components/PromptButton';
 import { useGroupedMissions } from '../hooks/useGroupedMissions';
 
 const BACKLOG_ID = 0;
