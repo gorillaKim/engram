@@ -58,7 +58,7 @@ function CardContent({ issue, epicTitle, scopeExpanded }: Pick<Props, 'issue' | 
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-100/60">
         <div className="flex items-center gap-2 min-w-0 flex-wrap shrink-0">
           <CopyableId type="issue" id={issue.id} prefix="#" className="text-[11px] font-medium text-slate-400 shrink-0" />
-          <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" tooltipPosition="bottom" className="shrink-0" />
+          <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" className="shrink-0" />
           {issue.assigned_agent && (
             <span className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] shrink-0" title={issue.assigned_agent}>
               🤖

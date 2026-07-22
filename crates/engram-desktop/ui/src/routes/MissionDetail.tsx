@@ -121,7 +121,7 @@ export function MissionDetail() {
         </div>
         <div className="flex items-center gap-2">
           {mission && (
-            <PromptButton type="mission" id={mission.id} title={mission.title} size="xs" tooltipPosition="bottom" />
+            <PromptButton type="mission" id={mission.id} title={mission.title} size="xs" />
           )}
           <button
             onClick={handleClose}

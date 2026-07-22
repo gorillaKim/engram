@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 interface Props {
@@ -7,7 +8,6 @@ interface Props {
   title: string;
   goal?: string | null;
   size?: 'xs' | 'sm' | 'md';
-  tooltipPosition?: 'top' | 'bottom';
   className?: string;
 }
 
@@ -17,10 +17,11 @@ export function PromptButton({
   title,
   goal,
   size = 'sm',
-  tooltipPosition = 'bottom',
   className = '',
 }: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
+  const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   let promptText = '';
   if (type === 'issue') {
@@ -34,6 +35,43 @@ export function PromptButton({
     promptText = `[engram mission-#${id}] "${title}" 미션 작업을 진행해줘.`;
   }
 
+  const updateCoords = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const tooltipWidth = 280;
+    const tooltipHeight = 160;
+
+    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+    if (left + tooltipWidth > window.innerWidth - 16) {
+      left = window.innerWidth - tooltipWidth - 16;
+    }
+    if (left < 16) {
+      left = 16;
+    }
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < tooltipHeight && rect.top > tooltipHeight) {
+      setCoords({
+        bottom: window.innerHeight - rect.top + 6,
+        left,
+      });
+    } else {
+      setCoords({
+        top: rect.bottom + 6,
+        left,
+      });
+    }
+  };
+
+  const handleMouseEnter = () => {
+    updateCoords();
+    setShowTooltip(true);
+  };
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false);
+  };
+
   const handleCopyPrompt = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigator.clipboard.writeText(promptText);
@@ -46,29 +84,29 @@ export function PromptButton({
     ? 'px-2 py-1 text-xs'
     : 'px-2.5 py-1.5 text-xs';
 
-  const tooltipPosClass = tooltipPosition === 'top'
-    ? 'bottom-full mb-2'
-    : 'top-full mt-2';
-
   return (
-    <div
-      className="relative inline-flex items-center shrink-0"
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-    >
+    <>
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleCopyPrompt}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={`inline-flex items-center gap-1 font-semibold rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95 shrink-0 ${sizeClass} ${className}`}
       >
         <span className="text-[11px] leading-none">⚡</span>
         <span className="leading-none">Prompt</span>
       </button>
 
-      {/* Hover Tooltip */}
-      {showTooltip && (
+      {/* Portal Tooltip */}
+      {showTooltip && coords && createPortal(
         <div
-          className={`absolute left-1/2 -translate-x-1/2 ${tooltipPosClass} w-72 p-2.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] leading-snug rounded-lg shadow-2xl z-[9999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95`}
+          style={{
+            position: 'fixed',
+            left: `${coords.left}px`,
+            ...(coords.top != null ? { top: `${coords.top}px` } : { bottom: `${coords.bottom}px` }),
+          }}
+          className="w-70 p-2.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] leading-snug rounded-lg shadow-2xl z-[99999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95"
         >
           <div className="font-semibold text-indigo-300 mb-1 flex items-center justify-between">
             <span>⚡ 작업 프롬프트</span>
@@ -77,15 +115,10 @@ export function PromptButton({
           <div className="font-mono bg-slate-800/90 p-2 rounded border border-slate-700/60 break-words whitespace-pre-wrap text-slate-200 text-[10.5px] max-h-48 overflow-y-auto">
             {promptText}
           </div>
-          {/* Tooltip Arrow */}
-          {tooltipPosition === 'top' ? (
-            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95" />
-          ) : (
-            <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-slate-900/95" />
-          )}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
