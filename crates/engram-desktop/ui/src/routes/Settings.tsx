@@ -29,14 +29,23 @@ export function Settings() {
   const [warnMin, setWarnMin] = useState(30);
   const [stallMin, setStallMin] = useState(120);
   const [activitySaving, setActivitySaving] = useState(false);
-  const [promptTemplate, setPromptTemplate] = useState('{{base prompt}}');
+  const [promptSubTab, setPromptSubTab] = useState<'issue' | 'epic' | 'mission'>('issue');
+  const [issueTemplate, setIssueTemplate] = useState('{{base prompt}}');
+  const [epicTemplate, setEpicTemplate] = useState('{{base prompt}}');
+  const [missionTemplate, setMissionTemplate] = useState('{{base prompt}}');
   const [promptSaving, setPromptSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingSection>('general');
 
   useEffect(() => {
     getAppVersion().then(setVersion).catch(() => setVersion('unknown'));
     getActivitySettings().then(s => { setWarnMin(s.warn_minutes); setStallMin(s.stall_minutes); }).catch(() => {});
-    getPromptSettings().then(s => setPromptTemplate(s.template)).catch(() => {});
+    getPromptSettings()
+      .then((s) => {
+        setIssueTemplate(s.issue_template || '{{base prompt}}');
+        setEpicTemplate(s.epic_template || '{{base prompt}}');
+        setMissionTemplate(s.mission_template || '{{base prompt}}');
+      })
+      .catch(() => {});
   }, []);
 
   async function handleSaveActivity() {
@@ -54,8 +63,12 @@ export function Settings() {
   async function handleSavePrompt() {
     setPromptSaving(true);
     try {
-      await setPromptSettings(promptTemplate);
-      toast.success('프롬프트 템플릿이 저장되었습니다.');
+      await setPromptSettings({
+        issue_template: issueTemplate,
+        epic_template: epicTemplate,
+        mission_template: missionTemplate,
+      });
+      toast.success('프롬프트 템플릿 설정이 정상적으로 저장되었습니다.');
     } catch {
       toast.error('프롬프트 템플릿 저장에 실패했습니다.');
     } finally {
@@ -195,23 +208,53 @@ export function Settings() {
               <div className="border-b border-slate-100 pb-4">
                 <h1 className="text-2xl font-bold text-slate-900 mb-1">작업 프롬프트 템플릿</h1>
                 <p className="text-sm text-slate-500">
-                  Prompt 버튼 클릭 시 클립보드에 복사되는 작업 요청 프롬프트의 기본 양식을 설정합니다.
+                  Prompt 버튼 클릭 시 복사되는 작업 요청 프롬프트의 양식을 이슈, 에픽, 미션 단위로 개별 설정합니다.
                 </p>
+              </div>
+
+              {/* 이슈 / 에픽 / 미션 서브 탭 */}
+              <div className="flex border-b border-slate-200 gap-2">
+                {[
+                  { id: 'issue', label: '📌 이슈 (Issue) Prompt' },
+                  { id: 'epic', label: '📦 에픽 (Epic) Prompt' },
+                  { id: 'mission', label: '🎯 미션 (Mission) Prompt' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setPromptSubTab(tab.id as 'issue' | 'epic' | 'mission')}
+                    className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
+                      promptSubTab === tab.id
+                        ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40 rounded-t-lg'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
               <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 flex flex-col gap-5 shadow-sm">
                 <p className="text-xs text-slate-500 leading-relaxed bg-white p-3 rounded-xl border border-slate-150 shadow-inner">
                   <code className="bg-indigo-50 border border-indigo-200 px-1 py-0.5 rounded text-indigo-700 font-mono font-semibold">
                     {'{{base prompt}}'}
-                  </code>는 이슈, 에픽, 미션의 기본 생성 문구(예: <span className="font-mono text-slate-700 text-[11px]">[engram issue-#12] "로그인 기능 구현" 이슈 작업을 진행해줘.</span>)로 자동 치환됩니다.
+                  </code>는 선택한 단위(
+                  {promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'}
+                  )의 기본 생성 문구로 자동 치환됩니다.
                 </p>
 
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-slate-700">템플릿 작성</span>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'} 템플릿 작성
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setPromptTemplate('{{base prompt}}')}
+                      onClick={() => {
+                        if (promptSubTab === 'issue') setIssueTemplate('{{base prompt}}');
+                        else if (promptSubTab === 'epic') setEpicTemplate('{{base prompt}}');
+                        else setMissionTemplate('{{base prompt}}');
+                      }}
                       className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors cursor-pointer"
                     >
                       <RotateCcw className="w-3 h-3" />
@@ -220,20 +263,44 @@ export function Settings() {
                   </div>
                   <textarea
                     rows={6}
-                    value={promptTemplate}
-                    onChange={(e) => setPromptTemplate(e.target.value)}
+                    value={
+                      promptSubTab === 'issue'
+                        ? issueTemplate
+                        : promptSubTab === 'epic'
+                        ? epicTemplate
+                        : missionTemplate
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (promptSubTab === 'issue') setIssueTemplate(val);
+                      else if (promptSubTab === 'epic') setEpicTemplate(val);
+                      else setMissionTemplate(val);
+                    }}
                     placeholder="{{base prompt}}"
                     className="w-full text-xs font-mono border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/20 text-slate-700 bg-white focus:outline-none transition-all shadow-sm leading-relaxed resize-y"
                   />
                 </div>
 
-                {/* 미리보기 영역 */}
+                {/* 실시간 미리보기 */}
                 <div className="flex flex-col gap-2 pt-1 border-t border-slate-200/60">
-                  <span className="text-xs font-semibold text-slate-700">실시간 미리보기 예시 (이슈 카드 복사 시)</span>
+                  <span className="text-xs font-semibold text-slate-700">
+                    실시간 미리보기 예시 ({promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'} 복사 시)
+                  </span>
                   <div className="font-mono bg-slate-900 text-slate-200 p-3.5 rounded-xl border border-slate-800 text-[11px] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto shadow-inner">
-                    {promptTemplate.split('{{base prompt}}').join(
-                      '[engram issue-#12] "소셜 로그인 UI 구현" 이슈 작업을 진행해줘. (목표: 카카오/구글 로그인 버튼 렌더링)'
-                    )}
+                    {(promptSubTab === 'issue'
+                      ? issueTemplate
+                      : promptSubTab === 'epic'
+                      ? epicTemplate
+                      : missionTemplate
+                    )
+                      .split('{{base prompt}}')
+                      .join(
+                        promptSubTab === 'issue'
+                          ? '[engram issue-#12] "소셜 로그인 UI 구현" 이슈 작업을 진행해줘. (목표: 카카오/구글 로그인 버튼 렌더링)'
+                          : promptSubTab === 'epic'
+                          ? '[engram epic-#45] "사용자 인증 파이프라인 고도화" 에픽 하위 이슈 작업을 진행해줘.'
+                          : '[engram mission-#3] "2026 Q3 전사 보안 및 인증 강화" 미션 작업을 진행해줘.'
+                      )}
                   </div>
                 </div>
 
@@ -243,7 +310,7 @@ export function Settings() {
                   className="w-fit flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white disabled:opacity-55 transition-all shadow-sm cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
-                  {promptSaving ? '저장 중…' : '설정 저장'}
+                  {promptSaving ? '저장 중…' : '모든 템플릿 저장'}
                 </button>
               </div>
             </div>

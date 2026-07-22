@@ -147,8 +147,16 @@ export const setActivitySettings = (warn_minutes: number, stall_minutes: number)
 export const getPromptSettings = () =>
   invoke<import('./types').PromptSettings>('get_prompt_settings');
 
-export const setPromptSettings = (template: string) =>
-  invoke<void>('set_prompt_settings', { template });
+export const setPromptSettings = (input: {
+  issue_template?: string;
+  epic_template?: string;
+  mission_template?: string;
+}) =>
+  invoke<void>('set_prompt_settings', {
+    issue_template: input.issue_template ?? null,
+    epic_template: input.epic_template ?? null,
+    mission_template: input.mission_template ?? null,
+  });
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
 

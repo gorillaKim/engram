@@ -22,15 +22,25 @@ export function PromptButton({
 }: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
-  const [template, setTemplate] = useState<string>('{{base prompt}}');
+  const [promptSettings, setPromptSettingsState] = useState<{
+    issue_template: string;
+    epic_template: string;
+    mission_template: string;
+  }>({
+    issue_template: '{{base prompt}}',
+    epic_template: '{{base prompt}}',
+    mission_template: '{{base prompt}}',
+  });
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     getPromptSettings()
       .then((s) => {
-        if (s.template) {
-          setTemplate(s.template);
-        }
+        setPromptSettingsState({
+          issue_template: s.issue_template || '{{base prompt}}',
+          epic_template: s.epic_template || '{{base prompt}}',
+          mission_template: s.mission_template || '{{base prompt}}',
+        });
       })
       .catch(() => {});
   }, []);
@@ -46,6 +56,13 @@ export function PromptButton({
   } else {
     basePromptText = `[engram mission-#${id}] "${title}" 미션 작업을 진행해줘.`;
   }
+
+  const template =
+    type === 'issue'
+      ? promptSettings.issue_template
+      : type === 'epic'
+      ? promptSettings.epic_template
+      : promptSettings.mission_template;
 
   const promptText = (template || '{{base prompt}}')
     .split('{{base prompt}}').join(basePromptText)

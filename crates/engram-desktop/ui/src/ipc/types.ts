@@ -238,7 +238,9 @@ export interface ActivitySettings {
 }
 
 export interface PromptSettings {
-  template: string;
+  issue_template: string;
+  epic_template: string;
+  mission_template: string;
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────

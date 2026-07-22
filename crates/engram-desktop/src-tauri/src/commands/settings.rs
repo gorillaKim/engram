@@ -37,8 +37,20 @@ pub fn get_prompt_settings() -> Result<crate_settings::PromptSettings, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn set_prompt_settings(template: String) -> Result<(), String> {
+pub fn set_prompt_settings(
+    issue_template: Option<String>,
+    epic_template: Option<String>,
+    mission_template: Option<String>,
+) -> Result<(), String> {
     let mut s = crate_settings::load().unwrap_or_default();
-    s.prompt.template = template;
+    if let Some(t) = issue_template {
+        s.prompt.issue_template = t;
+    }
+    if let Some(t) = epic_template {
+        s.prompt.epic_template = t;
+    }
+    if let Some(t) = mission_template {
+        s.prompt.mission_template = t;
+    }
     crate_settings::save(&s).map_err(|e| e.to_string())
 }
