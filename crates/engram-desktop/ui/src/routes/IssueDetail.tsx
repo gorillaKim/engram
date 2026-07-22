@@ -189,6 +189,7 @@ export function IssueDetail() {
                 title={issue.title}
                 goal={issue.goal}
                 size="sm"
+                tooltipPosition="bottom"
               />
               <button
                 onClick={handleClose}

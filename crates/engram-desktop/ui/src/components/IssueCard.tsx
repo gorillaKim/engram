@@ -44,20 +44,20 @@ function CardContent({ issue, epicTitle, scopeExpanded }: Pick<Props, 'issue' | 
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 pt-1 min-w-0">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <CopyableId type="issue" id={issue.id} prefix="#" className="text-[11px] font-medium text-slate-400" />
-          <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" />
+      <div className="flex items-center justify-between gap-2.5 pt-1 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 shrink-0">
+          <CopyableId type="issue" id={issue.id} prefix="#" className="text-[11px] font-medium text-slate-400 shrink-0" />
+          <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" tooltipPosition="bottom" className="shrink-0" />
           {issue.assigned_agent && (
-            <span className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0" title={issue.assigned_agent}>
+            <span className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] shrink-0" title={issue.assigned_agent}>
               🤖
             </span>
           )}
-          <span className="text-[10px] text-slate-300 flex-shrink-0">{relativeTime(issue.updated_at)}</span>
+          <span className="text-[10px] text-slate-300 shrink-0">{relativeTime(issue.updated_at)}</span>
         </div>
         {epicTitle && (
-          <span className="inline-flex items-center gap-1 min-w-0 max-w-[140px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" />
+          <span className="inline-flex items-center gap-1 min-w-0 max-w-[130px] bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full shrink-0 ml-auto">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
             <span className="text-[10px] font-medium truncate min-w-0">{epicTitle}</span>
           </span>
         )}

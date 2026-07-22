@@ -7,10 +7,19 @@ interface Props {
   title: string;
   goal?: string | null;
   size?: 'xs' | 'sm' | 'md';
+  tooltipPosition?: 'top' | 'bottom';
   className?: string;
 }
 
-export function PromptButton({ type, id, title, goal, size = 'sm', className = '' }: Props) {
+export function PromptButton({
+  type,
+  id,
+  title,
+  goal,
+  size = 'sm',
+  tooltipPosition = 'bottom',
+  className = '',
+}: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   let promptText = '';
@@ -37,35 +46,46 @@ export function PromptButton({ type, id, title, goal, size = 'sm', className = '
     ? 'px-2 py-1 text-xs'
     : 'px-2.5 py-1.5 text-xs';
 
+  const tooltipPosClass = tooltipPosition === 'top'
+    ? 'bottom-full mb-2'
+    : 'top-full mt-2';
+
   return (
     <div
-      className="relative inline-block"
+      className="relative inline-flex items-center shrink-0"
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
     >
       <button
         type="button"
         onClick={handleCopyPrompt}
-        className={`inline-flex items-center gap-1 font-semibold rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95 ${sizeClass} ${className}`}
+        className={`inline-flex items-center gap-1 font-semibold rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95 shrink-0 ${sizeClass} ${className}`}
       >
-        <span className="text-[11px]">⚡</span>
-        <span>Prompt</span>
+        <span className="text-[11px] leading-none">⚡</span>
+        <span className="leading-none">Prompt</span>
       </button>
 
       {/* Hover Tooltip */}
       {showTooltip && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-2.5 bg-slate-900/95 backdrop-blur text-white text-[11px] leading-snug rounded-lg shadow-xl z-50 pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95">
+        <div
+          className={`absolute left-1/2 -translate-x-1/2 ${tooltipPosClass} w-72 p-2.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] leading-snug rounded-lg shadow-2xl z-[9999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95`}
+        >
           <div className="font-semibold text-indigo-300 mb-1 flex items-center justify-between">
             <span>⚡ 작업 프롬프트</span>
             <span className="text-[9px] text-slate-400 font-normal">클릭하여 복사</span>
           </div>
-          <div className="font-mono bg-slate-800/90 p-2 rounded border border-slate-700/60 break-words whitespace-pre-wrap text-slate-200 text-[10.5px]">
+          <div className="font-mono bg-slate-800/90 p-2 rounded border border-slate-700/60 break-words whitespace-pre-wrap text-slate-200 text-[10.5px] max-h-48 overflow-y-auto">
             {promptText}
           </div>
           {/* Tooltip Arrow */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95" />
+          {tooltipPosition === 'top' ? (
+            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-slate-900/95" />
+          ) : (
+            <div className="absolute left-1/2 -translate-x-1/2 bottom-full w-0 h-0 border-x-4 border-x-transparent border-b-4 border-b-slate-900/95" />
+          )}
         </div>
       )}
     </div>
   );
 }
+

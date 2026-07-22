@@ -144,7 +144,7 @@ export function EpicDetail() {
         </div>
         <div className="flex items-center gap-2">
           {epic && (
-            <PromptButton type="epic" id={epic.id} title={epic.title} size="xs" />
+            <PromptButton type="epic" id={epic.id} title={epic.title} size="xs" tooltipPosition="bottom" />
           )}
           <button
             onClick={handleClose}
