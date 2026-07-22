@@ -38,7 +38,7 @@ export function PromptButton({
   const updateCoords = () => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    const tooltipWidth = 280;
+    const tooltipWidth = 340;
     const tooltipHeight = 160;
 
     let left = rect.left + rect.width / 2 - tooltipWidth / 2;
@@ -106,7 +106,7 @@ export function PromptButton({
             left: `${coords.left}px`,
             ...(coords.top != null ? { top: `${coords.top}px` } : { bottom: `${coords.bottom}px` }),
           }}
-          className="w-70 p-2.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] leading-snug rounded-lg shadow-2xl z-[99999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95"
+          className="w-[340px] max-w-[calc(100vw-32px)] p-2.5 bg-slate-900/95 backdrop-blur-md text-white text-[11px] leading-snug rounded-lg shadow-2xl z-[99999] pointer-events-none transition-all duration-150 animate-in fade-in zoom-in-95"
         >
           <div className="font-semibold text-indigo-300 mb-1 flex items-center justify-between">
             <span>⚡ 작업 프롬프트</span>
