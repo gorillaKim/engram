@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
+import { getPromptSettings } from '../ipc/invoke';
 
 interface Props {
   type: 'issue' | 'epic' | 'mission';
@@ -21,19 +22,37 @@ export function PromptButton({
 }: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+  const [template, setTemplate] = useState<string>('{{base prompt}}');
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  let promptText = '';
+  useEffect(() => {
+    getPromptSettings()
+      .then((s) => {
+        if (s.template) {
+          setTemplate(s.template);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  let basePromptText = '';
   if (type === 'issue') {
-    promptText = `[engram issue-#${id}] "${title}" 이슈 작업을 진행해줘.`;
+    basePromptText = `[engram issue-#${id}] "${title}" 이슈 작업을 진행해줘.`;
     if (goal && goal.trim()) {
-      promptText += ` (목표: ${goal.trim()})`;
+      basePromptText += ` (목표: ${goal.trim()})`;
     }
   } else if (type === 'epic') {
-    promptText = `[engram epic-#${id}] "${title}" 에픽 하위 이슈 작업을 진행해줘.`;
+    basePromptText = `[engram epic-#${id}] "${title}" 에픽 하위 이슈 작업을 진행해줘.`;
   } else {
-    promptText = `[engram mission-#${id}] "${title}" 미션 작업을 진행해줘.`;
+    basePromptText = `[engram mission-#${id}] "${title}" 미션 작업을 진행해줘.`;
   }
+
+  const promptText = (template || '{{base prompt}}')
+    .split('{{base prompt}}').join(basePromptText)
+    .split('{{id}}').join(String(id))
+    .split('{{title}}').join(title)
+    .split('{{goal}}').join(goal || '')
+    .split('{{type}}').join(type);
 
   const updateCoords = () => {
     if (!buttonRef.current) return;

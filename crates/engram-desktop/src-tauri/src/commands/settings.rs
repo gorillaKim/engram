@@ -30,3 +30,15 @@ pub fn set_activity_settings(
     s.activity.stall_minutes = stall_minutes;
     crate_settings::save(&s).map_err(|e| e.to_string())
 }
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_prompt_settings() -> Result<crate_settings::PromptSettings, String> {
+    Ok(crate_settings::load().unwrap_or_default().prompt)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn set_prompt_settings(template: String) -> Result<(), String> {
+    let mut s = crate_settings::load().unwrap_or_default();
+    s.prompt.template = template;
+    crate_settings::save(&s).map_err(|e| e.to_string())
+}

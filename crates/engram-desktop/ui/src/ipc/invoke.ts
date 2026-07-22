@@ -144,6 +144,12 @@ export const getActivitySettings = () =>
 export const setActivitySettings = (warn_minutes: number, stall_minutes: number) =>
   invoke<void>('set_activity_settings', { warn_minutes, stall_minutes });
 
+export const getPromptSettings = () =>
+  invoke<import('./types').PromptSettings>('get_prompt_settings');
+
+export const setPromptSettings = (template: string) =>
+  invoke<void>('set_prompt_settings', { template });
+
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
 
 export const epicCreate = (input: CreateEpicInput) =>

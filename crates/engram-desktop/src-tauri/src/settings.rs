@@ -6,6 +6,8 @@ pub struct DesktopSettings {
     pub mcp: McpSettings,
     #[serde(default)]
     pub activity: ActivitySettings,
+    #[serde(default)]
+    pub prompt: PromptSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,11 +31,25 @@ impl Default for ActivitySettings {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptSettings {
+    pub template: String,
+}
+
+impl Default for PromptSettings {
+    fn default() -> Self {
+        Self {
+            template: "{{base prompt}}".to_string(),
+        }
+    }
+}
+
 impl Default for DesktopSettings {
     fn default() -> Self {
         Self {
             mcp: McpSettings { autostart: true, port: 3456 },
             activity: ActivitySettings::default(),
+            prompt: PromptSettings::default(),
         }
     }
 }
@@ -83,6 +99,7 @@ mod tests {
         let s = DesktopSettings::default();
         assert_eq!(s.mcp.port, 3456);
         assert!(s.mcp.autostart);
+        assert_eq!(s.prompt.template, "{{base prompt}}");
     }
 
     #[test]
@@ -90,10 +107,12 @@ mod tests {
         let s = DesktopSettings {
             mcp: McpSettings { autostart: false, port: 4000 },
             activity: Default::default(),
+            prompt: PromptSettings { template: "{{base prompt}}\n[extra]".into() },
         };
         let toml_str = toml::to_string_pretty(&s).unwrap();
         let loaded: DesktopSettings = toml::from_str(&toml_str).unwrap();
         assert_eq!(loaded.mcp.port, 4000);
         assert!(!loaded.mcp.autostart);
+        assert_eq!(loaded.prompt.template, "{{base prompt}}\n[extra]");
     }
 }

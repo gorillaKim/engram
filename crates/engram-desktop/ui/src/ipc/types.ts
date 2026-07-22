@@ -237,6 +237,10 @@ export interface ActivitySettings {
   stall_minutes: number;
 }
 
+export interface PromptSettings {
+  template: string;
+}
+
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────
 
 export interface CreateIssueInput {
