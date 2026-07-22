@@ -1,6 +1,8 @@
 import { useDraggable } from '@dnd-kit/core';
 import type { Issue } from '../ipc/types';
 import { PriorityBadge } from './PriorityBadge';
+import { CopyableId } from './CopyableId';
+import { PromptButton } from './PromptButton';
 import { parseUTCDate } from '../utils/date';
 
 function relativeTime(iso: string): string {
@@ -44,7 +46,8 @@ function CardContent({ issue, epicTitle, scopeExpanded }: Pick<Props, 'issue' | 
 
       <div className="flex items-center justify-between gap-2 pt-1 min-w-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[11px] font-medium text-slate-400 flex-shrink-0">#{issue.id}</span>
+          <CopyableId type="issue" id={issue.id} prefix="#" className="text-[11px] font-medium text-slate-400" />
+          <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" />
           {issue.assigned_agent && (
             <span className="inline-flex items-center gap-0.5 bg-violet-50 text-violet-600 border border-violet-200 px-1.5 py-0.5 rounded text-[10px] flex-shrink-0" title={issue.assigned_agent}>
               🤖

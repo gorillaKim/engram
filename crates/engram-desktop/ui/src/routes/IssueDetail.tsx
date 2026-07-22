@@ -13,6 +13,8 @@ import { Markdown } from '../components/Markdown';
 import { useUIStore } from '../store/ui';
 import { useBoardStatus } from '../hooks/useBoardStatus';
 import { useEpics } from '../hooks/useEpics';
+import { CopyableId } from '../components/CopyableId';
+import { PromptButton } from '../components/PromptButton';
 import type { Issue } from '../ipc/types';
 
 export function IssueDetail() {
@@ -147,14 +149,28 @@ export function IssueDetail() {
                 />
               ) : (
                 <div
-                  onClick={() => issue && startEdit('title', issue.title)}
-                  className="group flex items-center justify-between gap-1 w-full text-base font-semibold text-slate-800 border border-transparent rounded px-2 py-0.5 cursor-pointer hover:bg-slate-50 hover:border-slate-200 transition-all duration-200"
+                  className="group flex items-center justify-between gap-1.5 w-full text-base font-semibold text-slate-800 border border-transparent rounded px-2 py-0.5"
                 >
-                  <h2 className="truncate flex-1">
-                    {issue ? `#${issue.id} ${issue.title}` : '…'}
-                  </h2>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {issue && (
+                      <CopyableId
+                        type="issue"
+                        id={issue.id}
+                        prefix="#"
+                        className="text-slate-500 hover:text-indigo-600 font-bold"
+                      />
+                    )}
+                    <h2
+                      onClick={() => issue && startEdit('title', issue.title)}
+                      className="truncate flex-1 cursor-pointer hover:text-indigo-600 transition-colors"
+                      title="클릭하여 제목 편집"
+                    >
+                      {issue ? issue.title : '…'}
+                    </h2>
+                  </div>
                   {issue && (
                     <button
+                      onClick={() => startEdit('title', issue.title)}
                       className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 text-xs shrink-0 transition-opacity"
                       title="제목 편집"
                     >
@@ -165,12 +181,23 @@ export function IssueDetail() {
               )}
             </div>
           </div>
-          <button
-            onClick={handleClose}
-            className="ml-3 shrink-0 text-slate-400 hover:text-slate-600 text-lg leading-none"
-          >
-            ×
-          </button>
+          {issue && (
+            <div className="flex items-center gap-2 ml-3 shrink-0">
+              <PromptButton
+                type="issue"
+                id={issue.id}
+                title={issue.title}
+                goal={issue.goal}
+                size="sm"
+              />
+              <button
+                onClick={handleClose}
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none p-1"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
 
         {issue && (

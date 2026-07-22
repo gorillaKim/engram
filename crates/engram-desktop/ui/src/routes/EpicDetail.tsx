@@ -5,6 +5,8 @@ import { epicGet, epicUpdate, epicDelete, missionList, sprintList, issueList, is
 import { useUIStore } from '../store/ui';
 import type { Mission, Sprint, EpicStatus, Issue } from '../ipc/types';
 import { NoteList } from '../components/NoteList';
+import { CopyableId } from '../components/CopyableId';
+import { PromptButton } from '../components/PromptButton';
 import { BaseModal } from '../components/BaseModal';
 import { Markdown } from '../components/Markdown';
 
@@ -133,19 +135,24 @@ export function EpicDetail() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400">EPIC #{selectedEpicId}</span>
+          <CopyableId type="epic" id={selectedEpicId} prefix="EPIC #" className="text-xs font-bold text-slate-500" />
           {epic && (
             <span className="text-xs font-semibold text-slate-500 font-mono bg-slate-100 px-1.5 py-0.5 rounded">
               {epic.project_key}
             </span>
           )}
         </div>
-        <button
-          onClick={handleClose}
-          className="text-slate-400 hover:text-slate-600 p-1 text-sm font-medium transition-colors"
-        >
-          ✕ 닫기
-        </button>
+        <div className="flex items-center gap-2">
+          {epic && (
+            <PromptButton type="epic" id={epic.id} title={epic.title} size="xs" />
+          )}
+          <button
+            onClick={handleClose}
+            className="text-slate-400 hover:text-slate-600 p-1 text-sm font-medium transition-colors"
+          >
+            ✕ 닫기
+          </button>
+        </div>
       </div>
 
       {isLoading || !epic ? (
@@ -288,17 +295,20 @@ export function EpicDetail() {
                   >
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-3">
                       <span className="text-xs font-semibold text-slate-700 truncate">{issue.title}</span>
-                      <span className="text-[9px] text-slate-400 font-mono">#{issue.id}</span>
+                      <CopyableId type="issue" id={issue.id} prefix="#" className="text-[10px] text-slate-400 font-mono w-fit" />
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${
-                      issue.status === 'finished'
-                        ? 'bg-emerald-50 text-emerald-600'
-                        : issue.status === 'cancelled'
-                        ? 'bg-slate-100 text-slate-500'
-                        : 'bg-indigo-50 text-indigo-600'
-                    }`}>
-                      {issue.status === 'finished' ? '완료' : issue.status === 'cancelled' ? '취소' : '활성'}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" />
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                        issue.status === 'finished'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : issue.status === 'cancelled'
+                          ? 'bg-slate-100 text-slate-500'
+                          : 'bg-indigo-50 text-indigo-600'
+                      }`}>
+                        {issue.status === 'finished' ? '완료' : issue.status === 'cancelled' ? '취소' : '활성'}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

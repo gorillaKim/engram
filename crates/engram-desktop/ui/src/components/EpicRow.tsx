@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusBadge } from './StatusBadge';
+import { CopyableId } from './CopyableId';
+import { PromptButton } from './PromptButton';
 import type { Sprint, Epic, Issue, IssuePriority } from '../ipc/types';
 import { epicDelete, issueCreate } from '../ipc/invoke';
 import { parseUTCDate } from '../utils/date';
@@ -136,6 +138,8 @@ export function EpicRow({
           <span className="text-[9px] font-bold text-violet-500 uppercase bg-violet-50 border border-violet-200/50 px-1.5 py-0.5 rounded tracking-wider flex-shrink-0">
             Epic
           </span>
+          <CopyableId type="epic" id={epic.id} prefix="#" className="text-xs font-bold text-slate-400 flex-shrink-0" />
+          <PromptButton type="epic" id={epic.id} title={epic.title} size="xs" />
           <span className="text-xs font-bold text-slate-800 truncate" title={epic.title}>
             {epic.title === '(에픽 정보 없음)' || epic.title === '(에픽 없음)'
               ? epic.title
@@ -249,6 +253,8 @@ export function EpicRow({
               />
               <span className="text-xs text-slate-700 flex-1 truncate font-semibold">{issue.title}</span>
 
+              <PromptButton type="issue" id={issue.id} title={issue.title} goal={issue.goal} size="xs" />
+
               {/* 🤖 담당 에이전트 배지 */}
               {issue.assigned_agent && (
                 <span
@@ -293,7 +299,7 @@ export function EpicRow({
                 </button>
               )}
 
-              <span className="text-xs text-slate-400 font-semibold font-mono flex-shrink-0">#{issue.id}</span>
+              <CopyableId type="issue" id={issue.id} prefix="#" className="text-xs text-slate-400 font-semibold font-mono flex-shrink-0" />
               
               {/* Extra content (e.g. date for history) */}
               {renderIssueExtra && renderIssueExtra(issue)}

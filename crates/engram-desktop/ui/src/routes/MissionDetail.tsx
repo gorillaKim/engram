@@ -5,6 +5,8 @@ import { missionGet, missionUpdate, missionDelete, epicList, epicUpdate, issueLi
 import { useUIStore } from '../store/ui';
 import type { MissionStatus, Epic, Issue } from '../ipc/types';
 import { NoteList } from '../components/NoteList';
+import { CopyableId } from '../components/CopyableId';
+import { PromptButton } from '../components/PromptButton';
 import { BaseModal } from '../components/BaseModal';
 import { Markdown } from '../components/Markdown';
 
@@ -115,14 +117,19 @@ export function MissionDetail() {
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-400">MISSION #{selectedMissionId}</span>
+          <CopyableId type="mission" id={selectedMissionId} prefix="MISSION #" className="text-xs font-bold text-slate-500" />
         </div>
-        <button
-          onClick={handleClose}
-          className="text-slate-400 hover:text-slate-600 p-1 text-sm font-medium transition-colors"
-        >
-          ✕ 닫기
-        </button>
+        <div className="flex items-center gap-2">
+          {mission && (
+            <PromptButton type="mission" id={mission.id} title={mission.title} size="xs" />
+          )}
+          <button
+            onClick={handleClose}
+            className="text-slate-400 hover:text-slate-600 p-1 text-sm font-medium transition-colors"
+          >
+            ✕ 닫기
+          </button>
+        </div>
       </div>
 
       {isLoading || !mission ? (
@@ -235,17 +242,23 @@ export function MissionDetail() {
                   >
                     <div className="flex flex-col gap-0.5 min-w-0 flex-1 mr-3">
                       <span className="text-xs font-semibold text-slate-700 truncate">{epic.title}</span>
-                      <span className="text-[10px] text-slate-400">{epic.project_key}</span>
+                      <div className="flex items-center gap-2">
+                        <CopyableId type="epic" id={epic.id} prefix="#" className="text-[10px] text-slate-400 font-mono" />
+                        <span className="text-[10px] text-slate-400">{epic.project_key}</span>
+                      </div>
                     </div>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${
-                      epic.status === 'completed'
-                        ? 'bg-emerald-50 text-emerald-600'
-                        : epic.status === 'cancelled'
-                        ? 'bg-slate-100 text-slate-500'
-                        : 'bg-indigo-50 text-indigo-600'
-                    }`}>
-                      {epic.status === 'completed' ? '완료' : epic.status === 'cancelled' ? '취소' : '활성'}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <PromptButton type="epic" id={epic.id} title={epic.title} size="xs" />
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                        epic.status === 'completed'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : epic.status === 'cancelled'
+                          ? 'bg-slate-100 text-slate-500'
+                          : 'bg-indigo-50 text-indigo-600'
+                      }`}>
+                        {epic.status === 'completed' ? '완료' : epic.status === 'cancelled' ? '취소' : '활성'}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>

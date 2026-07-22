@@ -1,6 +1,8 @@
 import type { Mission, Epic, Issue, Sprint } from '../ipc/types';
 import { EpicRow } from './EpicRow';
 import { StatusBadge } from './StatusBadge';
+import { CopyableId } from './CopyableId';
+import { PromptButton } from './PromptButton';
 
 interface GroupedMission {
   mission: Mission | null;
@@ -84,6 +86,8 @@ export function MissionHierarchy({
                   <span className="text-[10px] font-bold text-violet-600 uppercase bg-violet-100 px-1.5 py-0.5 rounded tracking-wider flex-shrink-0">
                     Mission
                   </span>
+                  <CopyableId type="mission" id={gm.mission.id} prefix="#" className="text-xs font-bold text-violet-500 flex-shrink-0" />
+                  <PromptButton type="mission" id={gm.mission.id} title={gm.mission.title} size="xs" />
                   <h3 className="text-sm font-bold text-slate-800 truncate" title={gm.mission.title}>
                     {gm.mission.title}
                   </h3>
