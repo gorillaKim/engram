@@ -170,6 +170,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_epic_and_mission_note_add_and_list() {
+        use engram_core::models::note::NoteScope;
+        let db = setup().await;
+        let mission = db.mission_create(engram_core::models::mission::CreateMissionInput {
+            title: "Test Mission".to_string(),
+            description: None,
+            jira_key: None,
+        }).await.unwrap();
+
+        let epic = db.epic_create(engram_core::models::epic::CreateEpicInput {
+            project_key: "proj".to_string(),
+            mission_id: Some(mission.id),
+            sprint_id: None,
+            title: "Test Epic".to_string(),
+            description: None,
+        }).await.unwrap();
+
+        // Epic Note Add
+        let epic_note = do_note_add(&db, CreateNoteInput {
+            issue_id: 0,
+            task_id: None,
+            note_type: NoteType::Caveat,
+            summary: "Epic Note".to_string(),
+            detail: Some("Epic note detail".to_string()),
+            author: Some("user".to_string()),
+            agent_id: None,
+            scope: Some(NoteScope::Epic),
+            scope_target_id: Some(epic.id),
+            project_key: None,
+        }).await.unwrap();
+        assert_eq!(epic_note.summary, "Epic Note");
+
+        let epic_notes = do_note_list(&db, None, Some(epic.id), None).await.unwrap();
+        assert_eq!(epic_notes.len(), 1);
+        assert_eq!(epic_notes[0].id, epic_note.id);
+
+        // Mission Note Add
+        let mission_note = do_note_add(&db, CreateNoteInput {
+            issue_id: 0,
+            task_id: None,
+            note_type: NoteType::Decision,
+            summary: "Mission Note".to_string(),
+            detail: Some("Mission note detail".to_string()),
+            author: Some("user".to_string()),
+            agent_id: None,
+            scope: Some(NoteScope::Mission),
+            scope_target_id: Some(mission.id),
+            project_key: None,
+        }).await.unwrap();
+        assert_eq!(mission_note.summary, "Mission Note");
+
+        let mission_notes = do_note_list(&db, None, None, Some(mission.id)).await.unwrap();
+        assert_eq!(mission_notes.len(), 1);
+        assert_eq!(mission_notes[0].id, mission_note.id);
+    }
+
+    #[tokio::test]
     async fn test_blocked_issues_graph_empty() {
         let db = setup().await;
         let graph = do_blocked_issues_graph(&db, "proj").await.unwrap();

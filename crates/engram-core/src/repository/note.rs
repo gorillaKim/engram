@@ -192,7 +192,7 @@ impl Db {
             if rollup.unwrap_or(false) {
                 from_where.push_str(" AND ( (n.scope = 'mission' AND n.scope_target_id = ?) OR (n.scope = 'epic' AND n.scope_target_id IN (SELECT id FROM epics WHERE mission_id = ?)) OR (n.issue_id IN (SELECT id FROM issues WHERE epic_id IN (SELECT id FROM epics WHERE mission_id = ?))) OR (n.task_id IN (SELECT id FROM tasks WHERE issue_id IN (SELECT id FROM issues WHERE epic_id IN (SELECT id FROM epics WHERE mission_id = ?)))) )");
             } else {
-                from_where.push_str(" AND ( (n.scope = 'mission' AND n.scope_target_id = ?) OR (n.scope = 'sprint') )");
+                from_where.push_str(" AND n.scope = 'mission' AND n.scope_target_id = ?");
             }
         }
         if updated_after.is_some() {

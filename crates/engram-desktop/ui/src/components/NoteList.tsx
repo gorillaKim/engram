@@ -93,6 +93,7 @@ export function NoteList({ issueId, epicId, missionId }: Props) {
         note_type: newType,
         summary: newSummary.trim(),
         detail: newDetail.trim() || undefined,
+        author: 'user',
         scope: scope as any,
         scope_target_id,
       });
