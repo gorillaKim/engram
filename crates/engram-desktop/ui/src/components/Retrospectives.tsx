@@ -72,6 +72,22 @@ export function Retrospectives() {
     );
   };
 
+  const handleToggleActionItemStatus = (retroId: number, itemId: number) => {
+    setRetros((prev) =>
+      prev.map((r) => {
+        if (r.id === retroId) {
+          const updatedItems = r.action_items.map((item) =>
+            item.id === itemId
+              ? { ...item, status: item.status === 'done' ? ('todo' as const) : ('done' as const) }
+              : item
+          );
+          return { ...r, action_items: updatedItems };
+        }
+        return r;
+      })
+    );
+  };
+
   const handleConvertActionItem = (retroId: number, itemId: number) => {
     const mockIssueId = Math.floor(Math.random() * 800) + 1200;
     setRetros((prev) =>
@@ -158,7 +174,7 @@ export function Retrospectives() {
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 shrink-0 whitespace-nowrap"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 shrink-0 whitespace-nowrap cursor-pointer"
             >
               <Plus className="w-4 h-4 shrink-0" />
               <span>새 회고 작성</span>
@@ -234,6 +250,7 @@ export function Retrospectives() {
               onClose={() => selectRetro(null)}
               onUpdateContent={(content) => handleUpdateContent(selectedRetro.id, content)}
               onAddActionItem={(title) => handleAddActionItem(selectedRetro.id, title)}
+              onToggleActionItemStatus={(itemId) => handleToggleActionItemStatus(selectedRetro.id, itemId)}
               onConvertActionItem={(itemId) => handleConvertActionItem(selectedRetro.id, itemId)}
               onLinkIssueToActionItem={(itemId, issueId) => handleLinkIssueToActionItem(selectedRetro.id, itemId, issueId)}
               onConvertAllActionItems={() => handleConvertAllActionItems(selectedRetro.id)}
