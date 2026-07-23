@@ -915,6 +915,9 @@ fn map_mcp_to_cli(mcp_tool: &str) -> String {
         "stalled_issues" => "stalled".to_string(),
         "my_blocked_issues" => "blocked list".to_string(),
         "board_status" => "board status".to_string(),
+        "retro_action_item_add" => "retrospective action-item add".to_string(),
+        "retro_action_item_update" => "retrospective action-item update".to_string(),
+        "retro_action_item_convert_to_issue" => "retrospective action-item convert".to_string(),
         other => {
             if other.starts_with("task_test_") {
                 let verb = other.strip_prefix("task_test_").unwrap().replace('_', "-");
@@ -986,7 +989,7 @@ async fn test_all_mcp_tools_have_cli_counterpart() {
     let claude_md_path = project_root.join("CLAUDE.md");
     let content = std::fs::read_to_string(&claude_md_path).expect("Failed to read CLAUDE.md");
 
-    // CLAUDE.md에서 "MCP tools 57개" 카운트 추출
+    // CLAUDE.md에서 "MCP tools 65개" 카운트 추출
     let target = "MCP tools ";
     if let Some(idx) = content.find(target) {
         let start = idx + target.len();
@@ -1236,6 +1239,51 @@ async fn test_session_restore_default_limit_korean_truncation() {
     let serialized = serde_json::to_string(&snap).unwrap();
     assert!(serialized.len() <= 25000, "잘린 후 직렬화된 크기가 25000바이트 이하여야 함. 실제 크기: {}", serialized.len());
 }
+
+#[tokio::test]
+async fn test_retrospective_parity() {
+    let db_repo = fresh_db().await;
+    let db_mcp = fresh_db().await;
+
+    let input = engram_core::models::retrospective::CreateRetrospectiveInput {
+        project_key: "engram".to_string(),
+        title: "Sprint Parity Retro".to_string(),
+        content: "Content".to_string(),
+        sprint_id: None,
+        mission_id: None,
+        epic_id: None,
+        agent_id: Some("agent-test".to_string()),
+        action_items: Some(vec![
+            engram_core::models::retrospective::CreateRetroActionItemInput {
+                title: "Action Item 1".to_string(),
+                description: None,
+                linked_issue_id: None,
+                linked_note_id: None,
+                ord: None,
+            }
+        ]),
+    };
+
+    let repo_retro = db_repo.retrospective_create(input).await.unwrap();
+
+    let mcp_retro = dispatch(
+        Arc::clone(&db_mcp),
+        "retrospective_create",
+        &json!({
+            "agent_id": "agent-test",
+            "projectKey": "engram",
+            "title": "Sprint Parity Retro",
+            "content": "Content",
+            "actionItems": [
+                { "title": "Action Item 1" }
+            ]
+        })
+    ).await.unwrap();
+
+    assert_eq!(repo_retro.retro.title, mcp_retro["title"].as_str().unwrap());
+    assert_eq!(repo_retro.action_items.len(), mcp_retro["action_items"].as_array().unwrap().len());
+}
+
 
 
 

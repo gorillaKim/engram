@@ -7,6 +7,7 @@ pub mod issue;
 pub mod mission;
 pub mod note;
 pub mod retro;
+pub mod retrospective;
 pub mod session;
 pub mod sprint;
 pub mod stalled;

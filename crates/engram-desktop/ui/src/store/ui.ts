@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { IssuePriority } from '../ipc/types';
 
-type View = 'board' | 'issues' | 'mcp' | 'history' | 'settings' | 'missions' | 'guide';
+type View = 'board' | 'issues' | 'mcp' | 'history' | 'settings' | 'missions' | 'guide' | 'retrospectives';
 
 export interface BoardFilters {
   projects: string[];          // empty = all projects
@@ -15,16 +15,18 @@ interface UIState {
   selectedIssueId: number | null;
   selectedEpicId: number | null;
   selectedMissionId: number | null;
+  selectedRetroId: number | null;
   selectedProjectKey: string | null;
   selectedSprintId: number | null;
   hideFinished: boolean;
   showCancelled: boolean;
   boardFilters: BoardFilters;
-  openedPanels: ('issue' | 'epic' | 'mission')[];
+  openedPanels: ('issue' | 'epic' | 'mission' | 'retro')[];
   setView: (v: View) => void;
   selectIssue: (id: number | null) => void;
   selectEpic: (id: number | null) => void;
   selectMission: (id: number | null) => void;
+  selectRetro: (id: number | null) => void;
   selectProject: (key: string | null) => void;
   selectSprint: (id: number | null) => void;
   toggleHideFinished: () => void;
@@ -46,6 +48,7 @@ export const useUIStore = create<UIState>((set) => ({
   selectedIssueId: null,
   selectedEpicId: null,
   selectedMissionId: null,
+  selectedRetroId: null,
   selectedProjectKey: null,
   selectedSprintId: null,
   hideFinished: false,
@@ -71,6 +74,12 @@ export const useUIStore = create<UIState>((set) => ({
       : s.openedPanels.filter(p => p !== 'mission');
     return { selectedMissionId: id, openedPanels: nextPanels as any };
   }),
+  selectRetro: (id) => set((s) => {
+    const nextPanels = id != null 
+      ? [...s.openedPanels.filter(p => p !== 'retro'), 'retro'] as const
+      : s.openedPanels.filter(p => p !== 'retro');
+    return { selectedRetroId: id, openedPanels: nextPanels as any };
+  }),
   selectProject: (key) => set({ selectedProjectKey: key }),
   selectSprint: (id) => set({ selectedSprintId: id }),
   toggleHideFinished: () => set((s) => ({ hideFinished: !s.hideFinished })),
@@ -84,6 +93,7 @@ export const useUIStore = create<UIState>((set) => ({
     if (last === 'issue') return { selectedIssueId: null, openedPanels: nextPanels };
     if (last === 'epic') return { selectedEpicId: null, openedPanels: nextPanels };
     if (last === 'mission') return { selectedMissionId: null, openedPanels: nextPanels };
+    if (last === 'retro') return { selectedRetroId: null, openedPanels: nextPanels };
     return {};
   }),
 }));

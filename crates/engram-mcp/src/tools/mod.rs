@@ -4,6 +4,7 @@ pub mod history;
 pub mod issue;
 pub mod mission;
 pub mod note;
+pub mod retrospective;
 pub mod session;
 pub mod sprint;
 pub mod task;
@@ -27,6 +28,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
         note::tool_definitions(),
         session::tool_definitions(),
         history::tool_definitions(),
+        retrospective::tool_definitions(),
     ]
     .concat();
 
@@ -141,6 +143,15 @@ pub async fn dispatch(
         "history_for"       => history::for_entity(db, args).await,
         "history_by_agent"  => history::by_agent(db, args).await,
         "history_recent"    => history::recent(db, args).await,
+        // Retrospective
+        "retrospective_create" => retrospective::retrospective_create(db, args).await,
+        "retrospective_list"   => retrospective::retrospective_list(db, args).await,
+        "retrospective_get"    => retrospective::retrospective_get(db, args).await,
+        "retrospective_update" => retrospective::retrospective_update(db, args).await,
+        "retrospective_delete" => retrospective::retrospective_delete(db, args).await,
+        "retro_action_item_add"    => retrospective::retro_action_item_add(db, args).await,
+        "retro_action_item_update" => retrospective::retro_action_item_update(db, args).await,
+        "retro_action_item_convert_to_issue" => retrospective::retro_action_item_convert_to_issue(db, args).await,
         _ => Err(engram_core::Error::NotFound(format!("tool:{name}"))),
     }
 }

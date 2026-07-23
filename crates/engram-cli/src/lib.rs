@@ -56,6 +56,8 @@ pub enum Commands {
     Mission(commands::mission::MissionArgs),
     /// 스프린트 회고 리포트 생성
     Retro(commands::retro::RetroArgs),
+    /// 회고 문서 및 액션 아이템 관리
+    Retrospective(commands::retrospective::RetrospectiveArgs),
     /// Claude Code Hook 설치/제거
     Hook(commands::hook::HookArgs),
     /// Hook에서 사용: 현재 세션 컨텍스트를 텍스트로 출력
@@ -97,6 +99,10 @@ pub async fn run(cli: Cli, fmt: OutputFormat) -> anyhow::Result<()> {
         Commands::History(args) => commands::history::run(db, args, fmt).await?,
         Commands::Mission(args) => commands::mission::run(db, args, fmt, agent_id).await?,
         Commands::Retro(args)   => commands::retro::run(db, args, fmt).await?,
+        Commands::Retrospective(args) => {
+            let val = commands::retrospective::run(&db, args, Some(agent_id)).await?;
+            output::print_value(&val, fmt)?;
+        }
         Commands::Hook(args)    => commands::hook::run(args, fmt).await?,
         Commands::SnapshotText { project, compact } => {
             commands::session::snapshot_text(db, project, compact, fmt).await?;

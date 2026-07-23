@@ -1026,4 +1026,49 @@ async fn test_mcp_coerced_parameter_parsing_and_validation() {
     assert!(err.to_string().contains("유효한 정수가 아닙니다"));
 }
 
+#[tokio::test]
+async fn test_retrospective_tools_dispatch() {
+    let db = setup().await;
+    let (sprint_id, _epic_id, _mission_id) = seed(&db).await;
+
+    let retro = dispatch(
+        Arc::clone(&db),
+        "retrospective_create",
+        &json!({
+            "agent_id": "main@test",
+            "projectKey": "engram",
+            "title": "Retro 1",
+            "content": "KPT",
+            "sprintId": sprint_id,
+            "actionItems": [
+                { "title": "Item 1", "description": "Desc 1" }
+            ]
+        })
+    ).await.unwrap();
+
+    let retro_id = retro["id"].as_i64().unwrap();
+    assert_eq!(retro["title"], "Retro 1");
+
+    let get_res = dispatch(
+        Arc::clone(&db),
+        "retrospective_get",
+        &json!({ "id": retro_id })
+    ).await.unwrap();
+    assert_eq!(get_res["title"], "Retro 1");
+
+    let convert_res = dispatch(
+        Arc::clone(&db),
+        "retro_action_item_convert_to_issue",
+        &json!({
+            "agent_id": "main@test",
+            "retroId": retro_id
+        })
+    ).await.unwrap();
+
+    let issues = convert_res.as_array().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0]["title"], "Item 1");
+}
+
+
 
