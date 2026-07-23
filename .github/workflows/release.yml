@@ -140,7 +140,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: crates/engram-desktop/ui
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Install tauri-cli
         run: pnpm add -g @tauri-apps/cli@^2
@@ -266,3 +266,4 @@ jobs:
             x86_64/*.app.tar.gz.sig
             latest.json
           fail_on_unmatched_files: true
+          generate_release_notes: true
