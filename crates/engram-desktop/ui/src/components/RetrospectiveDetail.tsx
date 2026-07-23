@@ -10,6 +10,7 @@ import {
   Link as LinkIcon,
   Plus,
   Sparkles,
+  Trash2,
   Zap,
   X,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ export interface RetrospectiveUI {
   id: number;
   project_key: string;
   sprint_name?: string;
+  sprint_id?: number | null;
   title: string;
   content: string;
   created_at: string;
@@ -41,6 +43,7 @@ interface RetrospectiveDetailProps {
   onUpdateContent: (content: string) => void;
   onAddActionItem: (title: string) => void;
   onToggleActionItemStatus: (itemId: number) => void;
+  onDeleteActionItem: (itemId: number) => void;
   onConvertActionItem: (itemId: number) => void;
   onLinkIssueToActionItem: (itemId: number, issueId: number) => void;
   onConvertAllActionItems: () => void;
@@ -52,6 +55,7 @@ export function RetrospectiveDetail({
   onUpdateContent,
   onAddActionItem,
   onToggleActionItemStatus,
+  onDeleteActionItem,
   onConvertActionItem,
   onLinkIssueToActionItem,
   onConvertAllActionItems,
@@ -173,13 +177,13 @@ export function RetrospectiveDetail({
               retro.action_items.map((item) => (
                 <div
                   key={item.id}
-                  className="flex flex-col gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all min-w-0"
+                  className="flex flex-col gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all min-w-0 group"
                 >
                   <div className="flex items-center justify-between gap-2 min-w-0">
                     <button
                       type="button"
                       onClick={() => onToggleActionItemStatus(item.id)}
-                      className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer group"
+                      className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
                     >
                       {item.status === 'done' ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -195,6 +199,14 @@ export function RetrospectiveDetail({
                       >
                         {item.title}
                       </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteActionItem(item.id)}
+                      className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
+                      title="액션 아이템 삭제"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
 

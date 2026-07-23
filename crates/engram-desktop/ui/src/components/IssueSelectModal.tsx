@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, X, CheckCircle2, Circle, ExternalLink } from 'lucide-react';
+import { issueList } from '../ipc/invoke';
 
 export interface IssueOption {
   id: number;
@@ -15,18 +16,36 @@ interface IssueSelectModalProps {
 
 export function IssueSelectModal({ onSelect, onClose }: IssueSelectModalProps) {
   const [search, setSearch] = useState('');
+  const [issues, setIssues] = useState<IssueOption[]>([]);
 
-  // Sample/Loaded sprint issues for selection
-  const sampleIssues: IssueOption[] = [
-    { id: 1188, title: 'DB Migration 0015_retrospectives.sql 추가', epic_title: '[Core & DB]', status: 'finished' },
-    { id: 1189, title: 'engram-core 회고 도메인 모델 및 Repository 작성', epic_title: '[Core & DB]', status: 'finished' },
-    { id: 1190, title: 'engram-mcp 회고 도구 8종 연동', epic_title: '[MCP & CLI]', status: 'finished' },
-    { id: 1191, title: 'engram-cli retrospective 서브커맨드 및 파리티 확보', epic_title: '[MCP & CLI]', status: 'finished' },
-    { id: 1192, title: 'Lexical 기반 리치 에디터 및 슬래시(/) 커맨드 메뉴 구현', epic_title: '[Desktop UI]', status: 'working' },
-    { id: 1193, title: '회고 탭, 목록 페이지 및 상세 패널 개발', epic_title: '[Desktop UI]', status: 'working' },
-  ];
+  useEffect(() => {
+    issueList({})
+      .then((data) => {
+        if (data && data.length > 0) {
+          const mapped: IssueOption[] = data.map((item) => ({
+            id: item.id,
+            title: item.title,
+            status: item.status as any,
+          }));
+          setIssues(mapped);
+        } else {
+          // Sample fallback
+          setIssues([
+            { id: 1188, title: 'DB Migration 0015_retrospectives.sql 추가', epic_title: '[Core & DB]', status: 'finished' },
+            { id: 1189, title: 'engram-core 회고 도메인 모델 및 Repository 작성', epic_title: '[Core & DB]', status: 'finished' },
+            { id: 1190, title: 'engram-mcp 회고 도구 8종 연동', epic_title: '[MCP & CLI]', status: 'finished' },
+            { id: 1191, title: 'engram-cli retrospective 서브커맨드 및 파리티 확보', epic_title: '[MCP & CLI]', status: 'finished' },
+            { id: 1192, title: 'Lexical 기반 리치 에디터 및 슬래시(/) 커맨드 메뉴 구현', epic_title: '[Desktop UI]', status: 'working' },
+            { id: 1193, title: '회고 탭, 목록 페이지 및 상세 패널 개발', epic_title: '[Desktop UI]', status: 'working' },
+          ]);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load issues for select modal:', err);
+      });
+  }, []);
 
-  const filtered = sampleIssues.filter(
+  const filtered = issues.filter(
     (i) =>
       i.title.toLowerCase().includes(search.toLowerCase()) ||
       i.id.toString().includes(search) ||

@@ -5,6 +5,7 @@ pub mod sprint;
 pub mod mission;
 pub mod epic;
 pub mod note;
+pub mod retrospective;
 pub mod mcp;
 pub mod settings;
 
@@ -15,6 +16,7 @@ pub use sprint::*;
 pub use mission::*;
 pub use epic::*;
 pub use note::*;
+pub use retrospective::*;
 pub use mcp::*;
 pub use settings::*;
 

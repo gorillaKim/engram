@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText, X, Sparkles, Calendar } from 'lucide-react';
+import { sprintList } from '../ipc/invoke';
+import type { Sprint } from '../ipc/types';
 
 export interface CreateRetroFormData {
   project_key: string;
   sprint_name: string;
+  sprint_id?: number | null;
   title: string;
 }
 
@@ -15,12 +18,26 @@ interface CreateRetroModalProps {
 export function CreateRetroModal({ onCreated, onClose }: CreateRetroModalProps) {
   const [projectKey, setProjectKey] = useState('engram');
   const [sprintName, setSprintName] = useState('Sprint 14');
+  const [sprintId, setSprintId] = useState<number | null>(null);
   const [customSprint, setCustomSprint] = useState('');
   const [isCustomSprint, setIsCustomSprint] = useState(false);
   const [title, setTitle] = useState('');
+  const [sprints, setSprints] = useState<Sprint[]>([]);
 
-  // Sample sprint options
-  const sprintOptions = ['Sprint 14', 'Sprint 13', 'Sprint 12', 'Sprint 11'];
+  useEffect(() => {
+    sprintList()
+      .then((data) => {
+        if (data && data.length > 0) {
+          setSprints(data);
+          const active = data.find((s) => s.status === 'active') || data[0];
+          setSprintName(active.name);
+          setSprintId(active.id);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load sprints for retro modal:', err);
+      });
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +49,7 @@ export function CreateRetroModal({ onCreated, onClose }: CreateRetroModalProps) 
     onCreated({
       project_key: projectKey,
       sprint_name: finalSprint,
+      sprint_id: isCustomSprint ? null : sprintId,
       title: finalTitle,
     });
   };
@@ -82,21 +100,35 @@ export function CreateRetroModal({ onCreated, onClose }: CreateRetroModalProps) 
             {!isCustomSprint ? (
               <div className="flex gap-2">
                 <select
-                  value={sprintName}
+                  value={sprintId ?? sprintName}
                   onChange={(e) => {
                     if (e.target.value === '__custom__') {
                       setIsCustomSprint(true);
                     } else {
-                      setSprintName(e.target.value);
+                      const selectedId = Number(e.target.value);
+                      const target = sprints.find((s) => s.id === selectedId);
+                      if (target) {
+                        setSprintId(target.id);
+                        setSprintName(target.name);
+                      } else {
+                        setSprintName(e.target.value);
+                        setSprintId(null);
+                      }
                     }
                   }}
                   className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-indigo-500 focus:bg-white font-medium"
                 >
-                  {sprintOptions.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                  {sprints.length > 0
+                    ? sprints.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.status})
+                        </option>
+                      ))
+                    : ['Sprint 14', 'Sprint 13', 'Sprint 12'].map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
                   <option value="__custom__">+ 직접 입력...</option>
                 </select>
               </div>

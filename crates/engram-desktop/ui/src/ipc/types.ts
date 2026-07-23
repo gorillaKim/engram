@@ -374,3 +374,81 @@ export interface SprintProgress {
   total_issues: number;
   completed_issues: number;
 }
+
+// ── Retrospective ────────────────────────────────────────────────────────────────
+
+export interface Retrospective {
+  id: number;
+  project_key: string;
+  title: string;
+  content: string;
+  sprint_id: number | null;
+  mission_id: number | null;
+  epic_id: number | null;
+  agent_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RetroActionItem {
+  id: number;
+  retro_id: number;
+  title: string;
+  description: string | null;
+  status: 'todo' | 'done';
+  linked_issue_id: number | null;
+  linked_note_id: number | null;
+  ord: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RetrospectiveWithItems {
+  id: number;
+  project_key: string;
+  title: string;
+  content: string;
+  sprint_id: number | null;
+  mission_id: number | null;
+  epic_id: number | null;
+  agent_id: string | null;
+  created_at: string;
+  updated_at: string;
+  action_items: RetroActionItem[];
+}
+
+export interface CreateRetrospectiveInput {
+  project_key: string;
+  title: string;
+  content: string;
+  sprint_id?: number | null;
+  mission_id?: number | null;
+  epic_id?: number | null;
+  agent_id?: string | null;
+  action_items?: CreateRetroActionItemInput[];
+}
+
+export interface CreateRetroActionItemInput {
+  title: string;
+  description?: string | null;
+  linked_issue_id?: number | null;
+  linked_note_id?: number | null;
+  ord?: number | null;
+}
+
+export interface UpdateRetrospectiveInput {
+  title?: string | null;
+  content?: string | null;
+  sprint_id?: number | null;
+  mission_id?: number | null;
+  epic_id?: number | null;
+}
+
+export interface UpdateRetroActionItemInput {
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  linked_issue_id?: number | null;
+  linked_note_id?: number | null;
+  ord?: number | null;
+}

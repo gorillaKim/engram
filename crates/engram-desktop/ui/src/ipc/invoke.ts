@@ -7,6 +7,9 @@ import type {
   IssueLink, LinkType, EpicStatus, HistoryEntry, CreateSprintInput,
   Mission, MissionProgress, MissionTree,
   CreateMissionInput, UpdateMissionInput, McpToolDefinition,
+  RetrospectiveWithItems, Retrospective, RetroActionItem,
+  CreateRetrospectiveInput, CreateRetroActionItemInput,
+  UpdateRetrospectiveInput, UpdateRetroActionItemInput,
 } from './types';
 
 export const sessionRestore = (project_key?: string) =>
@@ -271,3 +274,36 @@ export const relaunchApp = () =>
 
 export const mcpGetToolDefinitions = () =>
   invoke<McpToolDefinition[]>('mcp_get_tool_definitions');
+
+// ── Retrospective ──────────────────────────────────────────────────────────────
+
+export const retrospectiveList = (project_key?: string, sprint_id?: number, limit?: number) =>
+  invoke<RetrospectiveWithItems[]>('retrospective_list', {
+    project_key: project_key ?? null,
+    sprint_id: sprint_id ?? null,
+    limit: limit ?? null,
+  });
+
+export const retrospectiveGet = (id: number) =>
+  invoke<RetrospectiveWithItems>('retrospective_get', { id });
+
+export const retrospectiveCreate = (input: CreateRetrospectiveInput) =>
+  invoke<RetrospectiveWithItems>('retrospective_create', { input });
+
+export const retrospectiveUpdate = (id: number, input: UpdateRetrospectiveInput) =>
+  invoke<Retrospective>('retrospective_update', { id, input });
+
+export const retrospectiveDelete = (id: number) =>
+  invoke<void>('retrospective_delete', { id });
+
+export const retroActionItemCreate = (retro_id: number, input: CreateRetroActionItemInput) =>
+  invoke<RetroActionItem>('retro_action_item_create', { retro_id, input });
+
+export const retroActionItemUpdate = (id: number, input: UpdateRetroActionItemInput) =>
+  invoke<RetroActionItem>('retro_action_item_update', { id, input });
+
+export const retroActionItemDelete = (id: number) =>
+  invoke<void>('retro_action_item_delete', { id });
+
+export const retroActionItemConvertToIssue = (id: number, agent_id?: string) =>
+  invoke<Issue>('retro_action_item_convert_to_issue', { id, agent_id: agent_id ?? null });
