@@ -64,6 +64,7 @@ echo '<json>' | cargo run -p engram-mcp    # MCP stdio 수동 시험
 | 설계 결정 추가 / 변경 | `.claude/rules/adr-format.md` |
 | `tasks.ord` 조작 | `.claude/rules/fractional-index.md` |
 | Demo→Finished 전이 / Agent 상태 전이 제한 | `.claude/rules/agent-demo-gate.md` |
+| 배포 및 릴리즈 노트 필수 작성 | `.claude/rules/release-notes-mandate.md` |
 
 새 규칙이 필요하다고 판단되면 `.claude/rules/<slug>.md` 로 추가하고 이 표에 등록한다.
 
