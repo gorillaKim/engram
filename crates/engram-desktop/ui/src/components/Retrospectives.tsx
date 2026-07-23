@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useUIStore } from '../store/ui';
 import { RetrospectiveDetail, RetrospectiveUI } from './RetrospectiveDetail';
+import { CreateRetroModal, CreateRetroFormData } from './CreateRetroModal';
 import {
   CheckSquare,
   FileText,
@@ -11,6 +12,7 @@ import {
 export function Retrospectives() {
   const { selectedRetroId, selectRetro } = useUIStore();
   const [search, setSearch] = useState('');
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   // Initial retrospectives state
   const [retros, setRetros] = useState<RetrospectiveUI[]>([
@@ -31,15 +33,14 @@ export function Retrospectives() {
 
   const selectedRetro = retros.find((r) => r.id === selectedRetroId);
 
-  const handleCreateRetro = () => {
-    const title = prompt('회고 제목을 입력하세요:');
-    if (!title) return;
+  const handleCreateRetroFromModal = (formData: CreateRetroFormData) => {
+    setShowCreateModal(false);
     const newRetro: RetrospectiveUI = {
       id: Date.now(),
-      project_key: 'engram',
-      sprint_name: 'Sprint Current',
-      title,
-      content: '## 🟢 Keep (잘한 점 & 유지할 점)\n- \n\n## 🔴 Problem (아쉬운 점 & 문제점)\n- \n\n## 🟡 Try (시도할 개선 방향)\n- \n',
+      project_key: formData.project_key || 'engram',
+      sprint_name: formData.sprint_name || 'Sprint Current',
+      title: formData.title || `${formData.sprint_name} 회고 및 액션 아이템 수립`,
+      content: `## 🟢 Keep (잘한 점 & 유지할 점)\n- \n\n## 🔴 Problem (아쉬운 점 & 문제점)\n- \n\n## 🟡 Try (시도할 개선 방향)\n- \n`,
       created_at: new Date().toISOString().slice(0, 16).replace('T', ' '),
       updated_at: new Date().toISOString().slice(0, 16).replace('T', ' '),
       action_items: [],
@@ -124,7 +125,8 @@ export function Retrospectives() {
 
   const filteredRetros = retros.filter((r) =>
     r.title.toLowerCase().includes(search.toLowerCase()) ||
-    r.project_key.toLowerCase().includes(search.toLowerCase())
+    r.project_key.toLowerCase().includes(search.toLowerCase()) ||
+    r.sprint_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -150,12 +152,12 @@ export function Retrospectives() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="회고 검색..."
+                placeholder="회고 제목/스프린트 검색..."
                 className="w-full pl-9 pr-4 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <button
-              onClick={handleCreateRetro}
+              onClick={() => setShowCreateModal(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 shrink-0 whitespace-nowrap"
             >
               <Plus className="w-4 h-4 shrink-0" />
@@ -208,6 +210,14 @@ export function Retrospectives() {
           ))}
         </div>
       </div>
+
+      {/* 새 회고 작성 모달 */}
+      {showCreateModal && (
+        <CreateRetroModal
+          onCreated={handleCreateRetroFromModal}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
 
       {/* Floating Overlay Drawer */}
       {selectedRetro && (
