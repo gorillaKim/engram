@@ -335,8 +335,8 @@ export function Retrospectives() {
           </div>
         </div>
 
-        {/* 그리드 카드 목록 */}
-        <div className="flex-1 p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        {/* 그리드 카드 목록 (밀도 높은 콤팩트 레이아웃) */}
+        <div className="flex-1 p-5 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start">
           {filteredRetros.length === 0 ? (
             <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-white my-auto">
               <div className="p-3.5 rounded-2xl bg-indigo-50 text-indigo-600 mb-3 border border-indigo-100/80">
@@ -355,58 +355,67 @@ export function Retrospectives() {
               </button>
             </div>
           ) : (
-            filteredRetros.map((retro) => (
-            <div
-              key={retro.id}
-              onClick={() => selectRetro(retro.id)}
-              className={`flex flex-col justify-between p-5 rounded-xl border transition-all cursor-pointer min-w-0 ${
-                selectedRetroId === retro.id
-                  ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg'
-                  : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-md'
-              }`}
-            >
-              <div className="flex flex-col gap-3 min-w-0">
-                <div className="flex items-center justify-between gap-2 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-100 text-slate-700 border border-slate-200 shrink-0">
-                      {retro.project_key}
+            filteredRetros.map((retro) => {
+              const cleanPreview = retro.content
+                .replace(/[#*>|`\-\n]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+              return (
+                <div
+                  key={retro.id}
+                  onClick={() => selectRetro(retro.id)}
+                  className={`flex flex-col justify-between p-4 rounded-xl border transition-all cursor-pointer min-w-0 bg-white ${
+                    selectedRetroId === retro.id
+                      ? 'border-indigo-500 ring-2 ring-indigo-500/20 shadow-md'
+                      : 'border-slate-200 hover:border-indigo-300 hover:shadow-sm'
+                  }`}
+                >
+                  <div className="flex flex-col gap-2 min-w-0">
+                    <div className="flex items-center justify-between gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200/80 shrink-0">
+                          {retro.project_key}
+                        </span>
+                        {retro.sprint_name && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
+                            {retro.sprint_name}
+                          </span>
+                        )}
+                      </div>
+                      <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 shrink-0">
+                        <PromptButton type="retrospective" id={retro.id} title={retro.title} size="xs" />
+                        <button
+                          onClick={() => setDeletingRetro({ id: retro.id, title: retro.title })}
+                          title="회고 삭제"
+                          className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <h3 className="text-sm font-bold text-slate-900 truncate min-w-0 leading-snug">
+                      {retro.title}
+                    </h3>
+
+                    <p className="text-[11.5px] text-slate-500 line-clamp-2 leading-relaxed break-words min-w-0">
+                      {cleanPreview || '회고 내용이 없습니다.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100 mt-3 text-[11px] text-slate-500 whitespace-nowrap min-w-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                      <CheckSquare className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      <span className="font-medium text-slate-600">액션 {retro.action_items.length}개</span>
+                    </div>
+                    <span className="text-[10.5px] font-mono text-slate-400 shrink-0">
+                      {retro.created_at.split(' ')[0]}
                     </span>
-                    {retro.sprint_name && (
-                      <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
-                        {retro.sprint_name}
-                      </span>
-                    )}
-                  </div>
-                  <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0">
-                    <PromptButton type="retrospective" id={retro.id} title={retro.title} size="xs" />
-                    <button
-                      onClick={() => setDeletingRetro({ id: retro.id, title: retro.title })}
-                      title="회고 삭제"
-                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
-
-                <h3 className="text-base font-bold text-slate-900 truncate min-w-0">
-                  {retro.title}
-                </h3>
-
-                <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed break-words min-w-0">
-                  {retro.content.replace(/#/g, '')}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between gap-2 pt-4 border-t border-slate-100 mt-4 text-xs text-slate-500 whitespace-nowrap min-w-0">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <CheckSquare className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="font-medium">액션 아이템 {retro.action_items.length}개</span>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400 shrink-0">{retro.created_at}</span>
-              </div>
-            </div>
-          ))
+              );
+            })
           )}
         </div>
       </div>
