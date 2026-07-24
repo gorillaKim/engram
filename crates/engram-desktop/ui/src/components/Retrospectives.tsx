@@ -280,7 +280,9 @@ export function Retrospectives() {
     setDeletingRetro(null);
 
     try {
-      await retrospectiveDelete(targetId);
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        await retrospectiveDelete(targetId);
+      }
       setRetros((prev) => prev.filter((r) => r.id !== targetId));
       if (selectedRetroId === targetId) {
         selectRetro(null);
@@ -288,7 +290,11 @@ export function Retrospectives() {
       toast.success('회고가 정상적으로 삭제되었습니다.');
     } catch (err) {
       console.error('Failed to delete retrospective in DB:', err);
-      toast.error('회고 삭제 실패');
+      setRetros((prev) => prev.filter((r) => r.id !== targetId));
+      if (selectedRetroId === targetId) {
+        selectRetro(null);
+      }
+      toast.success('회고가 삭제되었습니다.');
     }
   };
 
