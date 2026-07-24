@@ -20,6 +20,23 @@ pub use retrospective::*;
 pub use mcp::*;
 pub use settings::*;
 
+#[tauri::command(rename_all = "snake_case")]
+pub async fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
+    Ok(())
+}
+
 pub(crate) fn parse<T: serde::de::DeserializeOwned>(s: &str) -> engram_core::Result<T> {
     serde_json::from_value(serde_json::Value::String(s.to_string()))
         .map_err(|_| engram_core::Error::Validation(format!("unknown value: {s}")))

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { getAppVersion, getActivitySettings, setActivitySettings, getPromptSettings, setPromptSettings } from '../ipc/invoke';
+import { getAppVersion, getActivitySettings, setActivitySettings, getPromptSettings, setPromptSettings, openUrl } from '../ipc/invoke';
 import {
   checkForUpdates,
   downloadAndInstall,
@@ -132,7 +132,7 @@ export function Settings() {
   }
 
   function handleOpenReleaseNotes() {
-    window.open('https://github.com/gorillaKim/engram/releases', '_blank');
+    openUrl('https://github.com/gorillaKim/engram/releases');
   }
 
   return (

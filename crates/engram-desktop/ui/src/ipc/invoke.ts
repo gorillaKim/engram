@@ -309,3 +309,15 @@ export const retroActionItemDelete = (id: number) =>
 
 export const retroActionItemConvertToIssue = (id: number, agent_id?: string) =>
   invoke<Issue>('retro_action_item_convert_to_issue', { id, agent_id: agent_id ?? null });
+
+export const openUrl = async (url: string) => {
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    try {
+      await invoke<void>('open_url', { url });
+      return;
+    } catch (e) {
+      console.warn('Failed to open url via tauri command:', e);
+    }
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+};
