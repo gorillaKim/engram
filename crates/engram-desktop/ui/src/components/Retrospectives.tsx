@@ -378,8 +378,8 @@ export function Retrospectives() {
                   }`}
                 >
                   <div className="flex flex-col gap-2 min-w-0">
-                    <div className="flex items-center justify-between gap-1.5 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <div className="flex items-start justify-between gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1 pr-1">
                         <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 border border-slate-200/80 shrink-0">
                           {retro.project_key}
                         </span>
@@ -389,7 +389,7 @@ export function Retrospectives() {
                           </span>
                         )}
                       </div>
-                      <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 shrink-0">
+                      <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 shrink-0 self-start pt-0.5">
                         <PromptButton type="retrospective" id={retro.id} title={retro.title} size="xs" />
                         <button
                           onClick={() => setDeletingRetro({ id: retro.id, title: retro.title })}

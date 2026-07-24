@@ -203,7 +203,7 @@ export function RetrospectiveDetail({
         </div>
 
         {/* 우측 1열: Action Items 패널 */}
-        <div className="flex flex-col gap-4 bg-white rounded-xl p-4 border border-slate-200 shadow-sm min-w-0">
+        <div className="flex flex-col gap-4 bg-white rounded-xl p-4 border border-slate-200 shadow-sm min-w-0 h-fit self-start">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
             <div className="flex items-center gap-2 min-w-0">
               <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
