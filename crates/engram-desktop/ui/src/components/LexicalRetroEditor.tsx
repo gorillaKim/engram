@@ -195,6 +195,37 @@ export function LexicalRetroEditor({
     thead: ({ children }: any) => <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">{children}</thead>,
     th: ({ children }: any) => <th className="px-3.5 py-2.5 border-r border-slate-200 last:border-r-0">{children}</th>,
     td: ({ children }: any) => <td className="px-3.5 py-2 border-t border-r border-slate-200 last:border-r-0 text-slate-700">{children}</td>,
+    ul: ({ children }: any) => (
+      <ul className="my-2.5 pl-6 list-disc list-outside space-y-1 text-slate-700 text-sm">
+        {children}
+      </ul>
+    ),
+    ol: ({ children }: any) => (
+      <ol className="my-2.5 pl-6 list-decimal list-outside space-y-1 text-slate-700 text-sm">
+        {children}
+      </ol>
+    ),
+    li: ({ children }: any) => (
+      <li className="leading-relaxed pl-1">
+        {children}
+      </li>
+    ),
+    code: ({ children, className }: any) => {
+      const isBlock = className?.includes('language-');
+      return isBlock ? (
+        <code className="block bg-slate-100 rounded-lg p-3 text-xs font-mono text-slate-800 overflow-x-auto whitespace-pre my-2 border border-slate-200">
+          {children}
+        </code>
+      ) : (
+        <code className="bg-slate-100 rounded px-1.5 py-0.5 text-xs font-mono text-indigo-700 border border-slate-200/60 font-medium">
+          {children}
+        </code>
+      );
+    },
+    pre: ({ children }: any) => <pre className="my-2 overflow-x-auto">{children}</pre>,
+    strong: ({ children }: any) => <strong className="font-bold text-slate-900">{children}</strong>,
+    em: ({ children }: any) => <em className="italic text-slate-700">{children}</em>,
+    hr: () => <hr className="border-slate-200 my-4" />,
     p: ({ children }: any) => {
       // [#1192 이슈제목] 텍스트 패턴 스마트 칩 렌더링
       const str = String(children);
