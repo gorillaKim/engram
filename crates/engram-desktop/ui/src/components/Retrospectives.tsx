@@ -50,25 +50,11 @@ export function Retrospectives() {
         }));
         setRetros(mapped);
       } else {
-        // Fallback sample if DB is completely empty
-        setRetros([
-          {
-            id: 1,
-            project_key: 'engram',
-            sprint_name: 'Sprint 14',
-            title: 'Sprint 14 회고 및 액션 아이템 수립',
-            content: `## 🟢 Keep\n- 회고 MCP 도구 연동 완료\n- 에디터 슬래시 커맨드 적용\n\n## 🔴 Problem\n- CLI test sync 타임아웃 발생\n\n## 🟡 Try\n- 회고 액션 아이템 이슈 변환 자동화\n\n[#1188 DB Migration 0015_retrospectives.sql 추가]\n\n### 📊 이번 스프린트 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n| [Core & DB] | 10 | 10 | 100% |\n| [MCP & CLI] | 5 | 5 | 100% |\n| [Desktop UI] | 5 | 2 | 40% |\n`,
-            created_at: '2026-07-23 14:00',
-            updated_at: '2026-07-23 14:00',
-            action_items: [
-              { id: 101, retro_id: 1, title: '회고 CLI 이슈 자동 연결 기능 테스트', status: 'todo' },
-              { id: 102, retro_id: 1, title: '슬래시 커맨드 에디터 UX 개선', status: 'done', linked_issue_id: 1192 },
-            ],
-          },
-        ]);
+        setRetros([]);
       }
     } catch (err) {
       console.warn('Failed to load retrospectives from DB:', err);
+      setRetros([]);
     }
   };
 
@@ -327,7 +313,25 @@ export function Retrospectives() {
 
         {/* 그리드 카드 목록 */}
         <div className="flex-1 p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filteredRetros.map((retro) => (
+          {filteredRetros.length === 0 ? (
+            <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-white my-auto">
+              <div className="p-3.5 rounded-2xl bg-indigo-50 text-indigo-600 mb-3 border border-indigo-100/80">
+                <FileText className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">등록된 회고가 없습니다</h3>
+              <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4 leading-relaxed">
+                새 회고를 작성하거나 커맨드라인(`engram retro create`)을 사용하여 회고를 추가하세요.
+              </p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>새 회고 작성</span>
+              </button>
+            </div>
+          ) : (
+            filteredRetros.map((retro) => (
             <div
               key={retro.id}
               onClick={() => selectRetro(retro.id)}
@@ -366,7 +370,8 @@ export function Retrospectives() {
                 <span className="text-[11px] font-mono text-slate-400 shrink-0">{retro.created_at}</span>
               </div>
             </div>
-          ))}
+          ))
+          )}
         </div>
       </div>
 

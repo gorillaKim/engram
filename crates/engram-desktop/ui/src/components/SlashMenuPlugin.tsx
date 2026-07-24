@@ -30,11 +30,11 @@ export function SlashMenuPlugin({ onSelect, onClose, position }: SlashMenuPlugin
         action: () => onSelect('sprint-stats'),
       },
       {
-        key: 'analyse',
-        label: '/analyse',
+        key: 'analyze',
+        label: '/analyze',
         description: '이번 스프린트 각 에픽별 현황 및 진행률 분석 표 추가',
         icon: <PieChart className="w-4 h-4 text-purple-600 shrink-0" />,
-        action: () => onSelect('analyse'),
+        action: () => onSelect('analyze'),
       },
       {
         key: 'issue-link',

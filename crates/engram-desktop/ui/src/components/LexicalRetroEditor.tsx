@@ -5,6 +5,7 @@ import { SlashMenuPlugin } from './SlashMenuPlugin';
 import { IssueSelectModal, IssueOption } from './IssueSelectModal';
 import { BarChart3, Edit3, Eye, ExternalLink, Sparkles } from 'lucide-react';
 import { useUIStore } from '../store/ui';
+import { epicList, issueList } from '../ipc/invoke';
 
 interface LexicalRetroEditorProps {
   value: string;
@@ -41,7 +42,7 @@ export function LexicalRetroEditor({
     }
   };
 
-  const handleSlashSelect = (key: string) => {
+  const handleSlashSelect = async (key: string) => {
     setShowSlashMenu(false);
     if (!textareaRef.current) return;
 
@@ -55,13 +56,41 @@ export function LexicalRetroEditor({
     let insertion = '';
 
     if (key === 'sprint-stats') {
-      const total = sprintStats?.totalIssues ?? 20;
-      const finished = sprintStats?.finishedIssues ?? 17;
-      const rate = sprintStats?.completionRate ?? 85;
-      insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
+      try {
+        const issues = await issueList({});
+        const total = issues.length;
+        const finished = issues.filter((i) => i.status === 'finished').length;
+        const rate = total > 0 ? Math.round((finished / total) * 100) : 0;
+        insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
+      } catch (err) {
+        const total = sprintStats?.totalIssues ?? 0;
+        const finished = sprintStats?.finishedIssues ?? 0;
+        const rate = sprintStats?.completionRate ?? 0;
+        insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
+      }
       onChange(beforeSlash + insertion + afterSlash);
-    } else if (key === 'analyse') {
-      insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n| [Core & DB] | 10 | 10 | 100% |\n| [MCP & CLI] | 5 | 5 | 100% |\n| [Desktop UI] | 5 | 2 | 40% |\n\n`;
+    } else if (key === 'analyze' || key === 'analyse') {
+      try {
+        const epics = await epicList();
+        const issues = await issueList({});
+
+        if (!epics || epics.length === 0) {
+          insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n> 등록된 에픽이 없습니다.\n\n`;
+        } else {
+          insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n`;
+          for (const epic of epics) {
+            const epicIssues = issues.filter((i) => i.epic_id === epic.id);
+            const total = epicIssues.length;
+            const finished = epicIssues.filter((i) => i.status === 'finished').length;
+            const rate = total > 0 ? Math.round((finished / total) * 100) : 0;
+            insertion += `| ${epic.title} | ${total} | ${finished} | ${rate}% |\n`;
+          }
+          insertion += `\n`;
+        }
+      } catch (err) {
+        console.warn('Failed to load real epic stats for analyze command:', err);
+        insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n> 에픽 현황 데이터를 불러오는 중 오류가 발생했습니다.\n\n`;
+      }
       onChange(beforeSlash + insertion + afterSlash);
     } else if (key === 'kpt-template') {
       insertion = `## 🟢 Keep (잘한 점 & 유지할 점)\n- \n\n## 🔴 Problem (아쉬운 점 & 문제점)\n- \n\n## 🟡 Try (시도할 개선 방향)\n- \n\n`;
@@ -200,7 +229,7 @@ export function LexicalRetroEditor({
               value={value}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="회고 내용을 입력하세요. '/' 키를 누르면 슬래시 커맨드 메뉴(/sprint-stats, /analyse, /issue, /kpt-template)가 나타납니다..."
+              placeholder="회고 내용을 입력하세요. '/' 키를 누르면 슬래시 커맨드 메뉴(/sprint-stats, /analyze, /issue, /kpt-template)가 나타납니다..."
               className="w-full h-full min-h-[380px] bg-transparent text-slate-900 placeholder-slate-400 resize-none outline-none font-mono text-sm leading-relaxed"
             />
 
