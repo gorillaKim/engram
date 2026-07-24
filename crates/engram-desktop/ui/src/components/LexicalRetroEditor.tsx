@@ -5,7 +5,7 @@ import { SlashMenuPlugin } from './SlashMenuPlugin';
 import { IssueSelectModal, IssueOption } from './IssueSelectModal';
 import { BarChart3, Edit3, Eye, ExternalLink, Sparkles } from 'lucide-react';
 import { useUIStore } from '../store/ui';
-import { epicList, issueList } from '../ipc/invoke';
+import { epicList, issueList, sprintList } from '../ipc/invoke';
 
 interface LexicalRetroEditorProps {
   value: string;
@@ -16,6 +16,7 @@ interface LexicalRetroEditorProps {
     completionRate: number;
   };
   retroSprintId?: number | null;
+  retroSprintName?: string;
 }
 
 export function LexicalRetroEditor({
@@ -23,6 +24,7 @@ export function LexicalRetroEditor({
   onChange,
   sprintStats,
   retroSprintId,
+  retroSprintName,
 }: LexicalRetroEditorProps) {
   const { selectIssue } = useUIStore();
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
@@ -65,8 +67,16 @@ export function LexicalRetroEditor({
       if (total === undefined) {
         try {
           const issues = await issueList({});
-          const filtered = retroSprintId
-            ? issues.filter((i) => i.sprint_id === retroSprintId)
+          let targetSprintId = retroSprintId;
+
+          if (!targetSprintId && retroSprintName) {
+            const sprints = await sprintList();
+            const matched = sprints.find((s) => s.name.trim().toLowerCase() === retroSprintName.trim().toLowerCase());
+            if (matched) targetSprintId = matched.id;
+          }
+
+          const filtered = targetSprintId
+            ? issues.filter((i) => i.sprint_id === targetSprintId)
             : issues;
           total = filtered.length;
           finished = filtered.filter((i) => i.status === 'finished').length;
@@ -78,24 +88,44 @@ export function LexicalRetroEditor({
         }
       }
 
-      insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
+      const label = retroSprintName || (retroSprintId ? `Sprint ${retroSprintId}` : '스프린트');
+      insertion = `> 📊 **${label} 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
       onChange(beforeSlash + insertion + afterSlash);
     } else if (key === 'analyze' || key === 'analyse') {
       try {
         const epics = await epicList();
         const issues = await issueList({});
+        const sprintLabel = retroSprintName || (retroSprintId ? `Sprint ${retroSprintId}` : '선택된 스프린트');
 
-        const targetEpics = retroSprintId
-          ? epics.filter((e) => e.sprint_id === retroSprintId)
-          : [];
-        const displayEpics = targetEpics.length > 0 ? targetEpics : epics;
+        let targetSprintId = retroSprintId;
+        if (!targetSprintId && retroSprintName) {
+          try {
+            const sprints = await sprintList();
+            const matched = sprints.find((s) => s.name.trim().toLowerCase() === retroSprintName.trim().toLowerCase());
+            if (matched) targetSprintId = matched.id;
+          } catch (err) {
+            console.warn('Failed to match sprint by name:', err);
+          }
+        }
 
-        if (!displayEpics || displayEpics.length === 0) {
-          insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n> 등록된 에픽이 없습니다.\n\n`;
+        // 해당 회고 스프린트(targetSprintId)에 속하거나 관련 이슈가 속한 에픽들만 정확히 필터링
+        let targetEpics = epics;
+        if (targetSprintId) {
+          targetEpics = epics.filter(
+            (e) =>
+              e.sprint_id === targetSprintId ||
+              issues.some((i) => i.epic_id === e.id && i.sprint_id === targetSprintId)
+          );
+        }
+
+        if (!targetEpics || targetEpics.length === 0) {
+          insertion = `### 📊 ${sprintLabel} 에픽별 현황 분석\n\n> 선택한 ${sprintLabel}에 등록된 에픽이 없습니다.\n\n`;
         } else {
-          insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n`;
-          for (const epic of displayEpics) {
-            const epicIssues = issues.filter((i) => i.epic_id === epic.id);
+          insertion = `### 📊 ${sprintLabel} 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n`;
+          for (const epic of targetEpics) {
+            const epicIssues = issues.filter(
+              (i) => i.epic_id === epic.id && (targetSprintId ? i.sprint_id === targetSprintId : true)
+            );
             const total = epicIssues.length;
             const finished = epicIssues.filter((i) => i.status === 'finished').length;
             const rate = total > 0 ? Math.round((finished / total) * 100) : 0;
@@ -105,7 +135,7 @@ export function LexicalRetroEditor({
         }
       } catch (err) {
         console.warn('Failed to load real epic stats for analyze command:', err);
-        insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n> 에픽 현황 데이터를 불러오는 중 오류가 발생했습니다.\n\n`;
+        insertion = `### 📊 에픽별 현황 분석\n\n> 에픽 현황 데이터를 불러오는 중 오류가 발생했습니다.\n\n`;
       }
       onChange(beforeSlash + insertion + afterSlash);
     } else if (key === 'kpt-template') {

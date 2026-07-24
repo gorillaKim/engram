@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { LexicalRetroEditor } from './LexicalRetroEditor';
 import { IssueSelectModal, IssueOption } from './IssueSelectModal';
 import { useUIStore } from '../store/ui';
-import { issueList } from '../ipc/invoke';
+import { issueList, sprintList } from '../ipc/invoke';
 import {
   CheckCircle2,
   Circle,
@@ -72,11 +72,29 @@ export function RetrospectiveDetail({
 
   useEffect(() => {
     let isMounted = true;
-    issueList({})
-      .then((issues) => {
+    const loadStats = async () => {
+      try {
+        const issues = await issueList({});
+        let targetSprintId = retro.sprint_id;
+
+        if (!targetSprintId && retro.sprint_name) {
+          try {
+            const sprints = await sprintList();
+            const matched = sprints.find(
+              (s) => s.name.trim().toLowerCase() === retro.sprint_name?.trim().toLowerCase()
+            );
+            if (matched) {
+              targetSprintId = matched.id;
+            }
+          } catch (err) {
+            console.warn('Failed to match sprint by name in detail:', err);
+          }
+        }
+
         if (!isMounted) return;
-        const filtered = retro.sprint_id
-          ? issues.filter((i) => i.sprint_id === retro.sprint_id)
+
+        const filtered = targetSprintId
+          ? issues.filter((i) => i.sprint_id === targetSprintId)
           : issues;
 
         const total = filtered.length;
@@ -88,15 +106,17 @@ export function RetrospectiveDetail({
           finishedIssues: finished,
           completionRate: rate,
         });
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn('Failed to calculate retro sprint stats:', err);
-      });
+      }
+    };
+
+    loadStats();
 
     return () => {
       isMounted = false;
     };
-  }, [retro.sprint_id, retro.project_key]);
+  }, [retro.sprint_id, retro.sprint_name, retro.project_key]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,6 +185,7 @@ export function RetrospectiveDetail({
             onChange={onUpdateContent}
             sprintStats={sprintStats}
             retroSprintId={retro.sprint_id}
+            retroSprintName={retro.sprint_name}
           />
         </div>
 
