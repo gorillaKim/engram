@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useUIStore } from '../store/ui';
 import { RetrospectiveDetail, RetrospectiveUI, ActionItemUI } from './RetrospectiveDetail';
 import { CreateRetroModal, CreateRetroFormData } from './CreateRetroModal';
@@ -9,6 +10,7 @@ import {
   retroActionItemDelete,
   retroActionItemUpdate,
   retrospectiveCreate,
+  retrospectiveDelete,
   retrospectiveList,
   retrospectiveUpdate,
 } from '../ipc/invoke';
@@ -17,6 +19,7 @@ import {
   FileText,
   Plus,
   Search,
+  Trash2,
 } from 'lucide-react';
 
 export function Retrospectives() {
@@ -269,6 +272,23 @@ export function Retrospectives() {
     }
   };
 
+  const handleDeleteRetro = async (id: number) => {
+    if (!window.confirm('이 회고를 삭제하시겠습니까? 관련 액션 아이템도 함께 삭제됩니다.')) {
+      return;
+    }
+    try {
+      await retrospectiveDelete(id);
+      setRetros((prev) => prev.filter((r) => r.id !== id));
+      if (selectedRetroId === id) {
+        selectRetro(null);
+      }
+      toast.success('회고가 삭제되었습니다.');
+    } catch (err) {
+      console.warn('Failed to delete retrospective in DB:', err);
+      toast.error('회고 삭제 실패');
+    }
+  };
+
   const filteredRetros = retros.filter((r) =>
     r.title.toLowerCase().includes(search.toLowerCase()) ||
     r.project_key.toLowerCase().includes(search.toLowerCase()) ||
@@ -354,8 +374,15 @@ export function Retrospectives() {
                       </span>
                     )}
                   </div>
-                  <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+                  <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0">
                     <PromptButton type="retrospective" id={retro.id} title={retro.title} size="xs" />
+                    <button
+                      onClick={() => handleDeleteRetro(retro.id)}
+                      title="회고 삭제"
+                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
@@ -409,6 +436,7 @@ export function Retrospectives() {
               onConvertActionItem={(itemId) => handleConvertActionItem(selectedRetro.id, itemId)}
               onLinkIssueToActionItem={(itemId, issueId) => handleLinkIssueToActionItem(selectedRetro.id, itemId, issueId)}
               onConvertAllActionItems={() => handleConvertAllActionItems(selectedRetro.id)}
+              onDeleteRetro={() => handleDeleteRetro(selectedRetro.id)}
             />
           </div>
         </div>

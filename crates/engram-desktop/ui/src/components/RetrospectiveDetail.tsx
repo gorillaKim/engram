@@ -49,6 +49,7 @@ interface RetrospectiveDetailProps {
   onConvertActionItem: (itemId: number) => void;
   onLinkIssueToActionItem: (itemId: number, issueId: number) => void;
   onConvertAllActionItems: () => void;
+  onDeleteRetro?: () => void;
 }
 
 export function RetrospectiveDetail({
@@ -61,6 +62,7 @@ export function RetrospectiveDetail({
   onConvertActionItem,
   onLinkIssueToActionItem,
   onConvertAllActionItems,
+  onDeleteRetro,
 }: RetrospectiveDetailProps) {
   const { selectIssue } = useUIStore();
   const [newActionTitle, setNewActionTitle] = useState('');
@@ -167,6 +169,19 @@ export function RetrospectiveDetail({
             >
               <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 shrink-0" />
               <span>⚡ Convert All to Issues ({pendingCount})</span>
+            </button>
+          )}
+          {onDeleteRetro && (
+            <button
+              onClick={() => {
+                if (window.confirm('이 회고를 정말 삭제하시겠습니까? 관련된 액션 아이템도 함께 삭제됩니다.')) {
+                  onDeleteRetro();
+                }
+              }}
+              title="회고 삭제"
+              className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors shrink-0 cursor-pointer"
+            >
+              <Trash2 className="w-4.5 h-4.5" />
             </button>
           )}
           <button
