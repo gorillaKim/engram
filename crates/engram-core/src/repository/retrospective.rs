@@ -161,6 +161,11 @@ impl Db {
     }
 
     pub async fn retrospective_delete(&self, id: i64) -> Result<()> {
+        sqlx::query("DELETE FROM retro_action_items WHERE retro_id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+
         let res = sqlx::query("DELETE FROM retrospectives WHERE id = ?")
             .bind(id)
             .execute(&self.pool)

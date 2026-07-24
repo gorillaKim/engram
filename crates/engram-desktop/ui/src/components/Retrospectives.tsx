@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { useUIStore } from '../store/ui';
 import { RetrospectiveDetail, RetrospectiveUI, ActionItemUI } from './RetrospectiveDetail';
 import { CreateRetroModal, CreateRetroFormData } from './CreateRetroModal';
+import { ConfirmDeleteRetroModal } from './ConfirmDeleteRetroModal';
 import { PromptButton } from './PromptButton';
 import {
   retroActionItemConvertToIssue,
@@ -26,6 +27,7 @@ export function Retrospectives() {
   const { selectedRetroId, selectRetro } = useUIStore();
   const [search, setSearch] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [deletingRetro, setDeletingRetro] = useState<{ id: number; title: string } | null>(null);
 
   // Retrospectives state connected to DB
   const [retros, setRetros] = useState<RetrospectiveUI[]>([]);
@@ -272,19 +274,20 @@ export function Retrospectives() {
     }
   };
 
-  const handleDeleteRetro = async (id: number) => {
-    if (!window.confirm('이 회고를 삭제하시겠습니까? 관련 액션 아이템도 함께 삭제됩니다.')) {
-      return;
-    }
+  const handleExecuteDeleteRetro = async () => {
+    if (!deletingRetro) return;
+    const targetId = deletingRetro.id;
+    setDeletingRetro(null);
+
     try {
-      await retrospectiveDelete(id);
-      setRetros((prev) => prev.filter((r) => r.id !== id));
-      if (selectedRetroId === id) {
+      await retrospectiveDelete(targetId);
+      setRetros((prev) => prev.filter((r) => r.id !== targetId));
+      if (selectedRetroId === targetId) {
         selectRetro(null);
       }
-      toast.success('회고가 삭제되었습니다.');
+      toast.success('회고가 정상적으로 삭제되었습니다.');
     } catch (err) {
-      console.warn('Failed to delete retrospective in DB:', err);
+      console.error('Failed to delete retrospective in DB:', err);
       toast.error('회고 삭제 실패');
     }
   };
@@ -377,7 +380,7 @@ export function Retrospectives() {
                   <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 shrink-0">
                     <PromptButton type="retrospective" id={retro.id} title={retro.title} size="xs" />
                     <button
-                      onClick={() => handleDeleteRetro(retro.id)}
+                      onClick={() => setDeletingRetro({ id: retro.id, title: retro.title })}
                       title="회고 삭제"
                       className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                     >
@@ -416,6 +419,15 @@ export function Retrospectives() {
         />
       )}
 
+      {/* 회고 삭제 확인 모달 */}
+      {deletingRetro && (
+        <ConfirmDeleteRetroModal
+          title={deletingRetro.title}
+          onConfirm={handleExecuteDeleteRetro}
+          onClose={() => setDeletingRetro(null)}
+        />
+      )}
+
       {/* Floating Overlay Drawer */}
       {selectedRetro && (
         <div className="fixed inset-0 z-40 flex justify-end pointer-events-none">
@@ -436,7 +448,7 @@ export function Retrospectives() {
               onConvertActionItem={(itemId) => handleConvertActionItem(selectedRetro.id, itemId)}
               onLinkIssueToActionItem={(itemId, issueId) => handleLinkIssueToActionItem(selectedRetro.id, itemId, issueId)}
               onConvertAllActionItems={() => handleConvertAllActionItems(selectedRetro.id)}
-              onDeleteRetro={() => handleDeleteRetro(selectedRetro.id)}
+              onDeleteRetro={() => setDeletingRetro({ id: selectedRetro.id, title: selectedRetro.title })}
             />
           </div>
         </div>
