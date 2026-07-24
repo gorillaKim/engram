@@ -244,19 +244,20 @@ export function RetrospectiveDetail({
                   key={item.id}
                   className="flex flex-col gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all min-w-0 group"
                 >
-                  <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
                     <button
                       type="button"
                       onClick={() => onToggleActionItemStatus(item.id)}
-                      className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer"
+                      className="flex items-start gap-2 min-w-0 flex-1 text-left cursor-pointer pt-0.5"
+                      title={item.title}
                     >
                       {item.status === 'done' ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                       ) : (
-                        <Circle className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 shrink-0 transition-colors" />
+                        <Circle className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 shrink-0 transition-colors mt-0.5" />
                       )}
                       <span
-                        className={`text-xs font-medium truncate ${
+                        className={`text-xs font-medium break-words leading-snug ${
                           item.status === 'done'
                             ? 'line-through text-slate-400'
                             : 'text-slate-800 group-hover:text-indigo-900'
