@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { LexicalRetroEditor } from './LexicalRetroEditor';
 import { IssueSelectModal, IssueOption } from './IssueSelectModal';
 import { useUIStore } from '../store/ui';
+import { issueList } from '../ipc/invoke';
 import {
   CheckCircle2,
   Circle,
@@ -63,6 +64,39 @@ export function RetrospectiveDetail({
   const { selectIssue } = useUIStore();
   const [newActionTitle, setNewActionTitle] = useState('');
   const [linkingItemId, setLinkingItemId] = useState<number | null>(null);
+  const [sprintStats, setSprintStats] = useState<{
+    totalIssues: number;
+    finishedIssues: number;
+    completionRate: number;
+  } | undefined>(undefined);
+
+  useEffect(() => {
+    let isMounted = true;
+    issueList({})
+      .then((issues) => {
+        if (!isMounted) return;
+        const filtered = retro.sprint_id
+          ? issues.filter((i) => i.sprint_id === retro.sprint_id)
+          : issues;
+
+        const total = filtered.length;
+        const finished = filtered.filter((i) => i.status === 'finished').length;
+        const rate = total > 0 ? Math.round((finished / total) * 100) : 0;
+
+        setSprintStats({
+          totalIssues: total,
+          finishedIssues: finished,
+          completionRate: rate,
+        });
+      })
+      .catch((err) => {
+        console.warn('Failed to calculate retro sprint stats:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [retro.sprint_id, retro.project_key]);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,11 +163,8 @@ export function RetrospectiveDetail({
           <LexicalRetroEditor
             value={retro.content}
             onChange={onUpdateContent}
-            sprintStats={{
-              totalIssues: 20,
-              finishedIssues: 17,
-              completionRate: 85,
-            }}
+            sprintStats={sprintStats}
+            retroSprintId={retro.sprint_id}
           />
         </div>
 

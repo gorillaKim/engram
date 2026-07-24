@@ -15,12 +15,14 @@ interface LexicalRetroEditorProps {
     finishedIssues: number;
     completionRate: number;
   };
+  retroSprintId?: number | null;
 }
 
 export function LexicalRetroEditor({
   value,
   onChange,
   sprintStats,
+  retroSprintId,
 }: LexicalRetroEditorProps) {
   const { selectIssue } = useUIStore();
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
@@ -56,29 +58,43 @@ export function LexicalRetroEditor({
     let insertion = '';
 
     if (key === 'sprint-stats') {
-      try {
-        const issues = await issueList({});
-        const total = issues.length;
-        const finished = issues.filter((i) => i.status === 'finished').length;
-        const rate = total > 0 ? Math.round((finished / total) * 100) : 0;
-        insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
-      } catch (err) {
-        const total = sprintStats?.totalIssues ?? 0;
-        const finished = sprintStats?.finishedIssues ?? 0;
-        const rate = sprintStats?.completionRate ?? 0;
-        insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
+      let total = sprintStats?.totalIssues;
+      let finished = sprintStats?.finishedIssues;
+      let rate = sprintStats?.completionRate;
+
+      if (total === undefined) {
+        try {
+          const issues = await issueList({});
+          const filtered = retroSprintId
+            ? issues.filter((i) => i.sprint_id === retroSprintId)
+            : issues;
+          total = filtered.length;
+          finished = filtered.filter((i) => i.status === 'finished').length;
+          rate = total > 0 ? Math.round((finished / total) * 100) : 0;
+        } catch (err) {
+          total = 0;
+          finished = 0;
+          rate = 0;
+        }
       }
+
+      insertion = `> 📊 **스프린트 통계**: **${rate}%** (${finished}/${total} 이슈 완료)\n\n`;
       onChange(beforeSlash + insertion + afterSlash);
     } else if (key === 'analyze' || key === 'analyse') {
       try {
         const epics = await epicList();
         const issues = await issueList({});
 
-        if (!epics || epics.length === 0) {
+        const targetEpics = retroSprintId
+          ? epics.filter((e) => e.sprint_id === retroSprintId)
+          : [];
+        const displayEpics = targetEpics.length > 0 ? targetEpics : epics;
+
+        if (!displayEpics || displayEpics.length === 0) {
           insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n> 등록된 에픽이 없습니다.\n\n`;
         } else {
           insertion = `### 📊 이번 스프린트 에픽별 현황 분석\n\n| 에픽명 | 전체 이슈 | 완료 | 진행률 |\n| :--- | :---: | :---: | :---: |\n`;
-          for (const epic of epics) {
+          for (const epic of displayEpics) {
             const epicIssues = issues.filter((i) => i.epic_id === epic.id);
             const total = epicIssues.length;
             const finished = epicIssues.filter((i) => i.status === 'finished').length;
