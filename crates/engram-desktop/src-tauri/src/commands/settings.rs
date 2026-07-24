@@ -41,6 +41,7 @@ pub fn set_prompt_settings(
     issue_template: Option<String>,
     epic_template: Option<String>,
     mission_template: Option<String>,
+    retrospective_template: Option<String>,
 ) -> Result<(), String> {
     let mut s = crate_settings::load().unwrap_or_default();
     if let Some(t) = issue_template {
@@ -51,6 +52,9 @@ pub fn set_prompt_settings(
     }
     if let Some(t) = mission_template {
         s.prompt.mission_template = t;
+    }
+    if let Some(t) = retrospective_template {
+        s.prompt.retrospective_template = t;
     }
     crate_settings::save(&s).map_err(|e| e.to_string())
 }

@@ -29,10 +29,11 @@ export function Settings() {
   const [warnMin, setWarnMin] = useState(30);
   const [stallMin, setStallMin] = useState(120);
   const [activitySaving, setActivitySaving] = useState(false);
-  const [promptSubTab, setPromptSubTab] = useState<'issue' | 'epic' | 'mission'>('issue');
+  const [promptSubTab, setPromptSubTab] = useState<'issue' | 'epic' | 'mission' | 'retrospective'>('issue');
   const [issueTemplate, setIssueTemplate] = useState('{{base prompt}}');
   const [epicTemplate, setEpicTemplate] = useState('{{base prompt}}');
   const [missionTemplate, setMissionTemplate] = useState('{{base prompt}}');
+  const [retrospectiveTemplate, setRetrospectiveTemplate] = useState('{{base prompt}}');
   const [promptSaving, setPromptSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingSection>('general');
 
@@ -44,6 +45,7 @@ export function Settings() {
         setIssueTemplate(s.issue_template || '{{base prompt}}');
         setEpicTemplate(s.epic_template || '{{base prompt}}');
         setMissionTemplate(s.mission_template || '{{base prompt}}');
+        setRetrospectiveTemplate(s.retrospective_template || '{{base prompt}}');
       })
       .catch(() => {});
   }, []);
@@ -67,6 +69,7 @@ export function Settings() {
         issue_template: issueTemplate,
         epic_template: epicTemplate,
         mission_template: missionTemplate,
+        retrospective_template: retrospectiveTemplate,
       });
       toast.success('프롬프트 템플릿 설정이 정상적으로 저장되었습니다.');
     } catch {
@@ -233,17 +236,18 @@ export function Settings() {
                 </p>
               </div>
 
-              {/* 이슈 / 에픽 / 미션 서브 탭 */}
-              <div className="flex border-b border-slate-200 gap-2">
+              {/* 이슈 / 에픽 / 미션 / 회고 서브 탭 */}
+              <div className="flex border-b border-slate-200 gap-2 flex-wrap">
                 {[
                   { id: 'issue', label: '📌 이슈 (Issue) Prompt' },
                   { id: 'epic', label: '📦 에픽 (Epic) Prompt' },
                   { id: 'mission', label: '🎯 미션 (Mission) Prompt' },
+                  { id: 'retrospective', label: '📝 회고 (Retro) Prompt' },
                 ].map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setPromptSubTab(tab.id as 'issue' | 'epic' | 'mission')}
+                    onClick={() => setPromptSubTab(tab.id as 'issue' | 'epic' | 'mission' | 'retrospective')}
                     className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
                       promptSubTab === tab.id
                         ? 'border-indigo-600 text-indigo-600 bg-indigo-50/40 rounded-t-lg'
@@ -260,21 +264,35 @@ export function Settings() {
                   <code className="bg-indigo-50 border border-indigo-200 px-1 py-0.5 rounded text-indigo-700 font-mono font-semibold">
                     {'{{base prompt}}'}
                   </code>는 선택한 단위(
-                  {promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'}
+                  {promptSubTab === 'issue'
+                    ? '이슈'
+                    : promptSubTab === 'epic'
+                    ? '에픽'
+                    : promptSubTab === 'mission'
+                    ? '미션'
+                    : '회고'}
                   )의 기본 생성 문구로 자동 치환됩니다.
                 </p>
 
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-slate-700">
-                      {promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'} 템플릿 작성
+                      {promptSubTab === 'issue'
+                        ? '이슈'
+                        : promptSubTab === 'epic'
+                        ? '에픽'
+                        : promptSubTab === 'mission'
+                        ? '미션'
+                        : '회고'}{' '}
+                      템플릿 작성
                     </span>
                     <button
                       type="button"
                       onClick={() => {
                         if (promptSubTab === 'issue') setIssueTemplate('{{base prompt}}');
                         else if (promptSubTab === 'epic') setEpicTemplate('{{base prompt}}');
-                        else setMissionTemplate('{{base prompt}}');
+                        else if (promptSubTab === 'mission') setMissionTemplate('{{base prompt}}');
+                        else setRetrospectiveTemplate('{{base prompt}}');
                       }}
                       className="text-[11px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-colors cursor-pointer"
                     >
@@ -289,13 +307,16 @@ export function Settings() {
                         ? issueTemplate
                         : promptSubTab === 'epic'
                         ? epicTemplate
-                        : missionTemplate
+                        : promptSubTab === 'mission'
+                        ? missionTemplate
+                        : retrospectiveTemplate
                     }
                     onChange={(e) => {
                       const val = e.target.value;
                       if (promptSubTab === 'issue') setIssueTemplate(val);
                       else if (promptSubTab === 'epic') setEpicTemplate(val);
-                      else setMissionTemplate(val);
+                      else if (promptSubTab === 'mission') setMissionTemplate(val);
+                      else setRetrospectiveTemplate(val);
                     }}
                     placeholder="{{base prompt}}"
                     className="w-full text-xs font-mono border border-slate-200 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500/20 text-slate-700 bg-white focus:outline-none transition-all shadow-sm leading-relaxed resize-y"
@@ -305,14 +326,24 @@ export function Settings() {
                 {/* 실시간 미리보기 */}
                 <div className="flex flex-col gap-2 pt-1 border-t border-slate-200/60">
                   <span className="text-xs font-semibold text-slate-700">
-                    실시간 미리보기 예시 ({promptSubTab === 'issue' ? '이슈' : promptSubTab === 'epic' ? '에픽' : '미션'} 복사 시)
+                    실시간 미리보기 예시 ({
+                      promptSubTab === 'issue'
+                        ? '이슈'
+                        : promptSubTab === 'epic'
+                        ? '에픽'
+                        : promptSubTab === 'mission'
+                        ? '미션'
+                        : '회고'
+                    } 복사 시)
                   </span>
                   <div className="font-mono bg-slate-900 text-slate-200 p-3.5 rounded-xl border border-slate-800 text-[11px] leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto shadow-inner">
                     {(promptSubTab === 'issue'
                       ? issueTemplate
                       : promptSubTab === 'epic'
                       ? epicTemplate
-                      : missionTemplate
+                      : promptSubTab === 'mission'
+                      ? missionTemplate
+                      : retrospectiveTemplate
                     )
                       .split('{{base prompt}}')
                       .join(
@@ -320,7 +351,9 @@ export function Settings() {
                           ? '[engram issue-#12] "소셜 로그인 UI 구현" 이슈 작업을 진행해줘. (목표: 카카오/구글 로그인 버튼 렌더링)'
                           : promptSubTab === 'epic'
                           ? '[engram epic-#45] "사용자 인증 파이프라인 고도화" 에픽 하위 이슈 작업을 진행해줘.'
-                          : '[engram mission-#3] "2026 Q3 전사 보안 및 인증 강화" 미션 작업을 진행해줘.'
+                          : promptSubTab === 'mission'
+                          ? '[engram mission-#3] "2026 Q3 전사 보안 및 인증 강화" 미션 작업을 진행해줘.'
+                          : '[engram retrospective-#1] "Sprint 5 회고" 회고 내용 및 액션 아이템 조치 사항을 확인하고 리뷰해줘.'
                       )}
                   </div>
                 </div>

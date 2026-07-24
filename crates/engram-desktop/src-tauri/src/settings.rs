@@ -43,6 +43,8 @@ pub struct PromptSettings {
     pub epic_template: String,
     #[serde(default = "default_template")]
     pub mission_template: String,
+    #[serde(default = "default_template")]
+    pub retrospective_template: String,
 }
 
 impl Default for PromptSettings {
@@ -51,6 +53,7 @@ impl Default for PromptSettings {
             issue_template: default_template(),
             epic_template: default_template(),
             mission_template: default_template(),
+            retrospective_template: default_template(),
         }
     }
 }
@@ -113,6 +116,7 @@ mod tests {
         assert_eq!(s.prompt.issue_template, "{{base prompt}}");
         assert_eq!(s.prompt.epic_template, "{{base prompt}}");
         assert_eq!(s.prompt.mission_template, "{{base prompt}}");
+        assert_eq!(s.prompt.retrospective_template, "{{base prompt}}");
     }
 
     #[test]
@@ -124,6 +128,7 @@ mod tests {
                 issue_template: "{{base prompt}}\n[issue]".into(),
                 epic_template: "{{base prompt}}\n[epic]".into(),
                 mission_template: "{{base prompt}}\n[mission]".into(),
+                retrospective_template: "{{base prompt}}\n[retrospective]".into(),
             },
         };
         let toml_str = toml::to_string_pretty(&s).unwrap();
@@ -133,5 +138,6 @@ mod tests {
         assert_eq!(loaded.prompt.issue_template, "{{base prompt}}\n[issue]");
         assert_eq!(loaded.prompt.epic_template, "{{base prompt}}\n[epic]");
         assert_eq!(loaded.prompt.mission_template, "{{base prompt}}\n[mission]");
+        assert_eq!(loaded.prompt.retrospective_template, "{{base prompt}}\n[retrospective]");
     }
 }

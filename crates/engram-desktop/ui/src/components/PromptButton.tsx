@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { getPromptSettings } from '../ipc/invoke';
 
 interface Props {
-  type: 'issue' | 'epic' | 'mission';
+  type: 'issue' | 'epic' | 'mission' | 'retrospective';
   id: number;
   title: string;
   goal?: string | null;
@@ -26,10 +26,12 @@ export function PromptButton({
     issue_template: string;
     epic_template: string;
     mission_template: string;
+    retrospective_template: string;
   }>({
     issue_template: '{{base prompt}}',
     epic_template: '{{base prompt}}',
     mission_template: '{{base prompt}}',
+    retrospective_template: '{{base prompt}}',
   });
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -40,6 +42,7 @@ export function PromptButton({
           issue_template: s.issue_template || '{{base prompt}}',
           epic_template: s.epic_template || '{{base prompt}}',
           mission_template: s.mission_template || '{{base prompt}}',
+          retrospective_template: s.retrospective_template || '{{base prompt}}',
         });
       })
       .catch(() => {});
@@ -53,8 +56,10 @@ export function PromptButton({
     }
   } else if (type === 'epic') {
     basePromptText = `[engram epic-#${id}] "${title}" 에픽 하위 이슈 작업을 진행해줘.`;
-  } else {
+  } else if (type === 'mission') {
     basePromptText = `[engram mission-#${id}] "${title}" 미션 작업을 진행해줘.`;
+  } else {
+    basePromptText = `[engram retrospective-#${id}] "${title}" 회고 내용 및 액션 아이템 조치 사항을 확인하고 리뷰해줘.`;
   }
 
   const template =
@@ -62,7 +67,9 @@ export function PromptButton({
       ? promptSettings.issue_template
       : type === 'epic'
       ? promptSettings.epic_template
-      : promptSettings.mission_template;
+      : type === 'mission'
+      ? promptSettings.mission_template
+      : promptSettings.retrospective_template;
 
   const promptText = (template || '{{base prompt}}')
     .split('{{base prompt}}').join(basePromptText)

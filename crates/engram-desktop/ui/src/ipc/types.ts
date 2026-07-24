@@ -241,6 +241,7 @@ export interface PromptSettings {
   issue_template: string;
   epic_template: string;
   mission_template: string;
+  retrospective_template: string;
 }
 
 // ── Dashboard CRUD ────────────────────────────────────────────────────────────

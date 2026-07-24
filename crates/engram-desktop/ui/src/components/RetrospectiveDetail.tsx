@@ -3,6 +3,7 @@ import { LexicalRetroEditor } from './LexicalRetroEditor';
 import { IssueSelectModal, IssueOption } from './IssueSelectModal';
 import { useUIStore } from '../store/ui';
 import { issueList, sprintList } from '../ipc/invoke';
+import { PromptButton } from './PromptButton';
 import {
   CheckCircle2,
   Circle,
@@ -158,6 +159,7 @@ export function RetrospectiveDetail({
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
+          <PromptButton type="retrospective" id={retro.id} title={retro.title} size="sm" />
           {pendingCount > 0 && (
             <button
               onClick={onConvertAllActionItems}
