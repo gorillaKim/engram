@@ -138,7 +138,7 @@ export function PromptButton({
         className={`inline-flex items-center gap-1 font-semibold rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 shadow-2xs transition-all cursor-pointer hover:scale-105 active:scale-95 shrink-0 ${sizeClass} ${className}`}
       >
         <span className="text-[11px] leading-none">⚡</span>
-        <span className="leading-none">Prompt</span>
+        <span className="leading-none">프롬프트</span>
       </button>
 
       {/* Portal Tooltip */}

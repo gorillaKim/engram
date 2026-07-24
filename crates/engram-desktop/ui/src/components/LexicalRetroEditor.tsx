@@ -27,7 +27,7 @@ export function LexicalRetroEditor({
   retroSprintName,
 }: LexicalRetroEditorProps) {
   const { selectIssue } = useUIStore();
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [mode, setMode] = useState<'edit' | 'preview'>('preview');
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
   const [menuPos, setMenuPos] = useState({ top: 180, left: 240 });

@@ -168,7 +168,7 @@ export function RetrospectiveDetail({
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-sm transition-all active:scale-95 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 shrink-0" />
-              <span>Convert All to Issues ({pendingCount})</span>
+              <span>전체 이슈 변환 ({pendingCount})</span>
             </button>
           )}
           {onDeleteRetro && (
